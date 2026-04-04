@@ -58,6 +58,8 @@ func (app *App) Run() error {
 	pad := int32(cfg.Keys.Padding)
 	statusH := max32(20, int32(float64(unit)*0.4))
 	width, height := CalcWindowSize(layout, unit, pad, statusH)
+	Debugf("Monitor: %dx%d+%d+%d, scale=%d%%, unit=%d, window=%dx%d",
+		mon.W, mon.H, mon.X, mon.Y, cfg.Keys.Scale, unit, width, height)
 
 	// Position: center horizontally, top or bottom based on config
 	x := mon.X + (mon.W-width)/2

@@ -142,7 +142,7 @@ windowrulev2 = move 50%-w/2 100%-h-20, class:^(gamepad-osk)$
 for_window [app_id="gamepad-osk"] floating enable, sticky enable, move position center, move down 300
 ```
 
-**Note:** On Wayland the keyboard may not appear in the exact bottom-center position by default. The compositor rules above handle positioning.
+On Wayland the keyboard may not appear in the exact bottom-center position by default — the compositor rules above handle positioning.
 
 ## License
 

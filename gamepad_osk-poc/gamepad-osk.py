@@ -8,7 +8,7 @@ This was the initial prototype used to iterate on the design. Ported to Go for:
 - ~50ms startup vs ~500ms Python
 - Simpler AUR packaging
 
-This file is kept for reference only. Do not use for production.
+Kept as reference. Use the Go version.
 """
 
 import ctypes
