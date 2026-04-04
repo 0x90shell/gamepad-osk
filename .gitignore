@@ -1,0 +1,5 @@
+gamepad-osk
+*.o
+*.a
+__pycache__/
+*.pyc

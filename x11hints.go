@@ -1,0 +1,102 @@
+package main
+
+/*
+#cgo pkg-config: x11
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xatom.h>
+#include <string.h>
+
+// Store the previously focused window so we can restore focus
+static Window prev_focused = 0;
+
+void save_focused_window() {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return;
+    int revert;
+    XGetInputFocus(dpy, &prev_focused, &revert);
+    XCloseDisplay(dpy);
+}
+
+void restore_focus() {
+    if (prev_focused == 0) return;
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return;
+    XSetInputFocus(dpy, prev_focused, RevertToParent, CurrentTime);
+    XFlush(dpy);
+    XCloseDisplay(dpy);
+}
+
+void set_no_focus_hints(unsigned long window_id) {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return;
+
+    Window win = (Window)window_id;
+
+    // _NET_WM_STATE: above, skip_taskbar, skip_pager
+    Atom wm_state = XInternAtom(dpy, "_NET_WM_STATE", False);
+    Atom above = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
+    Atom skip_tb = XInternAtom(dpy, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    Atom skip_pg = XInternAtom(dpy, "_NET_WM_STATE_SKIP_PAGER", False);
+    Atom atoms[3] = {above, skip_tb, skip_pg};
+    XChangeProperty(dpy, win, wm_state, XA_ATOM, 32, PropModeReplace,
+                    (unsigned char*)atoms, 3);
+
+    // WM_HINTS: input = False
+    XWMHints hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.flags = InputHint;
+    hints.input = False;
+    XSetWMHints(dpy, win, &hints);
+
+    XFlush(dpy);
+    XCloseDisplay(dpy);
+}
+*/
+import "C"
+
+import (
+	"log"
+	"os"
+
+	"github.com/veandco/go-sdl2/sdl"
+)
+
+var hasX11 = os.Getenv("DISPLAY") != ""
+
+func init() {
+	if !hasX11 {
+		log.Printf("Wayland detected, skipping X11 window hints")
+	}
+}
+
+func SaveFocusedWindow() {
+	if !hasX11 {
+		return
+	}
+	C.save_focused_window()
+}
+
+func RestoreFocus() {
+	if !hasX11 {
+		return
+	}
+	C.restore_focus()
+}
+
+func SetNoFocusHints(window *sdl.Window) {
+	if !hasX11 {
+		return
+	}
+	info, err := window.GetWMInfo()
+	if err != nil {
+		log.Printf("Warning: cannot get WM info: %v", err)
+		return
+	}
+	x11 := info.GetX11Info()
+	if x11.Window == 0 {
+		log.Printf("Warning: no X11 window ID")
+		return
+	}
+	C.set_no_focus_hints(C.ulong(x11.Window))
+}
