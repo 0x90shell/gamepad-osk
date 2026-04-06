@@ -4,6 +4,8 @@ Gamepad-controlled on-screen keyboard for Linux. Designed for couch gaming, Suns
 
 No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
+![terminal theme](assets/terminal.png)
+
 ## Features
 
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
@@ -92,6 +94,13 @@ See `config.toml` for all options including button remapping, stick assignments,
 30 built-in themes. Cycle live with the Cfg key on the keyboard.
 
 `ayu_dark` `candy` `catppuccin` `cobalt` `dark` `dracula` `ember` `everforest` `forest` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `material` `midnight` `monokai` `neon` `nord` `ocean` `onedark` `retro` `rose_pine` `slate` `solarized` `steam_green` `synthwave` `terminal` `tokyo_night`
+
+| | | |
+|---|---|---|
+| ![terminal](assets/terminal.png) | ![synthwave](assets/synthwave.png) | ![tokyo_dark](assets/tokyo_dark.png) |
+| ![neon](assets/neon.png) | ![retro](assets/retro.png) | ![candy](assets/candy.png) |
+| ![ocean](assets/ocean.png) | ![solarized](assets/solarized.png) | ![material](assets/material.png) |
+| ![rose_pine](assets/rose_pine.png) | ![midnight](assets/midnight.png) | ![ayu_dark](assets/ayu_dark.png) |
 
 ## Systemd User Service
 
