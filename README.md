@@ -4,7 +4,7 @@ Gamepad-controlled on-screen keyboard for Linux. Designed for couch gaming, Suns
 
 No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
-![terminal theme](assets/terminal.png)
+![gamepad-osk](assets/hero-matrix.png)
 
 ## Features
 
