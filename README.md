@@ -34,7 +34,8 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 ### AUR (Arch Linux)
 
 ```bash
-yay -S gamepad-osk-git
+yay -S gamepad-osk-bin   # pre-built binary from GitHub release
+yay -S gamepad-osk-git   # build from latest source
 ```
 
 To auto-update `-git` packages when upstream changes, enable devel checking:
