@@ -11,7 +11,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
 - SDL2 GameController for normalized input (works with any controller)
 - Xbox 360 pad auto-detection (swap_xy quirk handled automatically)
-- 30 color themes (cycle live with Cfg key, or set via config/flag)
+- 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + LB/RB click (hold to drag)
 - Shift layer, Caps Lock, accent popup (long-press on vowels)
@@ -91,16 +91,17 @@ See `config.toml` for all options including button remapping, stick assignments,
 
 ## Themes
 
-30 built-in themes. Cycle live with the Cfg key on the keyboard.
+60 built-in themes. Cycle live with the Cfg key on the keyboard.
 
-`ayu_dark` `candy` `catppuccin` `cobalt` `dark` `dracula` `ember` `everforest` `forest` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `material` `midnight` `monokai` `neon` `nord` `ocean` `onedark` `retro` `rose_pine` `slate` `solarized` `steam_green` `synthwave` `terminal` `tokyo_night`
+`ayu_dark` `candy` `catppuccin` `catppuccin_frappe` `cga` `chalk` `cobalt` `copper` `coral` `cyberpunk` `dark` `dracula` `ember` `everforest` `fjord` `forest` `gameboy` `gold` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `lavender` `material` `matrix` `mellow` `midnight` `monokai` `moss` `navy` `neon` `nightfox` `nord` `ocean` `olive` `onedark` `oxocarbon` `palenight` `paper` `plum` `retro` `rose_pine` `sakura` `sand` `slate` `solarized` `solarized_light` `steam_green` `sunset` `synthwave` `teal` `terminal` `tokyo_night` `tokyo_storm` `vapor` `virtualboy` `wine` `zx_spectrum`
 
 | | | |
 |---|---|---|
 | ![terminal](assets/terminal.png) | ![synthwave](assets/synthwave.png) | ![tokyo_dark](assets/tokyo_dark.png) |
 | ![neon](assets/neon.png) | ![retro](assets/retro.png) | ![candy](assets/candy.png) |
 | ![ocean](assets/ocean.png) | ![solarized](assets/solarized.png) | ![material](assets/material.png) |
-| ![rose_pine](assets/rose_pine.png) | ![midnight](assets/midnight.png) | ![ayu_dark](assets/ayu_dark.png) |
+| ![chalk](assets/chalk.png) | ![fjord](assets/fjord.png) | ![sand](assets/sand.png) |
+| ![moss](assets/moss.png) | ![sakura](assets/sakura.png) | ![paper](assets/paper.png) |
 
 ## Systemd User Service
 

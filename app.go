@@ -254,5 +254,6 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 			rend.Flash("↓ BOTTOM")
 		}
 		app.window.SetPosition(x, newY)
+		SavePosition(app.posTop)
 	}
 }

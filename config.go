@@ -149,8 +149,8 @@ func LoadConfig() Config {
 	return cfg
 }
 
-// SaveTheme writes the current theme name to the user config file.
-func SaveTheme(themeName string) {
+// saveConfig loads the user config, applies mutator, and writes it back.
+func saveConfig(mutate func(*Config)) {
 	path := UserConfigPath()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -162,7 +162,7 @@ func SaveTheme(themeName string) {
 	if _, err := os.Stat(path); err == nil {
 		toml.DecodeFile(path, &cfg)
 	}
-	cfg.Theme.Name = themeName
+	mutate(&cfg)
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -173,6 +173,24 @@ func SaveTheme(themeName string) {
 
 	enc := toml.NewEncoder(f)
 	enc.Encode(cfg)
+}
+
+// SaveTheme writes the current theme name to the user config file.
+func SaveTheme(themeName string) {
+	saveConfig(func(cfg *Config) {
+		cfg.Theme.Name = themeName
+	})
+}
+
+// SavePosition writes the current position (top/bottom) to the user config file.
+func SavePosition(top bool) {
+	pos := "bottom"
+	if top {
+		pos = "top"
+	}
+	saveConfig(func(cfg *Config) {
+		cfg.Window.Position = pos
+	})
 }
 
 func copyFile(src, dst string) error {
