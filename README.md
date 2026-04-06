@@ -69,8 +69,6 @@ Toggle visibility (bind to evsieve or hotkey):
 gamepad-osk --toggle
 ```
 
-If building from source, the `install` commands above place the service file for you.
-
 ## Usage
 
 ```
