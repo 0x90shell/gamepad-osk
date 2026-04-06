@@ -118,13 +118,8 @@ See `config.toml` for all options including button remapping, stick assignments,
 ## Systemd User Service
 
 ```bash
-# Copy the service file
-mkdir -p ~/.config/systemd/user
-cp /usr/share/gamepad-osk/gamepad-osk.service ~/.config/systemd/user/
-
 # Enable and start
-systemctl --user enable gamepad-osk
-systemctl --user start gamepad-osk
+systemctl --user enable --now gamepad-osk
 
 # Toggle visibility (bind to evsieve or hotkey)
 gamepad-osk --toggle
