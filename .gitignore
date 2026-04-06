@@ -3,3 +3,4 @@ gamepad-osk
 *.a
 __pycache__/
 *.pyc
+gamepad_osk-poc/
