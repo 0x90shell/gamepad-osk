@@ -98,10 +98,15 @@ See `config.toml` for all options including button remapping, stick assignments,
 | | | |
 |---|---|---|
 | ![terminal](assets/terminal.png) | ![synthwave](assets/synthwave.png) | ![tokyo_dark](assets/tokyo_dark.png) |
-| ![neon](assets/neon.png) | ![retro](assets/retro.png) | ![candy](assets/candy.png) |
-| ![ocean](assets/ocean.png) | ![solarized](assets/solarized.png) | ![material](assets/material.png) |
-| ![chalk](assets/chalk.png) | ![fjord](assets/fjord.png) | ![sand](assets/sand.png) |
-| ![moss](assets/moss.png) | ![sakura](assets/sakura.png) | ![paper](assets/paper.png) |
+| ![dracula](assets/dracula.png) | ![neon](assets/neon.png) | ![retro](assets/retro.png) |
+| ![candy](assets/candy.png) | ![ocean](assets/ocean.png) | ![solarized](assets/solarized.png) |
+| ![solarized_light](assets/solarized_light.png) | ![material](assets/material.png) | ![monokai](assets/monokai.png) |
+| ![rose_pine](assets/rose_pine.png) | ![ayu_dark](assets/ayu_dark.png) | ![everforest](assets/everforest.png) |
+| ![nightfox](assets/nightfox.png) | ![midnight](assets/midnight.png) | ![cyberpunk](assets/cyberpunk.png) |
+| ![ember](assets/ember.png) | ![gold](assets/gold.png) | ![mellow](assets/mellow.png) |
+| ![sakura](assets/sakura.png) | ![paper](assets/paper.png) | ![virtualboy](assets/virtualboy.png) |
+| ![zx_spectrum](assets/zx_spectrum.png) | ![chalk](assets/chalk.png) | ![fjord](assets/fjord.png) |
+| ![sand](assets/sand.png) | ![plum](assets/plum.png) | ![moss](assets/moss.png) |
 
 ## Systemd User Service
 
