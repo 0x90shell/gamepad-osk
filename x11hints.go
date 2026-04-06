@@ -76,16 +76,19 @@ import "C"
 
 import (
 	"log"
-	"os"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-var hasX11 = os.Getenv("DISPLAY") != ""
+var hasX11 bool
 
-func init() {
+func initX11Detection() {
+	// Check after SDL init: if the video driver is wayland, skip X11 hints.
+	// XWayland (SDL using x11 backend inside Sway) still needs X11 hints.
+	driver, _ := sdl.GetCurrentVideoDriver()
+	hasX11 = driver == "x11"
 	if !hasX11 {
-		log.Printf("Wayland detected, skipping X11 window hints")
+		log.Printf("Video driver: %s, skipping X11 window hints", driver)
 	}
 }
 

@@ -151,7 +151,14 @@ If using evsieve, set `grab = false` in config and let evsieve handle routing.
 
 ## Wayland
 
-The keyboard works on Wayland (input and key injection are kernel-level via evdev/uinput). However, window positioning and always-on-top require compositor-specific rules since Wayland has no universal API for these.
+Tested on Sway. Input, rendering, key injection, mouse cursor, and key repeat all work natively. The binary auto-detects Wayland and uses the native backend (no XWayland).
+
+Window positioning and always-on-top require compositor rules — Wayland has no client-side API for these. The top/bottom toggle (Start) is a no-op on Wayland.
+
+**Sway** (`~/.config/sway/config`):
+```
+for_window [app_id="gamepad-osk"] floating enable, sticky enable, move position center, move down 300
+```
 
 **Hyprland** (`~/.config/hypr/hyprland.conf`):
 ```
@@ -161,12 +168,11 @@ windowrulev2 = nofocus, class:^(gamepad-osk)$
 windowrulev2 = move 50%-w/2 100%-h-20, class:^(gamepad-osk)$
 ```
 
-**Sway** (`~/.config/sway/config`):
-```
-for_window [app_id="gamepad-osk"] floating enable, sticky enable, move position center, move down 300
-```
-
-On Wayland the keyboard may not appear in the exact bottom-center position by default — the compositor rules above handle positioning.
+**Known Wayland limitations:**
+- Window position set by compositor, not the app
+- Top/bottom toggle (Start) has no effect
+- Always-on-top not supported (window can be covered by other windows)
+- Multi-monitor placement is compositor-dependent
 
 ## License
 

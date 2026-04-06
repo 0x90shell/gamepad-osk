@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -54,10 +55,17 @@ func (app *App) Run() error {
 	// Build dynamic glyph map from button config
 	KeyGlyphs = BuildKeyGlyphs(cfg.Gamepad)
 
+	// Prefer native Wayland over XWayland when running in a Wayland session
+	if os.Getenv("WAYLAND_DISPLAY") != "" && os.Getenv("SDL_VIDEODRIVER") == "" {
+		os.Setenv("SDL_VIDEODRIVER", "wayland")
+	}
+
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_GAMECONTROLLER); err != nil {
 		return err
 	}
 	defer sdl.Quit()
+
+	initX11Detection()
 
 	// Get primary monitor
 	mon := GetPrimaryMonitor()
@@ -79,6 +87,10 @@ func (app *App) Run() error {
 	}
 
 	SaveFocusedWindow()
+
+	// Set Wayland app_id so compositor rules can target this window
+	sdl.SetHint("SDL_APP_ID", "gamepad-osk")
+	os.Setenv("SDL_APP_ID", "gamepad-osk")
 
 	window, err := sdl.CreateWindow("gamepad-osk",
 		x, y, width, height,
