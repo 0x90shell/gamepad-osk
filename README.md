@@ -13,8 +13,9 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Xbox 360 pad auto-detection (swap_xy quirk handled automatically)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
-- Mouse cursor via right stick + LB/RB click (hold to drag)
-- Shift layer, Caps Lock, accent popup (long-press on vowels)
+- Mouse cursor via right stick + R3/RB click (hold to drag)
+- Key repeat on hold (configurable delay and rate)
+- Shift layer, Caps Lock, accent popup (Shift + hold on vowels)
 - Paste/Copy key, media keys (Play/Pause, Mute)
 - Always-on-top, no focus stealing (types into whatever app has focus)
 - Multi-monitor aware (positions on primary monitor)
@@ -86,17 +87,18 @@ gamepad-osk --help                   # show all options
 |-------|--------|
 | Left stick / D-pad | Navigate keyboard |
 | Right stick | Move mouse cursor |
-| A | Press highlighted key |
+| A | Press highlighted key (hold to repeat) |
 | B | Close keyboard |
-| X | Backspace |
-| Y | Space |
+| X | Backspace (hold to repeat) |
+| Y | Space (hold to repeat) |
 | LT (hold) | Shift |
-| RT | Enter |
+| RT | Enter (hold to repeat) |
 | RB | Left mouse click (hold to drag) |
 | LB | Right mouse click |
-| L3 (stick click) | Caps Lock |
+| Mouse stick click (R3) | Left mouse click |
+| Nav stick click (L3) | Caps Lock |
 | Start | Toggle keyboard top/bottom |
-| Long-press A | Accent popup (on vowels) |
+| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
 
 ## Configuration
@@ -109,7 +111,7 @@ Config is loaded from (first found):
 
 A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
 
-See `config.toml` for all options including button remapping, stick assignments, theme, scale, opacity, and deadzone.
+See `config.toml` for all options including button remapping, mouse stick, theme, scale, opacity, and deadzone.
 
 ## Themes
 

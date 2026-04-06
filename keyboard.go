@@ -171,16 +171,11 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	// Arrow shift: Left→Up, Right→Down
 	code := key.Code
-	if shiftOn && key.Code == KEY_LEFT {
-		code = KEY_UP
-	} else if shiftOn && key.Code == KEY_RIGHT {
-		code = KEY_DOWN
-	}
 
 	var mods []int
-	if shiftOn && code != KEY_UP && code != KEY_DOWN && code != KEY_LEFT && code != KEY_RIGHT {
+	if shiftOn && code != KEY_UP && code != KEY_DOWN && code != KEY_LEFT && code != KEY_RIGHT &&
+		code != KEY_ESC && code != KEY_DELETE {
 		mods = append(mods, KEY_LEFTSHIFT)
 	}
 	if kb.CtrlActive {

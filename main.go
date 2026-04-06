@@ -106,13 +106,13 @@ func buttonLabel(name string) string {
 
 func printHelp(cfg Config) {
 	b := cfg.Gamepad.Buttons
-	nav := cfg.Gamepad.NavStick
 	mouse := cfg.Gamepad.MouseStick
-	if nav == "" {
-		nav = "left"
-	}
 	if mouse == "" {
 		mouse = "right"
+	}
+	nav := "left"
+	if mouse == "left" {
+		nav = "right"
 	}
 
 	fmt.Printf(`gamepad-osk — Gamepad-controlled on-screen keyboard for Linux
@@ -134,19 +134,20 @@ DEVICE PRIORITY
   3. Auto-detect from /proc/bus/input/devices
 
 CONTROLS (from config)
-  %s stick / D-pad     Navigate keyboard
-  %s stick             Move mouse cursor
-  %-20s Press highlighted key
-  %-20s Close keyboard
-  %-20s Backspace
-  %-20s Space
-  %-20s Shift
-  %-20s Enter
-  %-20s Left mouse click (hold to drag)
-  %-20s Right mouse click
-  %-20s Caps Lock
-  %-20s Toggle keyboard top/bottom
-  Long-press A           Accent popup (on vowels)
+  %-24s Navigate keyboard
+  %-24s Move mouse cursor
+  %-24s Press highlighted key (hold to repeat)
+  %-24s Close keyboard
+  %-24s Backspace (hold to repeat)
+  %-24s Space (hold to repeat)
+  %-24s Shift
+  %-24s Enter (hold to repeat)
+  %-24s Left mouse click (hold to drag)
+  %-24s Right mouse click
+  %-24s Left mouse click
+  %-24s Caps Lock
+  %-24s Toggle keyboard top/bottom
+  %-24s Accent popup (on vowels: é, ñ, ü)
 
 THEMES
   %s
@@ -159,12 +160,16 @@ REQUIREMENTS
   Runtime: sdl2, sdl2_ttf, ttf-promptfont (AUR)
   User must be in 'input' group for key injection
 `,
-		strings.ToUpper(nav[:1])+nav[1:], strings.ToUpper(mouse[:1])+mouse[1:],
+		strings.ToUpper(nav[:1])+nav[1:]+" stick / D-pad",
+		strings.ToUpper(mouse[:1])+mouse[1:]+" stick",
 		buttonLabel(b.Press), buttonLabel(b.Close),
 		buttonLabel(b.Backspace), buttonLabel(b.Space),
 		buttonLabel(b.Shift), buttonLabel(b.Enter),
 		buttonLabel(b.LeftClick), buttonLabel(b.RightClick),
-		buttonLabel(b.Caps), buttonLabel(b.PositionToggle),
+		strings.ToUpper(mouse[:1])+mouse[1:]+" stick click",
+		strings.ToUpper(nav[:1])+nav[1:]+" stick click",
+		buttonLabel(b.PositionToggle),
+		"Shift + hold A",
 		availableThemes())
 }
 

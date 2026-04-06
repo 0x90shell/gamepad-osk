@@ -23,6 +23,8 @@ const (
 	BTN_WEST   = 0x134 // 308 — Xbox X/Y (varies!)
 	BTN_TL     = 0x136 // 310 — LB/L1
 	BTN_TR     = 0x137 // 311 — RB/R1
+	BTN_TL2    = 0x138 // 312 — LT/L2 (digital, Switch Pro)
+	BTN_TR2    = 0x139 // 313 — RT/R2 (digital, Switch Pro)
 	BTN_THUMBL = 0x13d // 317 — L3
 	BTN_THUMBR = 0x13e // 318 — R3
 
@@ -58,6 +60,10 @@ const (
 	ActionRightClick
 	ActionRightClickRelease
 	ActionPositionToggle
+	ActionPressRepeat
+	ActionBackspaceRelease
+	ActionSpaceRelease
+	ActionEnterRelease
 )
 
 type Action struct {
@@ -112,14 +118,14 @@ func NewGamepadReader(config Config) *GamepadReader {
 		trigMax: 255,
 	}
 
-	// Configure stick assignments
-	nav := config.Gamepad.NavStick
-	if nav == "" || nav == "left" {
-		gp.navAxisX, gp.navAxisY = ABS_X, ABS_Y
-		gp.mouseAxisX, gp.mouseAxisY = ABS_RX, ABS_RY
-	} else {
-		gp.navAxisX, gp.navAxisY = ABS_RX, ABS_RY
+	// Configure stick assignments (mouse_stick sets mouse, other stick = nav)
+	mouse := config.Gamepad.MouseStick
+	if mouse == "left" {
 		gp.mouseAxisX, gp.mouseAxisY = ABS_X, ABS_Y
+		gp.navAxisX, gp.navAxisY = ABS_RX, ABS_RY
+	} else {
+		gp.mouseAxisX, gp.mouseAxisY = ABS_RX, ABS_RY
+		gp.navAxisX, gp.navAxisY = ABS_X, ABS_Y
 	}
 
 	return gp
@@ -398,8 +404,11 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 				if active && !gp.rtActive {
 					gp.rtActive = true
 					return Action{Type: action}
-				} else if !active {
+				} else if !active && gp.rtActive {
 					gp.rtActive = false
+					if releaseAction, ok := gp.actionMap.AxisRelease[code]; ok {
+						return Action{Type: releaseAction}
+					}
 				}
 			}
 		}

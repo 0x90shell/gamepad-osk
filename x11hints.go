@@ -32,15 +32,34 @@ void set_no_focus_hints(unsigned long window_id) {
     if (!dpy) return;
 
     Window win = (Window)window_id;
+    Window root = DefaultRootWindow(dpy);
 
-    // _NET_WM_STATE: above, skip_taskbar, skip_pager
     Atom wm_state = XInternAtom(dpy, "_NET_WM_STATE", False);
     Atom above = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
     Atom skip_tb = XInternAtom(dpy, "_NET_WM_STATE_SKIP_TASKBAR", False);
     Atom skip_pg = XInternAtom(dpy, "_NET_WM_STATE_SKIP_PAGER", False);
+
+    // Set property for initial mapping
     Atom atoms[3] = {above, skip_tb, skip_pg};
     XChangeProperty(dpy, win, wm_state, XA_ATOM, 32, PropModeReplace,
                     (unsigned char*)atoms, 3);
+
+    // Send client messages for already-mapped windows (survives hide/show)
+    Atom state_atoms[3] = {above, skip_tb, skip_pg};
+    for (int i = 0; i < 3; i++) {
+        XEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.xclient.type = ClientMessage;
+        ev.xclient.window = win;
+        ev.xclient.message_type = wm_state;
+        ev.xclient.format = 32;
+        ev.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
+        ev.xclient.data.l[1] = state_atoms[i];
+        ev.xclient.data.l[2] = 0;
+        ev.xclient.data.l[3] = 1; // source: application
+        XSendEvent(dpy, root, False,
+                   SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+    }
 
     // WM_HINTS: input = False
     XWMHints hints;

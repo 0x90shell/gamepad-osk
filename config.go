@@ -35,10 +35,12 @@ type WindowConfig struct {
 }
 
 type KeysConfig struct {
-	UnitSize int `toml:"unit_size"`
-	Padding  int `toml:"padding"`
-	FontSize int `toml:"font_size"`
-	Scale    int `toml:"scale"` // percentage of screen width (30-100, default 70)
+	UnitSize      int `toml:"unit_size"`
+	Padding       int `toml:"padding"`
+	FontSize      int `toml:"font_size"`
+	Scale         int `toml:"scale"`          // percentage of screen width (30-100, default 70)
+	RepeatDelayMs int `toml:"repeat_delay_ms"` // ms before key repeat starts (default 400)
+	RepeatRateMs  int `toml:"repeat_rate_ms"`  // ms between repeats (default 80)
 }
 
 type ButtonsConfig struct {
@@ -46,7 +48,6 @@ type ButtonsConfig struct {
 	Close      string `toml:"close"`
 	Backspace  string `toml:"backspace"`
 	Space      string `toml:"space"`
-	Caps       string `toml:"caps"`
 	Shift      string `toml:"shift"`
 	Enter      string `toml:"enter"`
 	LeftClick      string `toml:"left_click"`
@@ -61,8 +62,7 @@ type GamepadConfig struct {
 	Deadzone    float64       `toml:"deadzone"`
 	LongPressMs int           `toml:"long_press_ms"`
 	SwapXY      string        `toml:"swap_xy"`     // "auto", "true", "false"
-	NavStick    string        `toml:"nav_stick"`    // "left" or "right"
-	MouseStick  string        `toml:"mouse_stick"`  // "left" or "right"
+	MouseStick  string        `toml:"mouse_stick"`  // "left" or "right" (nav uses the other stick)
 	Buttons     ButtonsConfig `toml:"buttons"`
 }
 
@@ -75,20 +75,18 @@ func DefaultConfig() Config {
 	return Config{
 		Theme:  ThemeConfig{Name: "dark"},
 		Window: WindowConfig{Position: "bottom", BottomMargin: 20, Opacity: 0.95},
-		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 70},
+		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 70, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
 			Grab:        true,
 			Deadzone:    0.25,
 			LongPressMs: 500,
 			SwapXY:      "auto",
-			NavStick:    "left",
 			MouseStick:  "right",
 			Buttons: ButtonsConfig{
 				Press:      "a",
 				Close:      "b",
 				Backspace:  "x",
 				Space:      "y",
-				Caps:       "l3",
 				Shift:      "lt",
 				Enter:      "rt",
 				LeftClick:      "rb",
@@ -232,5 +230,13 @@ func ValidateConfig(cfg *Config) {
 	if _, ok := Themes[cfg.Theme.Name]; !ok {
 		log.Printf("Warning: unknown theme %q, using dark", cfg.Theme.Name)
 		cfg.Theme.Name = "dark"
+	}
+	if cfg.Keys.RepeatDelayMs < 100 || cfg.Keys.RepeatDelayMs > 2000 {
+		log.Printf("Warning: repeat_delay_ms %d out of range [100,2000], using 400", cfg.Keys.RepeatDelayMs)
+		cfg.Keys.RepeatDelayMs = 400
+	}
+	if cfg.Keys.RepeatRateMs < 20 || cfg.Keys.RepeatRateMs > 500 {
+		log.Printf("Warning: repeat_rate_ms %d out of range [20,500], using 80", cfg.Keys.RepeatRateMs)
+		cfg.Keys.RepeatRateMs = 80
 	}
 }

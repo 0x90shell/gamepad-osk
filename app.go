@@ -4,6 +4,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -29,6 +30,12 @@ type App struct {
 	mon      MonitorRect
 	winH     int32
 	margin   int32
+
+	// Key repeat state
+	repeatAction   ActionType // action to repeat (ActionNone = inactive)
+	repeatStart    time.Time  // when key was first pressed
+	repeatLast     time.Time  // when last repeat fired
+	repeatInitial  bool       // true = still in initial delay phase
 }
 
 func NewApp(config Config) *App {
@@ -75,7 +82,7 @@ func (app *App) Run() error {
 
 	window, err := sdl.CreateWindow("gamepad-osk",
 		x, y, width, height,
-		sdl.WINDOW_SHOWN|sdl.WINDOW_BORDERLESS|sdl.WINDOW_ALWAYS_ON_TOP)
+		sdl.WINDOW_HIDDEN|sdl.WINDOW_BORDERLESS|sdl.WINDOW_ALWAYS_ON_TOP)
 	if err != nil {
 		return err
 	}
@@ -165,6 +172,15 @@ func (app *App) Run() error {
 
 	app.running = true
 
+	// Show window after everything is initialized (avoids ghost frame)
+	if app.visible {
+		rend.Draw(kb) // render first frame before showing
+		window.Show()
+		window.Raise()
+		SetNoFocusHints(window) // re-apply hints after show (always-on-top lost when created hidden)
+		RestoreFocus()
+	}
+
 	for app.running {
 		// Handle toggle
 		app.lock.Lock()
@@ -174,7 +190,10 @@ func (app *App) Run() error {
 			if app.visible {
 				window.Show()
 				window.Raise()
+				SetNoFocusHints(window)
+				RestoreFocus()
 			} else {
+				app.stopRepeat()
 				window.Hide()
 			}
 		}
@@ -196,6 +215,22 @@ func (app *App) Run() error {
 		// Long-press check
 		kb.CheckLongPress(cfg.Gamepad.LongPressMs)
 
+		// Key repeat check
+		if app.repeatAction != ActionNone {
+			now := time.Now()
+			elapsed := now.Sub(app.repeatStart).Milliseconds()
+			if app.repeatInitial {
+				if elapsed >= int64(cfg.Keys.RepeatDelayMs) {
+					app.handleAction(Action{Type: app.repeatAction}, kb, inj, rend)
+					app.repeatLast = now
+					app.repeatInitial = false
+				}
+			} else if now.Sub(app.repeatLast).Milliseconds() >= int64(cfg.Keys.RepeatRateMs) {
+				app.handleAction(Action{Type: app.repeatAction}, kb, inj, rend)
+				app.repeatLast = now
+			}
+		}
+
 		// Render
 		if app.visible {
 			rend.Draw(kb)
@@ -207,31 +242,66 @@ func (app *App) Run() error {
 }
 
 func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *Renderer) {
+	// Block all input when keyboard is hidden
+	if !app.visible {
+		return
+	}
+
 	switch a.Type {
 	case ActionNavigate:
 		kb.Navigate(a.DX, a.DY)
+		app.stopRepeat()
 	case ActionPress:
-		kb.PressCurrent(inj)
+		// A button released
+		if app.repeatAction != ActionNone {
+			// Was repeating — just stop, don't fire again
+			app.stopRepeat()
+		} else if kb.AccentPopup != nil {
+			// Accent popup is showing — select accent
+			kb.PressCurrent(inj)
+		} else {
+			// Vowel short-press or modifier — fire on release
+			kb.PressCurrent(inj)
+		}
 		kb.CancelLongPress()
 	case ActionPressStart:
-		kb.StartLongPress()
+		key := kb.CurrentKey()
+		if len(key.Accents) > 0 && kb.ShiftActive {
+			// Shift(LT)+hold on vowel — accent popup
+			kb.StartLongPress()
+		} else if !key.IsModifier && key.Label != "Cfg" && key.Label != "Paste" &&
+			len(key.Combo) == 0 && key.ShiftCode == 0 && key.Label != "Esc" {
+			// Repeatable key — fire immediately and start repeat
+			kb.PressCurrent(inj)
+			app.startRepeat(ActionPressRepeat)
+		}
+		// Non-repeatable keys (shortcuts, Esc, Cfg, Paste, modifiers) fire on release via ActionPress
+	case ActionPressRepeat:
+		kb.PressCurrent(inj)
 	case ActionBackspace:
 		inj.PressKey(KEY_BACKSPACE, nil)
 		kb.FlashKey(KEY_BACKSPACE)
+		app.startRepeat(ActionBackspace)
+	case ActionBackspaceRelease:
+		app.stopRepeat()
 	case ActionSpace:
 		inj.PressKey(KEY_SPACE, nil)
 		kb.FlashKey(KEY_SPACE)
+		app.startRepeat(ActionSpace)
+	case ActionSpaceRelease:
+		app.stopRepeat()
 	case ActionEnter:
 		inj.PressKey(KEY_ENTER, nil)
 		kb.FlashKey(KEY_ENTER)
+		app.startRepeat(ActionEnter)
+	case ActionEnterRelease:
+		app.stopRepeat()
 	case ActionShiftOn:
 		kb.ShiftActive = true
 	case ActionShiftOff:
 		kb.ShiftActive = false
 	case ActionCapsToggle:
 		kb.CapsActive = !kb.CapsActive
-	case ActionClose:
-		app.running = false
 	case ActionMouseMove:
 		inj.MoveMouse(a.DX, a.DY)
 	case ActionLeftClick:
@@ -255,5 +325,23 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		}
 		app.window.SetPosition(x, newY)
 		SavePosition(app.posTop)
+	case ActionClose:
+		app.stopRepeat()
+		app.running = false
+		return
 	}
+}
+
+func (app *App) startRepeat(action ActionType) {
+	// Don't restart repeat if already repeating this action (called from repeat loop)
+	if app.repeatAction == action {
+		return
+	}
+	app.repeatAction = action
+	app.repeatStart = time.Now()
+	app.repeatInitial = true
+}
+
+func (app *App) stopRepeat() {
+	app.repeatAction = ActionNone
 }
