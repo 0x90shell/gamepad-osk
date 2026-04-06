@@ -52,7 +52,24 @@ cd gamepad-osk
 go build -o gamepad-osk .
 sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
 sudo install -Dm644 config.toml /usr/share/gamepad-osk/config.toml
+sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
 ```
+
+## Systemd User Service
+
+AUR packages install the service file automatically. To enable:
+
+```bash
+systemctl --user enable --now gamepad-osk
+```
+
+Toggle visibility (bind to evsieve or hotkey):
+
+```bash
+gamepad-osk --toggle
+```
+
+If building from source, the `install` commands above place the service file for you.
 
 ## Usage
 
@@ -114,16 +131,6 @@ See `config.toml` for all options including button remapping, stick assignments,
 | ![sakura](assets/sakura.png) | ![paper](assets/paper.png) | ![virtualboy](assets/virtualboy.png) |
 | ![zx_spectrum](assets/zx_spectrum.png) | ![chalk](assets/chalk.png) | ![fjord](assets/fjord.png) |
 | ![sand](assets/sand.png) | ![plum](assets/plum.png) | ![moss](assets/moss.png) |
-
-## Systemd User Service
-
-```bash
-# Enable and start
-systemctl --user enable --now gamepad-osk
-
-# Toggle visibility (bind to evsieve or hotkey)
-gamepad-osk --toggle
-```
 
 ## Evsieve Integration
 
