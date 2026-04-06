@@ -37,6 +37,12 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 yay -S gamepad-osk-git
 ```
 
+To auto-update `-git` packages when upstream changes, enable devel checking:
+
+```bash
+yay --devel --save
+```
+
 ### From source
 
 ```bash
