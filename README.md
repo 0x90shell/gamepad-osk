@@ -4,7 +4,7 @@ Gamepad-controlled on-screen keyboard for Linux. Designed for couch gaming, Suns
 
 No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
-![gamepad-osk](assets/hero-matrix.png)
+![gamepad-osk](assets/matrix-hero.png)
 
 ## Features
 
@@ -46,6 +46,13 @@ yay --devel --save
 ```
 
 ### From source
+
+Install dependencies first:
+
+```bash
+sudo pacman -S sdl2 sdl2_ttf go libx11    # build + runtime deps
+yay -S ttf-promptfont                       # AUR: controller button glyphs
+```
 
 ```bash
 git clone https://github.com/0x90shell/gamepad-osk.git
@@ -120,17 +127,27 @@ See `config.toml` for all options including button remapping, mouse stick, theme
 `ayu_dark` `candy` `catppuccin` `catppuccin_frappe` `cga` `chalk` `cobalt` `copper` `coral` `cyberpunk` `dark` `dracula` `ember` `everforest` `fjord` `forest` `gameboy` `gold` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `lavender` `material` `matrix` `mellow` `midnight` `monokai` `moss` `navy` `neon` `nightfox` `nord` `ocean` `olive` `onedark` `oxocarbon` `palenight` `paper` `plum` `retro` `rose_pine` `sakura` `sand` `slate` `solarized` `solarized_light` `steam_green` `sunset` `synthwave` `teal` `terminal` `tokyo_night` `tokyo_storm` `vapor` `virtualboy` `wine` `zx_spectrum`
 
 | | | |
-|---|---|---|
-| ![terminal](assets/terminal.png) | ![synthwave](assets/synthwave.png) | ![tokyo_dark](assets/tokyo_dark.png) |
-| ![dracula](assets/dracula.png) | ![neon](assets/neon.png) | ![retro](assets/retro.png) |
-| ![candy](assets/candy.png) | ![ocean](assets/ocean.png) | ![solarized](assets/solarized.png) |
-| ![solarized_light](assets/solarized_light.png) | ![material](assets/material.png) | ![monokai](assets/monokai.png) |
-| ![rose_pine](assets/rose_pine.png) | ![ayu_dark](assets/ayu_dark.png) | ![everforest](assets/everforest.png) |
-| ![nightfox](assets/nightfox.png) | ![midnight](assets/midnight.png) | ![cyberpunk](assets/cyberpunk.png) |
-| ![ember](assets/ember.png) | ![gold](assets/gold.png) | ![mellow](assets/mellow.png) |
-| ![sakura](assets/sakura.png) | ![paper](assets/paper.png) | ![virtualboy](assets/virtualboy.png) |
-| ![zx_spectrum](assets/zx_spectrum.png) | ![chalk](assets/chalk.png) | ![fjord](assets/fjord.png) |
-| ![sand](assets/sand.png) | ![plum](assets/plum.png) | ![moss](assets/moss.png) |
+|:---:|:---:|:---:|
+| ![ayu_dark](assets/ayu_dark.png)<br><sub>ayu_dark</sub> | ![candy](assets/candy.png)<br><sub>candy</sub> | ![catppuccin](assets/catppuccin.png)<br><sub>catppuccin</sub> |
+| ![catppuccin_frappe](assets/catppuccin_frappe.png)<br><sub>catppuccin_frappe</sub> | ![cga](assets/cga.png)<br><sub>cga</sub> | ![chalk](assets/chalk.png)<br><sub>chalk</sub> |
+| ![cobalt](assets/cobalt.png)<br><sub>cobalt</sub> | ![copper](assets/copper.png)<br><sub>copper</sub> | ![coral](assets/coral.png)<br><sub>coral</sub> |
+| ![cyberpunk](assets/cyberpunk.png)<br><sub>cyberpunk</sub> | ![dark](assets/dark.png)<br><sub>dark</sub> | ![dracula](assets/dracula.png)<br><sub>dracula</sub> |
+| ![ember](assets/ember.png)<br><sub>ember</sub> | ![everforest](assets/everforest.png)<br><sub>everforest</sub> | ![fjord](assets/fjord.png)<br><sub>fjord</sub> |
+| ![forest](assets/forest.png)<br><sub>forest</sub> | ![gameboy](assets/gameboy.png)<br><sub>gameboy</sub> | ![gold](assets/gold.png)<br><sub>gold</sub> |
+| ![gotham](assets/gotham.png)<br><sub>gotham</sub> | ![gruvbox](assets/gruvbox.png)<br><sub>gruvbox</sub> | ![high_contrast](assets/high_contrast.png)<br><sub>high_contrast</sub> |
+| ![horizon](assets/horizon.png)<br><sub>horizon</sub> | ![ice](assets/ice.png)<br><sub>ice</sub> | ![kanagawa](assets/kanagawa.png)<br><sub>kanagawa</sub> |
+| ![lavender](assets/lavender.png)<br><sub>lavender</sub> | ![material](assets/material.png)<br><sub>material</sub> | ![matrix](assets/matrix.png)<br><sub>matrix</sub> |
+| ![mellow](assets/mellow.png)<br><sub>mellow</sub> | ![midnight](assets/midnight.png)<br><sub>midnight</sub> | ![monokai](assets/monokai.png)<br><sub>monokai</sub> |
+| ![moss](assets/moss.png)<br><sub>moss</sub> | ![navy](assets/navy.png)<br><sub>navy</sub> | ![neon](assets/neon.png)<br><sub>neon</sub> |
+| ![nightfox](assets/nightfox.png)<br><sub>nightfox</sub> | ![nord](assets/nord.png)<br><sub>nord</sub> | ![ocean](assets/ocean.png)<br><sub>ocean</sub> |
+| ![olive](assets/olive.png)<br><sub>olive</sub> | ![onedark](assets/onedark.png)<br><sub>onedark</sub> | ![oxocarbon](assets/oxocarbon.png)<br><sub>oxocarbon</sub> |
+| ![palenight](assets/palenight.png)<br><sub>palenight</sub> | ![paper](assets/paper.png)<br><sub>paper</sub> | ![plum](assets/plum.png)<br><sub>plum</sub> |
+| ![retro](assets/retro.png)<br><sub>retro</sub> | ![rose_pine](assets/rose_pine.png)<br><sub>rose_pine</sub> | ![sakura](assets/sakura.png)<br><sub>sakura</sub> |
+| ![sand](assets/sand.png)<br><sub>sand</sub> | ![slate](assets/slate.png)<br><sub>slate</sub> | ![solarized](assets/solarized.png)<br><sub>solarized</sub> |
+| ![solarized_light](assets/solarized_light.png)<br><sub>solarized_light</sub> | ![steam_green](assets/steam_green.png)<br><sub>steam_green</sub> | ![sunset](assets/sunset.png)<br><sub>sunset</sub> |
+| ![synthwave](assets/synthwave.png)<br><sub>synthwave</sub> | ![teal](assets/teal.png)<br><sub>teal</sub> | ![terminal](assets/terminal.png)<br><sub>terminal</sub> |
+| ![tokyo_night](assets/tokyo_night.png)<br><sub>tokyo_night</sub> | ![tokyo_storm](assets/tokyo_storm.png)<br><sub>tokyo_storm</sub> | ![vapor](assets/vapor.png)<br><sub>vapor</sub> |
+| ![virtualboy](assets/virtualboy.png)<br><sub>virtualboy</sub> | ![wine](assets/wine.png)<br><sub>wine</sub> | ![zx_spectrum](assets/zx_spectrum.png)<br><sub>zx_spectrum</sub> |
 
 ## Evsieve Integration
 
