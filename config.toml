@@ -3,7 +3,7 @@ name = "terminal"        # See --help for full list (60 themes)
 
 [window]
 position = "bottom"      # "bottom" or "top"
-bottom_margin = 20
+margin = 20
 opacity = 0.95           # 0.0-1.0 (1.0 = fully opaque)
 
 [keys]

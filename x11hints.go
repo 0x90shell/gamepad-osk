@@ -27,6 +27,37 @@ void restore_focus() {
     XCloseDisplay(dpy);
 }
 
+// Get _NET_WORKAREA from root window. Returns 1 on success, 0 on failure.
+// out_x, out_y, out_w, out_h are the usable desktop area (excludes panels).
+int get_workarea(int *out_x, int *out_y, int *out_w, int *out_h) {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return 0;
+
+    Window root = DefaultRootWindow(dpy);
+    Atom wa = XInternAtom(dpy, "_NET_WORKAREA", True);
+    if (wa == None) { XCloseDisplay(dpy); return 0; }
+
+    Atom type_ret;
+    int fmt_ret;
+    unsigned long nitems, bytes_left;
+    unsigned char *data = NULL;
+    if (XGetWindowProperty(dpy, root, wa, 0, 4, False, XA_CARDINAL,
+            &type_ret, &fmt_ret, &nitems, &bytes_left, &data) != Success
+            || nitems < 4 || data == NULL) {
+        if (data) XFree(data);
+        XCloseDisplay(dpy);
+        return 0;
+    }
+    long *vals = (long *)data;
+    *out_x = (int)vals[0];
+    *out_y = (int)vals[1];
+    *out_w = (int)vals[2];
+    *out_h = (int)vals[3];
+    XFree(data);
+    XCloseDisplay(dpy);
+    return 1;
+}
+
 void set_no_focus_hints(unsigned long window_id) {
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return;
@@ -76,8 +107,6 @@ import "C"
 
 import (
 	"log"
-
-	"github.com/veandco/go-sdl2/sdl"
 )
 
 var hasX11 bool
@@ -85,7 +114,7 @@ var hasX11 bool
 func initX11Detection() {
 	// Check after SDL init: if the video driver is wayland, skip X11 hints.
 	// XWayland (SDL using x11 backend inside Sway) still needs X11 hints.
-	driver, _ := sdl.GetCurrentVideoDriver()
+	driver := SDL3GetCurrentVideoDriver()
 	hasX11 = driver == "x11"
 	if !hasX11 {
 		log.Printf("Video driver: %s, skipping X11 window hints", driver)
@@ -106,19 +135,32 @@ func RestoreFocus() {
 	C.restore_focus()
 }
 
-func SetNoFocusHints(window *sdl.Window) {
+// GetWorkarea returns the usable desktop area from _NET_WORKAREA (excludes panels).
+// Returns zero rect if not available (Wayland, or WM doesn't set it).
+func GetWorkarea() (x, y, w, h int32, ok bool) {
+	if !hasX11 {
+		return 0, 0, 0, 0, false
+	}
+	var cx, cy, cw, ch C.int
+	if C.get_workarea(&cx, &cy, &cw, &ch) == 0 {
+		return 0, 0, 0, 0, false
+	}
+	return int32(cx), int32(cy), int32(cw), int32(ch), true
+}
+
+func SetNoFocusHints(window *Window) {
 	if !hasX11 {
 		return
 	}
-	info, err := window.GetWMInfo()
-	if err != nil {
-		log.Printf("Warning: cannot get WM info: %v", err)
+	props := SDL3GetWindowProperties(window)
+	if props == 0 {
+		log.Printf("Warning: cannot get window properties")
 		return
 	}
-	x11 := info.GetX11Info()
-	if x11.Window == 0 {
+	xwin := SDL3GetNumberProperty(props, "SDL.window.x11.window")
+	if xwin == 0 {
 		log.Printf("Warning: no X11 window ID")
 		return
 	}
-	C.set_no_focus_hints(C.ulong(x11.Window))
+	C.set_no_focus_hints(C.ulong(xwin))
 }

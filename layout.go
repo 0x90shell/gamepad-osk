@@ -1,6 +1,6 @@
 package main
 
-// Linux evdev keycodes (from linux/input-event-codes.h)
+//nolint:revive // Match Linux evdev naming
 const (
 	KEY_ESC       = 1
 	KEY_1         = 2
@@ -108,9 +108,9 @@ type KeyDef struct {
 	ShiftCode int
 }
 
-func k(label string, code int, opts ...interface{}) KeyDef {
+func k(label string, code int, opts ...any) KeyDef {
 	kd := KeyDef{Label: label, Code: code, Width: 1.0}
-	for i := 0; i < len(opts); i++ {
+	for i := range opts {
 		switch v := opts[i].(type) {
 		case float64:
 			kd.Width = v
@@ -126,6 +126,8 @@ func k(label string, code int, opts ...interface{}) KeyDef {
 }
 
 // combo creates a key that sends modifier+code as default, with shift sending shiftCode
+//
+//nolint:unparam // width kept for API flexibility
 func combo(label string, code int, mods []int, shiftLabel string, shiftCode int, width float64) KeyDef {
 	return KeyDef{Label: label, Code: code, Width: width, ShiftLabel: shiftLabel,
 		Combo: mods, ShiftCode: shiftCode}

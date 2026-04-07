@@ -1,13 +1,12 @@
-package main
+package main //nolint:revive // main package needs no doc comment
 
 import (
 	"log"
 	"os"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/veandco/go-sdl2/sdl"
 )
 
 var themeOrder []string
@@ -27,9 +26,12 @@ type App struct {
 	lock          sync.Mutex
 	themeIdx int
 	posTop   bool // true = keyboard at top of screen
-	window   *sdl.Window
-	mon      MonitorRect
+	window   *Window
+	mon      MonitorRect // raw monitor bounds
+	posArea  MonitorRect // positioning area (workarea on X11, same as mon on Wayland)
 	winH     int32
+	winX     int32 // stored for re-apply after show
+	winY     int32
 	margin   int32
 
 	// Key repeat state
@@ -47,6 +49,10 @@ func NewApp(config Config) *App {
 }
 
 func (app *App) Run() error {
+	// SDL/OpenGL requires all calls from the same OS thread.
+	// go-sdl2 did this internally in sdl.Init(); we must do it explicitly.
+	runtime.LockOSThread()
+
 	cfg := app.config
 	ValidateConfig(&cfg)
 	layout := LayoutQWERTY
@@ -57,69 +63,110 @@ func (app *App) Run() error {
 
 	// Prefer native Wayland over XWayland when running in a Wayland session
 	if os.Getenv("WAYLAND_DISPLAY") != "" && os.Getenv("SDL_VIDEODRIVER") == "" {
-		os.Setenv("SDL_VIDEODRIVER", "wayland")
+		if err := os.Setenv("SDL_VIDEODRIVER", "wayland"); err != nil {
+			log.Printf("Warning: cannot set SDL_VIDEODRIVER: %v", err)
+		}
 	}
 
-	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_GAMECONTROLLER); err != nil {
+	if err := SDL3Init(SDL_INIT_VIDEO); err != nil {
 		return err
 	}
-	defer sdl.Quit()
+	defer SDL3Quit()
 
 	initX11Detection()
 
 	// Get primary monitor
 	mon := GetPrimaryMonitor()
 	unit := CalcUnitSize(layout, mon.W, cfg)
-	pad := int32(cfg.Keys.Padding)
+	pad := int32(cfg.Keys.Padding) //nolint:gosec // G115: padding fits in int32
 	statusH := max32(20, int32(float64(unit)*0.4))
 	width, height := CalcWindowSize(layout, unit, pad, statusH)
 	Debugf("Monitor: %dx%d+%d+%d, scale=%d%%, unit=%d, window=%dx%d",
 		mon.W, mon.H, mon.X, mon.Y, cfg.Keys.Scale, unit, width, height)
 
+	// Use workarea on X11 to avoid panels/taskbars; fall back to monitor bounds.
+	// Workarea spans all monitors — intersect with primary to get per-monitor area.
+	posArea := mon
+	if wx, wy, ww, wh, ok := GetWorkarea(); ok && ww > 0 && wh > 0 {
+		wa := MonitorRect{X: wx, Y: wy, W: ww, H: wh}
+		posArea = intersectRect(mon, wa)
+		Debugf("Workarea: %dx%d+%d+%d, monitor: %dx%d+%d+%d, effective: %dx%d+%d+%d",
+			ww, wh, wx, wy, mon.W, mon.H, mon.X, mon.Y,
+			posArea.W, posArea.H, posArea.X, posArea.Y)
+	}
+
 	// Position: center horizontally, top or bottom based on config
-	x := mon.X + (mon.W-width)/2
-	margin := int32(cfg.Window.BottomMargin)
+	x := posArea.X + (posArea.W-width)/2
+	margin := int32(cfg.Window.Margin) //nolint:gosec // G115: margin fits in int32
 	var y int32
 	if cfg.Window.Position == "top" {
-		y = mon.Y + margin
+		y = posArea.Y + margin
 	} else {
-		y = mon.Y + mon.H - height - margin
+		y = posArea.Y + posArea.H - height - margin
 	}
 
 	SaveFocusedWindow()
 
 	// Set Wayland app_id so compositor rules can target this window
-	sdl.SetHint("SDL_APP_ID", "gamepad-osk")
-	os.Setenv("SDL_APP_ID", "gamepad-osk")
-
-	window, err := sdl.CreateWindow("gamepad-osk",
-		x, y, width, height,
-		sdl.WINDOW_HIDDEN|sdl.WINDOW_BORDERLESS|sdl.WINDOW_ALWAYS_ON_TOP)
-	if err != nil {
-		return err
+	SDL3SetHint("SDL_APP_ID", "gamepad-osk")
+	if err := os.Setenv("SDL_APP_ID", "gamepad-osk"); err != nil {
+		log.Printf("Warning: cannot set SDL_APP_ID: %v", err)
 	}
-	defer window.Destroy()
-	window.SetPosition(x, y)
+
+	isWayland := os.Getenv("WAYLAND_DISPLAY") != ""
+	var window *Window
+	var err error
+	if isWayland {
+		// Wayland: create roleless surface + attach layer-shell overlay
+		window, err = createLayerShellWindow("gamepad-osk", width, height,
+			app.posTop, margin)
+		if err != nil {
+			return err
+		}
+	} else {
+		// X11: standard window with always-on-top
+		window, err = SDL3CreateWindow("gamepad-osk",
+			width, height,
+			SDL_WINDOW_HIDDEN|SDL_WINDOW_BORDERLESS|SDL_WINDOW_ALWAYS_ON_TOP)
+		if err != nil {
+			return err
+		}
+		SDL3SetWindowPosition(window, x, y)
+	}
+	defer func() {
+		destroyLayerSurface()
+		SDL3DestroyWindow(window)
+	}()
 
 	// Store for position toggling
 	app.window = window
 	app.mon = mon
+	app.posArea = posArea
 	app.winH = height
+	app.winX = x
+	app.winY = y
 	app.margin = margin
 	app.posTop = cfg.Window.Position == "top"
-	if cfg.Window.Opacity < 1.0 {
-		window.SetWindowOpacity(float32(cfg.Window.Opacity))
-	}
 
-	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
+	renderer, err := SDL3CreateRenderer(window)
 	if err != nil {
 		return err
 	}
-	defer renderer.Destroy()
+	defer SDL3DestroyRenderer(renderer)
+	SDL3SetRenderVSync(renderer, 1)
+	SDL3SetRenderDrawBlendMode(renderer, 1) // SDL_BLENDMODE_BLEND
+	Debugf("Renderer: %s", SDL3GetRendererName(renderer))
 
-	// Set X11 hints AFTER renderer init (sdl2-compat may reset properties)
-	SetNoFocusHints(window)
-	RestoreFocus()
+	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
+	if cfg.Window.Opacity < 1.0 {
+		SDL3SetWindowOpacity(window, float32(cfg.Window.Opacity))
+	}
+
+	// Set X11 hints AFTER renderer init (layer-shell handles this on Wayland)
+	if !hasLayerShell() {
+		SetNoFocusHints(window)
+		RestoreFocus()
+	}
 
 	rend, err := NewRenderer(renderer, theme, unit, pad)
 	if err != nil {
@@ -184,13 +231,21 @@ func (app *App) Run() error {
 
 	app.running = true
 
+	opacity := float32(cfg.Window.Opacity)
+
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
 		rend.Draw(kb) // render first frame before showing
-		window.Show()
-		window.Raise()
-		SetNoFocusHints(window) // re-apply hints after show (always-on-top lost when created hidden)
-		RestoreFocus()
+		SDL3ShowWindow(window)
+		if opacity < 1.0 {
+			SDL3SetWindowOpacity(window, opacity) // re-apply after show
+		}
+		if !hasLayerShell() {
+			SDL3SetWindowPosition(window, x, y) // re-apply position after show (WM may override on hidden windows)
+			SDL3RaiseWindow(window)
+			SetNoFocusHints(window) // re-apply hints after show (always-on-top lost when created hidden)
+			RestoreFocus()
+		}
 	}
 
 	for app.running {
@@ -200,21 +255,26 @@ func (app *App) Run() error {
 			app.togglePending = false
 			app.visible = !app.visible
 			if app.visible {
-				window.Show()
-				window.Raise()
-				SetNoFocusHints(window)
-				RestoreFocus()
+				SDL3ShowWindow(window)
+				if opacity < 1.0 {
+					SDL3SetWindowOpacity(window, opacity) // re-apply after show
+				}
+				if !hasLayerShell() {
+					SDL3SetWindowPosition(window, app.winX, app.winY)
+					SDL3RaiseWindow(window)
+					SetNoFocusHints(window)
+					RestoreFocus()
+				}
 			} else {
 				app.stopRepeat()
-				window.Hide()
+				SDL3HideWindow(window)
 			}
 		}
 		app.lock.Unlock()
 
-		// Process SDL2 window events
-		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
-			switch event.(type) {
-			case *sdl.QuitEvent:
+		// Process SDL3 window events
+		for evType, ok := SDL3PollEvent(); ok; evType, ok = SDL3PollEvent() {
+			if evType == SDL_EVENT_QUIT {
 				app.running = false
 			}
 		}
@@ -248,7 +308,7 @@ func (app *App) Run() error {
 			rend.Draw(kb)
 		}
 
-		sdl.Delay(16) // ~60fps
+		// vsync in SDL_RenderPresent handles frame pacing
 	}
 	return nil
 }
@@ -259,7 +319,8 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		return
 	}
 
-	switch a.Type {
+	switch a.Type { //nolint:exhaustive // ActionNone is filtered by caller
+
 	case ActionNavigate:
 		kb.Navigate(a.DX, a.DY)
 		app.stopRepeat()
@@ -268,11 +329,8 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		if app.repeatAction != ActionNone {
 			// Was repeating — just stop, don't fire again
 			app.stopRepeat()
-		} else if kb.AccentPopup != nil {
-			// Accent popup is showing — select accent
-			kb.PressCurrent(inj)
 		} else {
-			// Vowel short-press or modifier — fire on release
+			// Accent popup select, vowel short-press, or modifier — fire on release
 			kb.PressCurrent(inj)
 		}
 		kb.CancelLongPress()
@@ -326,16 +384,23 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		inj.ClickMouse(0x111, false) // BTN_RIGHT release
 	case ActionPositionToggle:
 		app.posTop = !app.posTop
-		x, _ := app.window.GetPosition()
-		var newY int32
 		if app.posTop {
-			newY = app.mon.Y + app.margin
 			rend.Flash("↑ TOP")
 		} else {
-			newY = app.mon.Y + app.mon.H - app.winH - app.margin
 			rend.Flash("↓ BOTTOM")
 		}
-		app.window.SetPosition(x, newY)
+		if hasLayerShell() {
+			repositionLayerSurface(app.posTop, app.margin, app.window)
+		} else {
+			var newY int32
+			if app.posTop {
+				newY = app.posArea.Y + app.margin
+			} else {
+				newY = app.posArea.Y + app.posArea.H - app.winH - app.margin
+			}
+			app.winY = newY
+			SDL3SetWindowPosition(app.window, app.winX, newY)
+		}
 		SavePosition(app.posTop)
 	case ActionClose:
 		app.stopRepeat()

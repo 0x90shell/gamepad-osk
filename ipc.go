@@ -19,8 +19,8 @@ func NewIPCServer(onCommand func(string)) *IPCServer {
 }
 
 func (s *IPCServer) Start() error {
-	os.Remove(sockPath)
-	l, err := net.Listen("unix", sockPath)
+	_ = os.Remove(sockPath)
+	l, err := net.Listen("unix", sockPath) //nolint:noctx // Unix socket, no context needed
 	if err != nil {
 		return err
 	}
@@ -45,24 +45,24 @@ func (s *IPCServer) listen() {
 			cmd := string(buf[:n])
 			s.onCommand(cmd)
 		}
-		conn.Close()
+		_ = conn.Close()
 	}
 }
 
 func (s *IPCServer) Stop() {
 	s.running = false
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
-	os.Remove(sockPath)
+	_ = os.Remove(sockPath)
 }
 
 func IPCSend(cmd string) bool {
-	conn, err := net.Dial("unix", sockPath)
+	conn, err := net.Dial("unix", sockPath) //nolint:noctx // Unix socket IPC, no context needed
 	if err != nil {
 		return false
 	}
-	defer conn.Close()
-	conn.Write([]byte(cmd))
+	defer func() { _ = conn.Close() }()
+	_, _ = conn.Write([]byte(cmd))
 	return true
 }

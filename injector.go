@@ -173,7 +173,7 @@ func (inj *Injector) writeEvent(evType uint16, code uint16, value int32) {
 	binary.LittleEndian.PutUint16(buf[16:], evType)
 	binary.LittleEndian.PutUint16(buf[18:], code)
 	binary.LittleEndian.PutUint32(buf[20:], uint32(value))
-	inj.fd.Write(buf[:])
+	_, _ = inj.fd.Write(buf[:])
 }
 
 func (inj *Injector) syn() {

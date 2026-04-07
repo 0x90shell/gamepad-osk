@@ -10,7 +10,7 @@ import (
 )
 
 // Debugf logs only when --verbose is set
-func Debugf(format string, args ...interface{}) {
+func Debugf(format string, args ...any) {
 	if Verbose {
 		log.Printf("[DEBUG] "+format, args...)
 	}
@@ -30,7 +30,8 @@ type ThemeConfig struct {
 
 type WindowConfig struct {
 	Position     string  `toml:"position"`     // "bottom" or "top"
-	BottomMargin int     `toml:"bottom_margin"`
+	Margin       int     `toml:"margin"`
+	BottomMargin int     `toml:"bottom_margin"` // deprecated, migrated to Margin
 	Opacity      float64 `toml:"opacity"`
 }
 
@@ -74,7 +75,7 @@ type MouseConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		Theme:  ThemeConfig{Name: "dark"},
-		Window: WindowConfig{Position: "bottom", BottomMargin: 20, Opacity: 0.95},
+		Window: WindowConfig{Position: "bottom", Margin: 20, Opacity: 0.95},
 		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 70, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
 			Grab:        true,
@@ -131,6 +132,15 @@ func LoadConfig() Config {
 		}
 	}
 
+	// Backward compat: migrate bottom_margin → margin
+	if cfg.Window.BottomMargin != 0 {
+		if cfg.Window.Margin == 0 {
+			cfg.Window.Margin = cfg.Window.BottomMargin
+		} else {
+			log.Printf("Warning: both 'margin' and deprecated 'bottom_margin' are set; using 'margin = %d'. Remove 'bottom_margin' from your config.", cfg.Window.Margin)
+		}
+	}
+
 	// Auto-copy: if no user config exists, copy from system/binary dir
 	userPath := UserConfigPath()
 	if _, err := os.Stat(userPath); os.IsNotExist(err) {
@@ -151,26 +161,30 @@ func LoadConfig() Config {
 func saveConfig(mutate func(*Config)) {
 	path := UserConfigPath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
 		log.Printf("Warning: cannot create config dir: %v", err)
 		return
 	}
 
 	cfg := DefaultConfig()
 	if _, err := os.Stat(path); err == nil {
-		toml.DecodeFile(path, &cfg)
+		if _, decErr := toml.DecodeFile(path, &cfg); decErr != nil { //nolint:gosec // G304: user config path
+			log.Printf("Warning: error reading config %s: %v", path, decErr)
+		}
 	}
 	mutate(&cfg)
 
-	f, err := os.Create(path)
+	f, err := os.Create(path) //nolint:gosec // G304: user config path
 	if err != nil {
 		log.Printf("Warning: cannot write config: %v", err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	enc := toml.NewEncoder(f)
-	enc.Encode(cfg)
+	if err := enc.Encode(cfg); err != nil {
+		log.Printf("Warning: cannot encode config: %v", err)
+	}
 }
 
 // SaveTheme writes the current theme name to the user config file.
@@ -192,19 +206,19 @@ func SavePosition(top bool) {
 }
 
 func copyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
 		return err
 	}
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // G304: user file path
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
+	defer func() { _ = in.Close() }()
+	out, err := os.Create(dst) //nolint:gosec // G304: user file path
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	_, err = io.Copy(out, in)
 	return err
 }

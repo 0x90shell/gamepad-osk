@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// evdev constants
+//nolint:revive // Match Linux evdev naming
 const (
 	evdevEV_KEY = 0x01
 	evdevEV_ABS = 0x03
@@ -94,6 +94,8 @@ type GamepadReader struct {
 	grabbed   bool
 	navX      NavAxis
 	navY      NavAxis
+	dpadX     NavAxis
+	dpadY     NavAxis
 	mouseX    float64
 	mouseY    float64
 	ltActive  bool
@@ -159,7 +161,7 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 		return false
 	}
 
-	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
 		log.Printf("Error opening %s: %v", path, err)
 		return false
@@ -193,7 +195,7 @@ func (gp *GamepadReader) getDeviceName(devPath string) string {
 	// Find the event handler matching our device path
 	eventName := devPath[strings.LastIndex(devPath, "/")+1:]
 	var name string
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, "N: Name=") {
 			name = strings.Trim(line[8:], "\"")
 		} else if strings.HasPrefix(line, "H: Handlers=") && strings.Contains(line, eventName) {
@@ -218,18 +220,19 @@ func (gp *GamepadReader) autoDetect() string {
 	}
 
 	var name, handler string
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "N: Name=") {
+	for line := range strings.SplitSeq(string(data), "\n") {
+		switch {
+		case strings.HasPrefix(line, "N: Name="):
 			name = strings.Trim(line[8:], "\"")
-		} else if strings.HasPrefix(line, "H: Handlers=") {
+		case strings.HasPrefix(line, "H: Handlers="):
 			handler = line[12:]
-		} else if line == "" && name != "" {
+		case line == "" && name != "":
 			// Check if this device has a js* handler (joystick)
 			if strings.Contains(handler, "js") {
-				for _, part := range strings.Fields(handler) {
+				for part := range strings.FieldsSeq(handler) {
 					if strings.HasPrefix(part, "event") {
 						path := "/dev/input/" + part
-						if _, err := os.Stat(path); err == nil {
+						if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: trusted /dev/input path
 							log.Printf("Auto-detected gamepad: %s (%s)", name, path)
 							return path
 						}
@@ -252,7 +255,7 @@ func (gp *GamepadReader) Grab() {
 	if gp.fd == nil || gp.grabbed {
 		return
 	}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 1)
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 1) //nolint:gosec // G115: fd fits in int
 	if errno != 0 {
 		log.Printf("Warning: could not grab device: %v", errno)
 	} else {
@@ -264,7 +267,7 @@ func (gp *GamepadReader) Ungrab() {
 	if gp.fd == nil || !gp.grabbed {
 		return
 	}
-	syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 0)
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 0)
 	gp.grabbed = false
 }
 
@@ -272,7 +275,7 @@ func (gp *GamepadReader) Fd() int {
 	if gp.fd == nil {
 		return -1
 	}
-	return int(gp.fd.Fd())
+	return int(gp.fd.Fd()) //nolint:gosec // G115: fd fits in int
 }
 
 func (gp *GamepadReader) ReadEvents() []Action {
@@ -284,25 +287,28 @@ func (gp *GamepadReader) ReadEvents() []Action {
 	var buf [24]byte
 
 	for {
-		n, err := syscall.Read(int(gp.fd.Fd()), buf[:])
+		n, err := syscall.Read(int(gp.fd.Fd()), buf[:]) //nolint:gosec // G115: fd fits in int
 		if n != 24 || err != nil {
 			break
 		}
 		evType := binary.LittleEndian.Uint16(buf[16:])
 		evCode := binary.LittleEndian.Uint16(buf[18:])
-		evValue := int32(binary.LittleEndian.Uint32(buf[20:]))
+		evValue := int32(binary.LittleEndian.Uint32(buf[20:])) //nolint:gosec // G115: evdev value fits in int32
 
 		if a := gp.handleEvent(evType, evCode, evValue); a.Type != ActionNone {
 			actions = append(actions, a)
 		}
 	}
 
-	// Adaptive repeat
+	// Adaptive repeat (stick + d-pad independently)
 	now := time.Now()
 	for _, pair := range []struct {
 		nav *NavAxis
 		isX bool
-	}{{&gp.navX, true}, {&gp.navY, false}} {
+	}{
+		{&gp.navX, true}, {&gp.navY, false},
+		{&gp.dpadX, true}, {&gp.dpadY, false},
+	} {
 		if pair.nav.Direction != 0 && now.Sub(pair.nav.LastMove) >= pair.nav.RepeatInterval() {
 			pair.nav.LastMove = now
 			if pair.isX {
@@ -370,10 +376,10 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 		return gp.updateNav(&gp.navX, applyDeadzone(norm, dz), true)
 	case gp.navAxisY: // Nav stick Y
 		return gp.updateNav(&gp.navY, applyDeadzone(norm, dz), false)
-	case ABS_HAT0X: // D-pad always navigates
-		return gp.updateNav(&gp.navX, int(value), true)
+	case ABS_HAT0X: // D-pad — separate axis to avoid stick jitter interference
+		return gp.updateNav(&gp.dpadX, int(value), true)
 	case ABS_HAT0Y:
-		return gp.updateNav(&gp.navY, int(value), false)
+		return gp.updateNav(&gp.dpadY, int(value), false)
 	case gp.mouseAxisX: // Mouse stick X
 		if math.Abs(norm) < dz {
 			gp.mouseX = 0
@@ -436,7 +442,7 @@ func (gp *GamepadReader) updateNav(nav *NavAxis, direction int, isX bool) Action
 func (gp *GamepadReader) Close() {
 	gp.Ungrab()
 	if gp.fd != nil {
-		gp.fd.Close()
+		_ = gp.fd.Close()
 	}
 }
 

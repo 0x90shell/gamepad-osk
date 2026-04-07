@@ -239,9 +239,7 @@ func TestValidateScale(t *testing.T) {
 func TestSaveConfigRoundTrip(t *testing.T) {
 	// Use a temp dir to avoid touching real config
 	tmpDir := t.TempDir()
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Save a theme
 	SaveTheme("nord")

@@ -145,10 +145,8 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 			if kb.ShiftActive && !kb.CapsActive {
 				kb.ShiftActive = false
 			}
-		} else {
-			if kb.OnThemeCycle != nil {
-				kb.OnThemeCycle()
-			}
+		} else if kb.OnThemeCycle != nil {
+			kb.OnThemeCycle()
 		}
 		return
 	}

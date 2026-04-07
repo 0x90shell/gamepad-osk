@@ -9,7 +9,8 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 ## Features
 
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
-- SDL2 GameController for normalized input (works with any controller)
+- Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC — no compositor rules needed)
+- Evdev gamepad input (works with any controller)
 - Xbox 360 pad auto-detection (swap_xy quirk handled automatically)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
@@ -26,9 +27,9 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 ## Dependencies
 
-**Runtime:** `sdl2` `sdl2_ttf` `ttf-promptfont` (AUR)
+**Runtime:** `sdl3` `sdl3_ttf` `ttf-promptfont` (AUR)
 
-**Build:** `go` `sdl2` `sdl2_ttf` `libx11`
+**Build:** `go` `sdl3` `sdl3_ttf` `libx11` `wayland` `wlr-protocols`
 
 ## Installation
 
@@ -151,28 +152,14 @@ If using evsieve, set `grab = false` in config and let evsieve handle routing.
 
 ## Wayland
 
-Tested on Sway. Input, rendering, key injection, mouse cursor, and key repeat all work natively. The binary auto-detects Wayland and uses the native backend (no XWayland).
+Uses wlr-layer-shell for native overlay support — no compositor rules needed. The keyboard renders as a non-focusable overlay that stays above all windows. Position toggle (Start) works natively.
 
-Window positioning and always-on-top require compositor rules — Wayland has no client-side API for these. The top/bottom toggle (Start) is a no-op on Wayland.
-
-**Sway** (`~/.config/sway/config`):
-```
-for_window [app_id="gamepad-osk"] floating enable, sticky enable, move position center, move down 300
-```
-
-**Hyprland** (`~/.config/hypr/hyprland.conf`):
-```
-windowrulev2 = float, class:^(gamepad-osk)$
-windowrulev2 = pin, class:^(gamepad-osk)$
-windowrulev2 = nofocus, class:^(gamepad-osk)$
-windowrulev2 = move 50%-w/2 100%-h-20, class:^(gamepad-osk)$
-```
-
-**Known Wayland limitations:**
-- Window position set by compositor, not the app
-- Top/bottom toggle (Start) has no effect
-- Always-on-top not supported (window can be covered by other windows)
-- Multi-monitor placement is compositor-dependent
+**Supported compositors:**
+- **wlroots-based** (Sway, wayfire, river, labwc, dwl) — native
+- **Hyprland** — native
+- **KDE Plasma 6** — native (via Layer Shell Qt)
+- **COSMIC (Pop!_OS)** — native (via Smithay)
+- **GNOME (Mutter)** — no layer-shell support; falls back to standard window (same as X11 without hints)
 
 ## License
 
