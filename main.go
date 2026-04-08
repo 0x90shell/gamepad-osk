@@ -90,7 +90,8 @@ func main() {
 	// Socket exists but we can't connect - may be owned by another user (sudo)
 	if socketOwnedByOther(sockPath) {
 		fmt.Fprintln(os.Stderr, "Error: another instance may be running (socket owned by different user)")
-		fmt.Fprintf(os.Stderr, "To force: sudo rm %s\n", sockPath)
+		fmt.Fprintln(os.Stderr, "Stop it: sudo pkill -x gamepad-osk")
+		fmt.Fprintf(os.Stderr, "If already stopped: sudo rm %s\n", sockPath)
 		os.Exit(1)
 	}
 	Debugf("No existing instance found")
