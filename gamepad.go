@@ -110,7 +110,7 @@ type GamepadReader struct {
 	navAxisY   uint16
 	mouseAxisX uint16
 	mouseAxisY uint16
-	deviceName string
+	deviceName string // currently unused; stored for future logging/diagnostics
 }
 
 func NewGamepadReader(config Config) *GamepadReader {
@@ -173,7 +173,6 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	}
 	gp.fd = fd
 	gp.readAxisInfo()
-
 	// Auto-detect swap_xy for Xbox 360 pads
 	if gp.config.Gamepad.SwapXY == "auto" || gp.config.Gamepad.SwapXY == "" {
 		name := gp.getDeviceName(path)
@@ -251,10 +250,9 @@ func (gp *GamepadReader) autoDetect() string {
 	return ""
 }
 
-func (gp *GamepadReader) readAxisInfo() {
-	// Try to get axis ranges via EVIOCGABS
-	// For now use defaults - most controllers are 32767 for sticks, 255 or 1023 for triggers
-}
+// readAxisInfo is currently unused; placeholder for reading EVIOCGABS axis ranges.
+// For now the constructor defaults (axisMax=32767, trigMax=255) cover most controllers.
+func (gp *GamepadReader) readAxisInfo() {} // TODO: read EVIOCGABS axis ranges instead of using defaults
 
 func (gp *GamepadReader) Grab() {
 	if gp.fd == nil || gp.grabbed {
