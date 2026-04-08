@@ -79,7 +79,7 @@ type Injector struct {
 func NewInjector() (*Injector, error) {
 	cfd := C.create_uinput_device()
 	if cfd < 0 {
-		return nil, fmt.Errorf("create uinput device failed (code %d) — are you in the 'input' group?", cfd)
+		return nil, fmt.Errorf("create uinput device failed (code %d) - are you in the 'input' group?", cfd)
 	}
 
 	fd := os.NewFile(uintptr(cfd), uinputPath)

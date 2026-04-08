@@ -196,7 +196,7 @@ func TestThemeUniqueBgColors(t *testing.T) {
 	for name, theme := range Themes {
 		key := bgKey{theme.Bg.R, theme.Bg.G, theme.Bg.B}
 		if other, ok := seen[key]; ok {
-			// Black backgrounds are shared by retro/terminal/etc — skip (0,0,0)
+			// Black backgrounds are shared by retro/terminal/etc - skip (0,0,0)
 			if key.r == 0 && key.g == 0 && key.b == 0 {
 				continue
 			}

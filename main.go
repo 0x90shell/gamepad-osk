@@ -123,7 +123,7 @@ func printHelp(cfg Config) {
 		nav = "right"
 	}
 
-	fmt.Printf(`gamepad-osk — Gamepad-controlled on-screen keyboard for Linux
+	fmt.Printf(`gamepad-osk - Gamepad-controlled on-screen keyboard for Linux
 
 USAGE
   gamepad-osk [options] [/dev/input/device]

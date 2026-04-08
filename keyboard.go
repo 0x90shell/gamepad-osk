@@ -121,7 +121,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	// Paste/Copy button — Paste normally, Copy when shifted
+	// Paste/Copy button - Paste normally, Copy when shifted
 	if key.Label == "Paste" {
 		shiftOn := kb.ShiftActive != kb.CapsActive
 		if shiftOn {
@@ -135,7 +135,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	// Cfg button — cycle theme (shift = reverse)
+	// Cfg button - cycle theme (shift = reverse)
 	if key.Label == "Cfg" {
 		shiftOn := kb.ShiftActive != kb.CapsActive
 		if shiftOn {

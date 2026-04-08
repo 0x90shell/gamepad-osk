@@ -5,7 +5,7 @@ import "log"
 // ButtonInfo maps a config button name to evdev code and Promptfont glyph.
 type ButtonInfo struct {
 	EvdevBtn  uint16 // for EV_KEY buttons (BTN_*)
-	EvdevAxis uint16 // for EV_ABS axes (ABS_Z, ABS_RZ) — 0 if not axis-based
+	EvdevAxis uint16 // for EV_ABS axes (ABS_Z, ABS_RZ) - 0 if not axis-based
 	IsAxis    bool
 	Glyph     string // Promptfont Unicode character
 }

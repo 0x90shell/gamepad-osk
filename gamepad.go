@@ -17,16 +17,16 @@ const (
 	evdevEV_SYN = 0x00
 
 	// Standard evdev button codes
-	BTN_SOUTH  = 0x130 // 304 — Xbox A, PS Cross
-	BTN_EAST   = 0x131 // 305 — Xbox B, PS Circle
-	BTN_NORTH  = 0x133 // 307 — Xbox Y/X (varies!)
-	BTN_WEST   = 0x134 // 308 — Xbox X/Y (varies!)
-	BTN_TL     = 0x136 // 310 — LB/L1
-	BTN_TR     = 0x137 // 311 — RB/R1
-	BTN_TL2    = 0x138 // 312 — LT/L2 (digital, Switch Pro)
-	BTN_TR2    = 0x139 // 313 — RT/R2 (digital, Switch Pro)
-	BTN_THUMBL = 0x13d // 317 — L3
-	BTN_THUMBR = 0x13e // 318 — R3
+	BTN_SOUTH  = 0x130 // 304 - Xbox A, PS Cross
+	BTN_EAST   = 0x131 // 305 - Xbox B, PS Circle
+	BTN_NORTH  = 0x133 // 307 - Xbox Y/X (varies!)
+	BTN_WEST   = 0x134 // 308 - Xbox X/Y (varies!)
+	BTN_TL     = 0x136 // 310 - LB/L1
+	BTN_TR     = 0x137 // 311 - RB/R1
+	BTN_TL2    = 0x138 // 312 - LT/L2 (digital, Switch Pro)
+	BTN_TR2    = 0x139 // 313 - RT/R2 (digital, Switch Pro)
+	BTN_THUMBL = 0x13d // 317 - L3
+	BTN_THUMBR = 0x13e // 318 - R3
 
 	ABS_X     = 0x00
 	ABS_Y     = 0x01
@@ -164,7 +164,7 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
 		if os.IsPermission(err) {
-			log.Printf("Error: cannot read %s — permission denied", path)
+			log.Printf("Error: cannot read %s - permission denied", path)
 			if inGroup, _ := isUserInGroup("input"); inGroup {
 				log.Printf("You are in the 'input' group but it is not active for this session.")
 				log.Printf("Fix: log out and back in for the group change to take effect.")
@@ -258,7 +258,7 @@ func (gp *GamepadReader) autoDetect() string {
 
 func (gp *GamepadReader) readAxisInfo() {
 	// Try to get axis ranges via EVIOCGABS
-	// For now use defaults — most controllers are 32767 for sticks, 255 or 1023 for triggers
+	// For now use defaults - most controllers are 32767 for sticks, 255 or 1023 for triggers
 }
 
 func (gp *GamepadReader) Grab() {
@@ -386,7 +386,7 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 		return gp.updateNav(&gp.navX, applyDeadzone(norm, dz), true)
 	case gp.navAxisY: // Nav stick Y
 		return gp.updateNav(&gp.navY, applyDeadzone(norm, dz), false)
-	case ABS_HAT0X: // D-pad — separate axis to avoid stick jitter interference
+	case ABS_HAT0X: // D-pad - separate axis to avoid stick jitter interference
 		return gp.updateNav(&gp.dpadX, int(value), true)
 	case ABS_HAT0Y:
 		return gp.updateNav(&gp.dpadY, int(value), false)

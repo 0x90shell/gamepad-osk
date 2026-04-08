@@ -9,7 +9,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 ## Features
 
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
-- Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC — no compositor rules needed)
+- Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
 - Xbox 360 pad auto-detection (swap_xy quirk handled automatically)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
@@ -193,14 +193,14 @@ If using evsieve, set `grab = false` in config and let evsieve handle routing.
 
 ## Wayland
 
-Uses wlr-layer-shell for native overlay support — no compositor rules needed. The keyboard renders as a non-focusable overlay that stays above all windows. Position toggle (Start) works natively.
+Uses wlr-layer-shell for native overlay support - no compositor rules needed. The keyboard renders as a non-focusable overlay that stays above all windows. Position toggle (Start) works natively.
 
 **Supported compositors:**
-- **wlroots-based** (Sway, wayfire, river, labwc, dwl) — native
-- **Hyprland** — native
-- **KDE Plasma 6** — native (via Layer Shell Qt)
-- **COSMIC (Pop!_OS)** — native (via Smithay)
-- **GNOME (Mutter)** — no layer-shell support; falls back to standard window (same as X11 without hints)
+- **wlroots-based** (Sway, wayfire, river, labwc, dwl) - native
+- **Hyprland** - native
+- **KDE Plasma 6** - native (via Layer Shell Qt)
+- **COSMIC (Pop!_OS)** - native (via Smithay)
+- **GNOME (Mutter)** - no layer-shell support; falls back to standard window (same as X11 without hints)
 
 ## License
 

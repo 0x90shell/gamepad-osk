@@ -13,7 +13,7 @@ type Rect struct{ X, Y, W, H int32 }
 type FRect struct{ X, Y, W, H float32 }
 
 // Opaque handle types wrapping C pointers from SDL3.
-// These are never dereferenced in Go — only passed back to cgo wrappers.
+// These are never dereferenced in Go - only passed back to cgo wrappers.
 
 // Window is an opaque handle to an SDL_Window.
 type Window struct{ ptr unsafe.Pointer }

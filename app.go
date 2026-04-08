@@ -85,7 +85,7 @@ func (app *App) Run() error {
 		mon.W, mon.H, mon.X, mon.Y, cfg.Keys.Scale, unit, width, height)
 
 	// Use workarea on X11 to avoid panels/taskbars; fall back to monitor bounds.
-	// Workarea spans all monitors — intersect with primary to get per-monitor area.
+	// Workarea spans all monitors - intersect with primary to get per-monitor area.
 	posArea := mon
 	if wx, wy, ww, wh, ok := GetWorkarea(); ok && ww > 0 && wh > 0 {
 		wa := MonitorRect{X: wx, Y: wy, W: ww, H: wh}
@@ -279,7 +279,7 @@ func (app *App) Run() error {
 			}
 		}
 
-		// Process gamepad events (evdev — works regardless of window focus)
+		// Process gamepad events (evdev - works regardless of window focus)
 		for _, action := range gamepad.ReadEvents() {
 			app.handleAction(action, kb, inj, rend)
 		}
@@ -327,21 +327,21 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 	case ActionPress:
 		// A button released
 		if app.repeatAction != ActionNone {
-			// Was repeating — just stop, don't fire again
+			// Was repeating - just stop, don't fire again
 			app.stopRepeat()
 		} else {
-			// Accent popup select, vowel short-press, or modifier — fire on release
+			// Accent popup select, vowel short-press, or modifier - fire on release
 			kb.PressCurrent(inj)
 		}
 		kb.CancelLongPress()
 	case ActionPressStart:
 		key := kb.CurrentKey()
 		if len(key.Accents) > 0 && kb.ShiftActive {
-			// Shift(LT)+hold on vowel — accent popup
+			// Shift(LT)+hold on vowel - accent popup
 			kb.StartLongPress()
 		} else if !key.IsModifier && key.Label != "Cfg" && key.Label != "Paste" &&
 			len(key.Combo) == 0 && key.ShiftCode == 0 && key.Label != "Esc" {
-			// Repeatable key — fire immediately and start repeat
+			// Repeatable key - fire immediately and start repeat
 			kb.PressCurrent(inj)
 			app.startRepeat(ActionPressRepeat)
 		}
