@@ -80,6 +80,21 @@ func main() {
 		config.Theme.Name = themeName
 	}
 
+	// Check for existing instance before starting
+	Debugf("Checking for existing instance...")
+	if IPCSend("ping") {
+		fmt.Fprintln(os.Stderr, "Error: another instance is already running")
+		fmt.Fprintln(os.Stderr, "Use --toggle to show/hide, or stop the other instance first")
+		os.Exit(1)
+	}
+	// Socket exists but we can't connect - may be owned by another user (sudo)
+	if socketOwnedByOther(sockPath) {
+		fmt.Fprintln(os.Stderr, "Error: another instance may be running (socket owned by different user)")
+		fmt.Fprintf(os.Stderr, "To force: sudo rm %s\n", sockPath)
+		os.Exit(1)
+	}
+	Debugf("No existing instance found")
+
 	app := NewApp(config)
 	if daemon {
 		app.visible = false

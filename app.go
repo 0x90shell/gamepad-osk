@@ -196,10 +196,13 @@ func (app *App) Run() error {
 
 	// Init IPC
 	ipc := NewIPCServer(func(cmd string) {
-		if cmd == "toggle" {
+		switch cmd {
+		case "toggle":
 			app.lock.Lock()
 			app.togglePending = true
 			app.lock.Unlock()
+		case "ping":
+			// Instance check - connection success is the answer
 		}
 	})
 	if err := ipc.Start(); err != nil {

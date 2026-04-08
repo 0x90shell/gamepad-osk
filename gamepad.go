@@ -267,7 +267,7 @@ func (gp *GamepadReader) Grab() {
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 1) //nolint:gosec // G115: fd fits in int
 	if errno != 0 {
-		log.Printf("Warning: could not grab device: %v", errno)
+		log.Printf("Warning: could not grab device: %v (another instance may hold the grab)", errno)
 	} else {
 		gp.grabbed = true
 	}
