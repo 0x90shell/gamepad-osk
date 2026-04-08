@@ -176,10 +176,15 @@ func (app *App) Run() error {
 
 	inj, err := NewInjector()
 	if err != nil {
-		log.Printf("Error: %v", err)
-		return err
+		log.Print(colorRed("Warning: key injection disabled — " + err.Error()))
+		logPermissionFix()
+		log.Printf("The on-screen keyboard will display but cannot send keystrokes.")
 	}
-	defer inj.Close()
+	defer func() {
+		if inj != nil {
+			inj.Close()
+		}
+	}()
 
 	gamepad := NewGamepadReader(cfg)
 	if !gamepad.Open("") {
@@ -352,19 +357,25 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 	case ActionPressRepeat:
 		kb.PressCurrent(inj)
 	case ActionBackspace:
-		inj.PressKey(KEY_BACKSPACE, nil)
+		if inj != nil {
+			inj.PressKey(KEY_BACKSPACE, nil)
+		}
 		kb.FlashKey(KEY_BACKSPACE)
 		app.startRepeat(ActionBackspace)
 	case ActionBackspaceRelease:
 		app.stopRepeat()
 	case ActionSpace:
-		inj.PressKey(KEY_SPACE, nil)
+		if inj != nil {
+			inj.PressKey(KEY_SPACE, nil)
+		}
 		kb.FlashKey(KEY_SPACE)
 		app.startRepeat(ActionSpace)
 	case ActionSpaceRelease:
 		app.stopRepeat()
 	case ActionEnter:
-		inj.PressKey(KEY_ENTER, nil)
+		if inj != nil {
+			inj.PressKey(KEY_ENTER, nil)
+		}
 		kb.FlashKey(KEY_ENTER)
 		app.startRepeat(ActionEnter)
 	case ActionEnterRelease:
@@ -376,15 +387,25 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 	case ActionCapsToggle:
 		kb.CapsActive = !kb.CapsActive
 	case ActionMouseMove:
-		inj.MoveMouse(a.DX, a.DY)
+		if inj != nil {
+			inj.MoveMouse(a.DX, a.DY)
+		}
 	case ActionLeftClick:
-		inj.ClickMouse(0x110, true) // BTN_LEFT press
+		if inj != nil {
+			inj.ClickMouse(0x110, true) // BTN_LEFT press
+		}
 	case ActionLeftClickRelease:
-		inj.ClickMouse(0x110, false) // BTN_LEFT release
+		if inj != nil {
+			inj.ClickMouse(0x110, false) // BTN_LEFT release
+		}
 	case ActionRightClick:
-		inj.ClickMouse(0x111, true) // BTN_RIGHT press
+		if inj != nil {
+			inj.ClickMouse(0x111, true) // BTN_RIGHT press
+		}
 	case ActionRightClickRelease:
-		inj.ClickMouse(0x111, false) // BTN_RIGHT release
+		if inj != nil {
+			inj.ClickMouse(0x111, false) // BTN_RIGHT release
+		}
 	case ActionPositionToggle:
 		app.posTop = !app.posTop
 		if app.posTop {

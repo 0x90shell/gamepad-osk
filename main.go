@@ -17,6 +17,8 @@ func main() {
 
 	var devicePath, themeName, configPath string
 	daemon := false
+	setupMode := false
+	installMode := false
 
 	i := 0
 	for i < len(args) {
@@ -29,6 +31,10 @@ func main() {
 		case "--help", "-h":
 			printHelp(LoadConfig(""))
 			os.Exit(0)
+		case "--setup":
+			setupMode = true
+		case "--install":
+			installMode = true
 		case "--daemon":
 			daemon = true
 		case "--verbose", "-v":
@@ -63,6 +69,18 @@ func main() {
 			}
 		}
 		i++
+	}
+
+	// --install requires --setup
+	if installMode && !setupMode {
+		fmt.Fprintln(os.Stderr, "Error: --install requires --setup")
+		fmt.Fprintln(os.Stderr, "Usage: gamepad-osk --setup --install")
+		os.Exit(1)
+	}
+
+	// --setup mode: diagnose or install, then exit
+	if setupMode {
+		os.Exit(runSetup(installMode))
 	}
 
 	config := LoadConfig(configPath)
@@ -150,6 +168,8 @@ OPTIONS
   --config, -c PATH    Config file path (overrides search order)
   --toggle             Toggle visibility of running instance (for evsieve/hotkey)
   --daemon             Start hidden, wait for --toggle to show
+  --setup              Check system configuration (udev, permissions, config)
+  --setup --install    Deploy udev rules, config, and systemd service
   --verbose, -v        Verbose logging (gamepad events, key injection, config)
   --help, -h           Show this help
 

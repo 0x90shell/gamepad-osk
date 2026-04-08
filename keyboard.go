@@ -110,7 +110,9 @@ func (kb *KeyboardState) DisplayLabel(key KeyDef) string {
 func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if kb.AccentPopup != nil {
 		accent := kb.AccentPopup.Accents[kb.AccentPopup.Selected]
-		inj.TypeUnicode(accent.Codepoint)
+		if inj != nil {
+			inj.TypeUnicode(accent.Codepoint)
+		}
 		kb.CloseAccentPopup()
 		return
 	}
@@ -125,11 +127,13 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if key.Label == "Paste" {
 		shiftOn := kb.ShiftActive != kb.CapsActive
 		if shiftOn {
-			inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
+			if inj != nil {
+				inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
+			}
 			if kb.ShiftActive && !kb.CapsActive {
 				kb.ShiftActive = false
 			}
-		} else {
+		} else if inj != nil {
 			inj.PressKey(KEY_V, []int{KEY_LEFTCTRL})
 		}
 		return
@@ -155,10 +159,12 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 
 	// Combo keys (shortcut row): default sends combo, shift sends ShiftCode
 	if len(key.Combo) > 0 || key.ShiftCode != 0 {
-		if shiftOn && key.ShiftCode != 0 {
-			inj.PressKey(key.ShiftCode, nil)
-		} else {
-			inj.PressKey(key.Code, key.Combo)
+		if inj != nil {
+			if shiftOn && key.ShiftCode != 0 {
+				inj.PressKey(key.ShiftCode, nil)
+			} else {
+				inj.PressKey(key.Code, key.Combo)
+			}
 		}
 		if kb.ShiftActive && !kb.CapsActive {
 			kb.ShiftActive = false
@@ -186,7 +192,9 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		mods = append(mods, KEY_LEFTMETA)
 	}
 
-	inj.PressKey(code, mods)
+	if inj != nil {
+		inj.PressKey(code, mods)
+	}
 
 	if kb.ShiftActive && !kb.CapsActive {
 		kb.ShiftActive = false

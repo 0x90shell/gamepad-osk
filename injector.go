@@ -57,6 +57,7 @@ import "C"
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -79,13 +80,29 @@ type Injector struct {
 func NewInjector() (*Injector, error) {
 	cfd := C.create_uinput_device()
 	if cfd < 0 {
-		return nil, fmt.Errorf("create uinput device failed (code %d) - are you in the 'input' group?", cfd)
+		return nil, uinputError(int(cfd))
 	}
 
 	fd := os.NewFile(uintptr(cfd), uinputPath)
 	time.Sleep(50 * time.Millisecond)
 
 	return &Injector{fd: fd}, nil
+}
+
+// uinputError returns a short single-line error for the injector failure.
+// The caller is responsible for logging fix steps via logPermissionFix().
+func uinputError(code int) error {
+	if _, err := os.Stat(uinputPath); os.IsNotExist(err) {
+		return errors.New("/dev/uinput not found — load the module: sudo modprobe uinput")
+	}
+	f, err := os.OpenFile(uinputPath, os.O_RDWR, 0) //nolint:gosec // G304: path is constant
+	if err != nil && os.IsPermission(err) {
+		return errors.New("cannot open /dev/uinput — permission denied")
+	}
+	if f != nil {
+		_ = f.Close()
+	}
+	return fmt.Errorf("uinput device setup failed (code %d)", code)
 }
 
 func (inj *Injector) PressKey(code int, modifiers []int) {

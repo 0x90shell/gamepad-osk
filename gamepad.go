@@ -164,13 +164,8 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
 		if os.IsPermission(err) {
-			log.Printf("Error: cannot read %s - permission denied", path)
-			if inGroup, _ := isUserInGroup("input"); inGroup {
-				log.Printf("You are in the 'input' group but it is not active for this session.")
-				log.Printf("Fix: log out and back in for the group change to take effect.")
-			} else {
-				log.Printf("Fix: sudo usermod -aG input $USER (then log out and back in)")
-			}
+			log.Print(colorRed("Error: cannot read " + path + " — permission denied"))
+			logPermissionFix()
 		} else {
 			log.Printf("Error opening %s: %v", path, err)
 		}
@@ -456,29 +451,7 @@ func (gp *GamepadReader) Close() {
 	}
 }
 
-// isUserInGroup checks if the current user is a member of the named group
-// by reading /etc/group (covers persistent membership, not just active session).
-func isUserInGroup(groupName string) (bool, error) {
-	data, err := os.ReadFile("/etc/group")
-	if err != nil {
-		return false, err
-	}
-	username := os.Getenv("USER")
-	if username == "" {
-		return false, nil
-	}
-	for line := range strings.SplitSeq(string(data), "\n") {
-		parts := strings.SplitN(line, ":", 4)
-		if len(parts) == 4 && parts[0] == groupName {
-			for member := range strings.SplitSeq(parts[3], ",") {
-				if member == username {
-					return true, nil
-				}
-			}
-		}
-	}
-	return false, nil
-}
+// isUserInGroup and logPermissionFix are in util.go
 
 func applyDeadzone(norm, dz float64) int {
 	if norm > dz {
