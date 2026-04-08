@@ -252,7 +252,7 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 	SavePosition(true)
 
 	// Load and verify
-	cfg := LoadConfig()
+	cfg := LoadConfig("")
 	if cfg.Theme.Name != "nord" {
 		t.Errorf("saved theme = %q, want nord", cfg.Theme.Name)
 	}
@@ -262,7 +262,7 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 
 	// Save position back to bottom
 	SavePosition(false)
-	cfg = LoadConfig()
+	cfg = LoadConfig("")
 	if cfg.Window.Position != "bottom" {
 		t.Errorf("saved position = %q, want bottom", cfg.Window.Position)
 	}

@@ -15,7 +15,7 @@ var Verbose bool
 func main() {
 	args := os.Args[1:]
 
-	var devicePath, themeName string
+	var devicePath, themeName, configPath string
 	daemon := false
 
 	i := 0
@@ -27,7 +27,7 @@ func main() {
 			}
 			fmt.Fprintln(os.Stderr, "No running instance, starting new...")
 		case "--help", "-h":
-			printHelp(LoadConfig())
+			printHelp(LoadConfig(""))
 			os.Exit(0)
 		case "--daemon":
 			daemon = true
@@ -49,6 +49,14 @@ func main() {
 				fmt.Fprintln(os.Stderr, "Error: --theme requires a name")
 				os.Exit(1)
 			}
+		case "--config", "-c":
+			if i+1 < len(args) {
+				i++
+				configPath = args[i]
+			} else {
+				fmt.Fprintln(os.Stderr, "Error: --config requires a path")
+				os.Exit(1)
+			}
 		default:
 			if strings.HasPrefix(args[i], "/") {
 				devicePath = args[i]
@@ -57,7 +65,7 @@ func main() {
 		i++
 	}
 
-	config := LoadConfig()
+	config := LoadConfig(configPath)
 
 	// Flags override TOML
 	if devicePath != "" {
@@ -123,6 +131,7 @@ USAGE
 OPTIONS
   --device, -d PATH    Input device (overrides config.toml, overrides auto-detect)
   --theme, -t NAME     Color theme (overrides config.toml)
+  --config, -c PATH    Config file path (overrides search order)
   --toggle             Toggle visibility of running instance (for evsieve/hotkey)
   --daemon             Start hidden, wait for --toggle to show
   --verbose, -v        Verbose logging (gamepad events, key injection, config)
@@ -153,12 +162,16 @@ THEMES
   %s
   Cycle live with the Cfg key on the keyboard
 
-CONFIG
-  ~/.config/gamepad-osk/config.toml    (or config.toml next to binary)
+CONFIG (first found)
+  1. --config flag
+  2. ~/.config/gamepad-osk/config.toml
+  3. /etc/gamepad-osk/config.toml
+  4. config.toml next to binary
+  5. config.toml in working directory
 
 REQUIREMENTS
-  Runtime: sdl2, sdl2_ttf, ttf-promptfont (AUR)
-  User must be in 'input' group for key injection
+  Runtime: sdl3, sdl3_ttf, ttf-promptfont (AUR)
+  User must be in 'input' group for gamepad and key injection
 `,
 		strings.ToUpper(nav[:1])+nav[1:]+" stick / D-pad",
 		strings.ToUpper(mouse[:1])+mouse[1:]+" stick",

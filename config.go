@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/user"
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
@@ -12,7 +13,7 @@ import (
 // Debugf logs only when --verbose is set
 func Debugf(format string, args ...any) {
 	if Verbose {
-		log.Printf("[DEBUG] "+format, args...)
+		log.Printf("[DEBUG] "+format, args...) //nolint:gosec // G706: format string is from our code, not user input
 	}
 }
 
@@ -99,34 +100,50 @@ func DefaultConfig() Config {
 	}
 }
 
-// UserConfigPath returns the user's config file path (XDG standard)
+var sudoHomeResolved string // cached sudo-aware home dir (log once)
+
+// UserConfigPath returns the user's config file path (XDG standard).
+// When run via sudo, resolves the real user's home via SUDO_USER.
 func UserConfigPath() string {
 	xdg := os.Getenv("XDG_CONFIG_HOME")
 	if xdg == "" {
-		xdg = filepath.Join(os.Getenv("HOME"), ".config")
+		if sudoHomeResolved == "" {
+			sudoHomeResolved = os.Getenv("HOME")
+			if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && sudoHomeResolved == "/root" {
+				if u, err := user.Lookup(sudoUser); err == nil {
+					sudoHomeResolved = u.HomeDir
+					Debugf("sudo detected, using %s's home: %s", sudoUser, sudoHomeResolved)
+				}
+			}
+		}
+		xdg = filepath.Join(sudoHomeResolved, ".config")
 	}
 	return filepath.Join(xdg, "gamepad-osk", "config.toml")
 }
 
-func LoadConfig() Config {
+func LoadConfig(overridePath string) Config {
 	cfg := DefaultConfig()
 
-	// Priority: user config > system config > next to binary > cwd
-	paths := []string{
+	// Priority: --config flag > user config > system config > next to binary > cwd
+	var paths []string
+	if overridePath != "" {
+		paths = append(paths, overridePath)
+	}
+	paths = append(paths,
 		UserConfigPath(),
 		"/etc/gamepad-osk/config.toml",
-	}
+	)
 	if exe, err := os.Executable(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(exe), "config.toml"))
 	}
 	paths = append(paths, "config.toml")
 
 	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
+		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: config paths are trusted
 			if _, err := toml.DecodeFile(p, &cfg); err != nil {
-				log.Printf("Warning: error parsing %s: %v", p, err)
+				log.Printf("Warning: error parsing %s: %v", p, err) //nolint:gosec // G706: log format from our code
 			} else {
-				log.Printf("Loaded config from %s", p)
+				log.Printf("Loaded config from %s", p) //nolint:gosec // G706: log format from our code
 			}
 			break
 		}
@@ -145,7 +162,7 @@ func LoadConfig() Config {
 	userPath := UserConfigPath()
 	if _, err := os.Stat(userPath); os.IsNotExist(err) {
 		for _, src := range paths[1:] { // skip user path itself
-			if _, err := os.Stat(src); err == nil {
+			if _, err := os.Stat(src); err == nil { //nolint:gosec // G703: config paths are trusted
 				if copyFile(src, userPath) == nil {
 					log.Printf("Created user config at %s", userPath)
 				}

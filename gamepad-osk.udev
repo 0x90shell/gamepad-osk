@@ -1,0 +1,2 @@
+# gamepad-osk: allow input group to read gamepad event devices
+KERNEL=="event*", SUBSYSTEM=="input", GROUP="input", MODE="0660"
