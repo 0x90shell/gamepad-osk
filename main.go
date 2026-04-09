@@ -9,6 +9,8 @@ import (
 	"syscall"
 )
 
+var version = "2.0.0"
+
 // Verbose controls debug logging throughout the app
 var Verbose bool
 
@@ -28,6 +30,9 @@ func main() {
 				os.Exit(0)
 			}
 			fmt.Fprintln(os.Stderr, "No running instance, starting new...")
+		case "--version", "-V":
+			fmt.Printf("gamepad-osk v%s\n", version)
+			os.Exit(0)
 		case "--help", "-h":
 			printHelp(LoadConfig(""))
 			os.Exit(0)
@@ -85,7 +90,7 @@ func main() {
 
 	config := LoadConfig(configPath)
 
-	// Flags override TOML
+	// Flags override config
 	if devicePath != "" {
 		config.Gamepad.Device = devicePath
 	}
@@ -157,25 +162,26 @@ func printHelp(cfg Config) {
 		nav = "right"
 	}
 
-	fmt.Printf(`gamepad-osk - Gamepad-controlled on-screen keyboard for Linux
+	fmt.Printf(`gamepad-osk v%s - Gamepad-controlled on-screen keyboard for Linux
 
 USAGE
   gamepad-osk [options] [/dev/input/device]
 
 OPTIONS
-  --device, -d PATH    Input device (overrides config.toml, overrides auto-detect)
-  --theme, -t NAME     Color theme (overrides config.toml)
+  --device, -d PATH    Input device (overrides config, overrides auto-detect)
+  --theme, -t NAME     Color theme (overrides config)
   --config, -c PATH    Config file path (overrides search order)
   --toggle             Toggle visibility of running instance (for evsieve/hotkey)
   --daemon             Start hidden, wait for --toggle to show
   --setup              Check system configuration (udev, permissions, config)
   --setup --install    Deploy udev rules, config, and systemd service
   --verbose, -v        Verbose logging (gamepad events, key injection, config)
+  --version, -V        Print version and exit
   --help, -h           Show this help
 
 DEVICE PRIORITY
   1. --device flag or bare /dev/input/... argument
-  2. device = "..." in config.toml
+  2. device = ... in config
   3. Auto-detect from /proc/bus/input/devices
 
 CONTROLS (from config)
@@ -200,15 +206,16 @@ THEMES
 
 CONFIG (first found)
   1. --config flag
-  2. ~/.config/gamepad-osk/config.toml
-  3. /etc/gamepad-osk/config.toml
-  4. config.toml next to binary
-  5. config.toml in working directory
+  2. ~/.config/gamepad-osk/config
+  3. /etc/gamepad-osk/config
+  4. config next to binary
+  5. config in working directory
 
 REQUIREMENTS
   Runtime: sdl3, sdl3_ttf, ttf-promptfont (AUR)
   User must be in 'input' group for gamepad and key injection
 `,
+		version,
 		strings.ToUpper(nav[:1])+nav[1:]+" stick / D-pad",
 		strings.ToUpper(mouse[:1])+mouse[1:]+" stick",
 		buttonLabel(b.Press), buttonLabel(b.Close),

@@ -1,13 +1,15 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/user"
 	"path/filepath"
-
-	"github.com/BurntSushi/toml"
+	"strconv"
+	"strings"
 )
 
 // Debugf logs only when --verbose is set
@@ -18,59 +20,59 @@ func Debugf(format string, args ...any) {
 }
 
 type Config struct {
-	Theme   ThemeConfig   `toml:"theme"`
-	Window  WindowConfig  `toml:"window"`
-	Keys    KeysConfig    `toml:"keys"`
-	Gamepad GamepadConfig `toml:"gamepad"`
-	Mouse   MouseConfig   `toml:"mouse"`
+	Theme   ThemeConfig
+	Window  WindowConfig
+	Keys    KeysConfig
+	Gamepad GamepadConfig
+	Mouse   MouseConfig
 }
 
 type ThemeConfig struct {
-	Name string `toml:"name"`
+	Name string
 }
 
 type WindowConfig struct {
-	Position     string  `toml:"position"`     // "bottom" or "top"
-	Margin       int     `toml:"margin"`
-	BottomMargin int     `toml:"bottom_margin"` // deprecated, migrated to Margin
-	Opacity      float64 `toml:"opacity"`
+	Position     string  // "bottom" or "top"
+	Margin       int
+	BottomMargin int     // deprecated, migrated to Margin
+	Opacity      float64
 }
 
 type KeysConfig struct {
-	UnitSize      int `toml:"unit_size"`
-	Padding       int `toml:"padding"`
-	FontSize      int `toml:"font_size"`
-	Scale         int `toml:"scale"`          // percentage of screen width (30-100, default 70)
-	RepeatDelayMs int `toml:"repeat_delay_ms"` // ms before key repeat starts (default 400)
-	RepeatRateMs  int `toml:"repeat_rate_ms"`  // ms between repeats (default 80)
+	UnitSize      int
+	Padding       int
+	FontSize      int
+	Scale         int // percentage of screen width (30-100, default 70)
+	RepeatDelayMs int // ms before key repeat starts (default 400)
+	RepeatRateMs  int // ms between repeats (default 80)
 }
 
 type ButtonsConfig struct {
-	Press      string `toml:"press"`
-	Close      string `toml:"close"`
-	Backspace  string `toml:"backspace"`
-	Space      string `toml:"space"`
-	Shift      string `toml:"shift"`
-	Enter      string `toml:"enter"`
-	LeftClick      string `toml:"left_click"`
-	RightClick     string `toml:"right_click"`
-	PositionToggle string `toml:"position_toggle"`
+	Press          string
+	Close          string
+	Backspace      string
+	Space          string
+	Shift          string
+	Enter          string
+	LeftClick      string
+	RightClick     string
+	PositionToggle string
 }
 
 type GamepadConfig struct {
-	Device      string        `toml:"device"`
-	Grab        bool          `toml:"grab"`
-	GrabDevice  string        `toml:"grab_device"`
-	Deadzone    float64       `toml:"deadzone"`
-	LongPressMs int           `toml:"long_press_ms"`
-	SwapXY      string        `toml:"swap_xy"`     // "auto", "true", "false"
-	MouseStick  string        `toml:"mouse_stick"`  // "left" or "right" (nav uses the other stick)
-	Buttons     ButtonsConfig `toml:"buttons"`
+	Device      string
+	Grab        bool
+	GrabDevice  string
+	Deadzone    float64
+	LongPressMs int
+	SwapXY      string        // "auto", "true", "false"
+	MouseStick  string        // "left" or "right" (nav uses the other stick)
+	Buttons     ButtonsConfig
 }
 
 type MouseConfig struct {
-	Enabled     bool `toml:"enabled"`
-	Sensitivity int  `toml:"sensitivity"`
+	Enabled     bool
+	Sensitivity int
 }
 
 func DefaultConfig() Config {
@@ -100,6 +102,279 @@ func DefaultConfig() Config {
 	}
 }
 
+// --- INI config parser/writer ---
+
+// parseINI reads an INI-style config file into a Config.
+// Supports [section] and [section.subsection] headers, key = value pairs,
+// # comments, and inline # comments.
+func parseINI(r io.Reader, cfg *Config) error {
+	scanner := bufio.NewScanner(r)
+	section := ""
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Section header
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.ToLower(line[1 : len(line)-1])
+			continue
+		}
+
+		// Strip inline comments (but not inside values — no values contain #)
+		if idx := strings.Index(line, "#"); idx > 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// Strip quotes from TOML-migrated values
+		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+			val = val[1 : len(val)-1]
+		}
+
+		switch section {
+		case "theme":
+			switch key {
+			case "name":
+				cfg.Theme.Name = val
+			default:
+				Debugf("unknown config key: theme.%s", key)
+			}
+		case "window":
+			switch key {
+			case "position":
+				cfg.Window.Position = val
+			case "margin":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Window.Margin = n
+				}
+			case "bottom_margin":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Window.BottomMargin = n
+				}
+			case "opacity":
+				if f, err := strconv.ParseFloat(val, 64); err == nil {
+					cfg.Window.Opacity = f
+				}
+			default:
+				Debugf("unknown config key: window.%s", key)
+			}
+		case "keys":
+			switch key {
+			case "unit_size":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Keys.UnitSize = n
+				}
+			case "padding":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Keys.Padding = n
+				}
+			case "font_size":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Keys.FontSize = n
+				}
+			case "scale":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Keys.Scale = n
+				}
+			case "repeat_delay_ms":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Keys.RepeatDelayMs = n
+				}
+			case "repeat_rate_ms":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Keys.RepeatRateMs = n
+				}
+			default:
+				Debugf("unknown config key: keys.%s", key)
+			}
+		case "gamepad":
+			switch key {
+			case "device":
+				cfg.Gamepad.Device = val
+			case "grab":
+				if b, err := strconv.ParseBool(val); err == nil {
+					cfg.Gamepad.Grab = b
+				}
+			case "grab_device":
+				cfg.Gamepad.GrabDevice = val
+			case "deadzone":
+				if f, err := strconv.ParseFloat(val, 64); err == nil {
+					cfg.Gamepad.Deadzone = f
+				}
+			case "long_press_ms":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Gamepad.LongPressMs = n
+				}
+			case "swap_xy":
+				cfg.Gamepad.SwapXY = val
+			case "mouse_stick":
+				cfg.Gamepad.MouseStick = val
+			default:
+				Debugf("unknown config key: gamepad.%s", key)
+			}
+		case "gamepad.buttons":
+			switch key {
+			case "press":
+				cfg.Gamepad.Buttons.Press = val
+			case "close":
+				cfg.Gamepad.Buttons.Close = val
+			case "backspace":
+				cfg.Gamepad.Buttons.Backspace = val
+			case "space":
+				cfg.Gamepad.Buttons.Space = val
+			case "shift":
+				cfg.Gamepad.Buttons.Shift = val
+			case "enter":
+				cfg.Gamepad.Buttons.Enter = val
+			case "left_click":
+				cfg.Gamepad.Buttons.LeftClick = val
+			case "right_click":
+				cfg.Gamepad.Buttons.RightClick = val
+			case "position_toggle":
+				cfg.Gamepad.Buttons.PositionToggle = val
+			default:
+				Debugf("unknown config key: gamepad.buttons.%s", key)
+			}
+		case "mouse":
+			switch key {
+			case "enabled":
+				if b, err := strconv.ParseBool(val); err == nil {
+					cfg.Mouse.Enabled = b
+				}
+			case "sensitivity":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Mouse.Sensitivity = n
+				}
+			default:
+				Debugf("unknown config key: mouse.%s", key)
+			}
+		default:
+			Debugf("unknown config section: [%s]", section)
+		}
+	}
+
+	return scanner.Err()
+}
+
+// writeINI writes a Config in INI format.
+func writeINI(w io.Writer, cfg Config) error {
+	var b strings.Builder
+	b.WriteString("# gamepad-osk configuration\n\n")
+
+	b.WriteString("[theme]\n")
+	fmt.Fprintf(&b, "name = %s\n\n", cfg.Theme.Name)
+
+	b.WriteString("[window]\n")
+	fmt.Fprintf(&b, "position = %s\n", cfg.Window.Position)
+	fmt.Fprintf(&b, "margin = %d\n", cfg.Window.Margin)
+	fmt.Fprintf(&b, "opacity = %s\n\n", strconv.FormatFloat(cfg.Window.Opacity, 'f', -1, 64))
+
+	b.WriteString("[keys]\n")
+	fmt.Fprintf(&b, "unit_size = %d\n", cfg.Keys.UnitSize)
+	fmt.Fprintf(&b, "padding = %d\n", cfg.Keys.Padding)
+	fmt.Fprintf(&b, "font_size = %d\n", cfg.Keys.FontSize)
+	fmt.Fprintf(&b, "scale = %d\n", cfg.Keys.Scale)
+	fmt.Fprintf(&b, "repeat_delay_ms = %d\n", cfg.Keys.RepeatDelayMs)
+	fmt.Fprintf(&b, "repeat_rate_ms = %d\n\n", cfg.Keys.RepeatRateMs)
+
+	b.WriteString("[gamepad]\n")
+	fmt.Fprintf(&b, "device = %s\n", cfg.Gamepad.Device)
+	fmt.Fprintf(&b, "grab = %t\n", cfg.Gamepad.Grab)
+	fmt.Fprintf(&b, "grab_device = %s\n", cfg.Gamepad.GrabDevice)
+	fmt.Fprintf(&b, "deadzone = %s\n", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f', -1, 64))
+	fmt.Fprintf(&b, "long_press_ms = %d\n", cfg.Gamepad.LongPressMs)
+	fmt.Fprintf(&b, "swap_xy = %s\n", cfg.Gamepad.SwapXY)
+	fmt.Fprintf(&b, "mouse_stick = %s\n\n", cfg.Gamepad.MouseStick)
+
+	b.WriteString("[gamepad.buttons]\n")
+	fmt.Fprintf(&b, "press = %s\n", cfg.Gamepad.Buttons.Press)
+	fmt.Fprintf(&b, "close = %s\n", cfg.Gamepad.Buttons.Close)
+	fmt.Fprintf(&b, "backspace = %s\n", cfg.Gamepad.Buttons.Backspace)
+	fmt.Fprintf(&b, "space = %s\n", cfg.Gamepad.Buttons.Space)
+	fmt.Fprintf(&b, "shift = %s\n", cfg.Gamepad.Buttons.Shift)
+	fmt.Fprintf(&b, "enter = %s\n", cfg.Gamepad.Buttons.Enter)
+	fmt.Fprintf(&b, "left_click = %s\n", cfg.Gamepad.Buttons.LeftClick)
+	fmt.Fprintf(&b, "right_click = %s\n", cfg.Gamepad.Buttons.RightClick)
+	fmt.Fprintf(&b, "position_toggle = %s\n\n", cfg.Gamepad.Buttons.PositionToggle)
+
+	b.WriteString("[mouse]\n")
+	fmt.Fprintf(&b, "enabled = %t\n", cfg.Mouse.Enabled)
+	fmt.Fprintf(&b, "sensitivity = %d\n", cfg.Mouse.Sensitivity)
+
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// migrateFromTOML converts a TOML config file to INI format.
+// TOML key=value is a superset of INI — just strip quotes from string values.
+// Returns the new config path, or error.
+func migrateFromTOML(tomlPath, newPath string) error {
+	in, err := os.Open(tomlPath) //nolint:gosec // G304: config path from known locations
+	if err != nil {
+		return fmt.Errorf("opening TOML config: %w", err)
+	}
+	defer func() { _ = in.Close() }()
+
+	// Read TOML, strip quotes, write INI
+	var b strings.Builder
+	b.WriteString("# gamepad-osk configuration (migrated from config.toml)\n")
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Pass through comments and blanks; normalize section header indentation
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			b.WriteString(line + "\n")
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			b.WriteString(trimmed + "\n")
+			continue
+		}
+
+		// key = value — strip quotes from value
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			// Strip TOML string quotes
+			if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+				val = val[1 : len(val)-1]
+			}
+			b.WriteString(key + " = " + val + "\n")
+		} else {
+			b.WriteString(line + "\n")
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading TOML config: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil { //nolint:gosec // G301: XDG config dir
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	if err := os.WriteFile(newPath, []byte(b.String()), 0644); err != nil { //nolint:gosec // G306: user config
+		return fmt.Errorf("writing INI config: %w", err)
+	}
+
+	bakPath := tomlPath + ".v1.bak"
+	if err := os.Rename(tomlPath, bakPath); err != nil {
+		log.Printf("Warning: could not rename %s to %s: %v", tomlPath, bakPath, err)
+	}
+
+	log.Printf("Migrated %s → %s (old file renamed to %s)", tomlPath, newPath, bakPath)
+	return nil
+}
+
 var sudoHomeResolved string // cached sudo-aware home dir (log once)
 
 // UserConfigPath returns the user's config file path (XDG standard).
@@ -118,11 +393,42 @@ func UserConfigPath() string {
 		}
 		xdg = filepath.Join(sudoHomeResolved, ".config")
 	}
+	return filepath.Join(xdg, "gamepad-osk", "config")
+}
+
+// legacyConfigPath returns the old TOML config path for migration.
+func legacyConfigPath() string {
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" {
+		if sudoHomeResolved == "" {
+			sudoHomeResolved = os.Getenv("HOME")
+			if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && sudoHomeResolved == "/root" {
+				if u, err := user.Lookup(sudoUser); err == nil {
+					sudoHomeResolved = u.HomeDir
+				}
+			}
+		}
+		xdg = filepath.Join(sudoHomeResolved, ".config")
+	}
 	return filepath.Join(xdg, "gamepad-osk", "config.toml")
 }
 
 func LoadConfig(overridePath string) Config {
 	cfg := DefaultConfig()
+
+	userPath := UserConfigPath()
+	legacyPath := legacyConfigPath()
+
+	// Auto-migrate: TOML → INI if legacy exists and new does not
+	if overridePath == "" {
+		if _, err := os.Stat(userPath); os.IsNotExist(err) {
+			if _, err := os.Stat(legacyPath); err == nil {
+				if migErr := migrateFromTOML(legacyPath, userPath); migErr != nil {
+					log.Printf("Warning: config migration failed: %v", migErr)
+				}
+			}
+		}
+	}
 
 	// Priority: --config flag > user config > system config > next to binary > cwd
 	var paths []string
@@ -130,21 +436,27 @@ func LoadConfig(overridePath string) Config {
 		paths = append(paths, overridePath)
 	}
 	paths = append(paths,
-		UserConfigPath(),
-		"/etc/gamepad-osk/config.toml",
+		userPath,
+		"/etc/gamepad-osk/config",
 	)
 	if exe, err := os.Executable(); err == nil {
-		paths = append(paths, filepath.Join(filepath.Dir(exe), "config.toml"))
+		paths = append(paths, filepath.Join(filepath.Dir(exe), "config"))
 	}
-	paths = append(paths, "config.toml")
+	paths = append(paths, "config")
 
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: config paths are trusted
-			if _, err := toml.DecodeFile(p, &cfg); err != nil {
-				log.Printf("Warning: error parsing %s: %v", p, err) //nolint:gosec // G706: log format from our code
+			f, err := os.Open(p) //nolint:gosec // G304: config paths are trusted
+			if err != nil {
+				log.Printf("Warning: cannot open %s: %v", p, err) //nolint:gosec // G706: log format from our code
+				continue
+			}
+			if parseErr := parseINI(f, &cfg); parseErr != nil {
+				log.Printf("Warning: error parsing %s: %v", p, parseErr) //nolint:gosec // G706: log format from our code
 			} else {
 				log.Printf("Loaded config from %s", p) //nolint:gosec // G706: log format from our code
 			}
+			_ = f.Close()
 			break
 		}
 	}
@@ -159,7 +471,6 @@ func LoadConfig(overridePath string) Config {
 	}
 
 	// Auto-copy: if no user config exists, copy from system/binary dir
-	userPath := UserConfigPath()
 	if _, err := os.Stat(userPath); os.IsNotExist(err) {
 		for _, src := range paths[1:] { // skip user path itself
 			if _, err := os.Stat(src); err == nil { //nolint:gosec // G703: config paths are trusted
@@ -185,8 +496,14 @@ func saveConfig(mutate func(*Config)) {
 
 	cfg := DefaultConfig()
 	if _, err := os.Stat(path); err == nil {
-		if _, decErr := toml.DecodeFile(path, &cfg); decErr != nil { //nolint:gosec // G304: user config path
-			log.Printf("Warning: error reading config %s: %v", path, decErr)
+		f, err := os.Open(path) //nolint:gosec // G304: user config path
+		if err != nil {
+			log.Printf("Warning: error reading config %s: %v", path, err)
+		} else {
+			if parseErr := parseINI(f, &cfg); parseErr != nil {
+				log.Printf("Warning: error parsing config %s: %v", path, parseErr)
+			}
+			_ = f.Close()
 		}
 	}
 	mutate(&cfg)
@@ -198,9 +515,8 @@ func saveConfig(mutate func(*Config)) {
 	}
 	defer func() { _ = f.Close() }()
 
-	enc := toml.NewEncoder(f)
-	if err := enc.Encode(cfg); err != nil {
-		log.Printf("Warning: cannot encode config: %v", err)
+	if err := writeINI(f, cfg); err != nil {
+		log.Printf("Warning: cannot write config: %v", err)
 	}
 }
 

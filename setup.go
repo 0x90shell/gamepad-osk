@@ -6,8 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/BurntSushi/toml"
 )
 
 const (
@@ -64,7 +62,7 @@ func runSetup(install bool) int {
 }
 
 func runDiagnose() int {
-	fmt.Println("gamepad-osk system check:")
+	fmt.Printf("gamepad-osk v%s system check:\n", version)
 	fmt.Println()
 
 	if os.Geteuid() == 0 {
@@ -185,7 +183,7 @@ func runDiagnose() int {
 }
 
 func runInstall() int {
-	fmt.Println("gamepad-osk setup:")
+	fmt.Printf("gamepad-osk v%s setup:\n", version)
 	fmt.Println()
 
 	// 1. udev rules
@@ -233,8 +231,7 @@ func runInstall() int {
 				fmt.Printf("  Creating config... %s (%v)\n", colorRed("failed"), err)
 			} else {
 				defer func() { _ = f.Close() }()
-				enc := toml.NewEncoder(f)
-				if err := enc.Encode(cfg); err != nil {
+				if err := writeINI(f, cfg); err != nil {
 					fmt.Printf("  Creating config... %s (%v)\n", colorRed("failed"), err)
 				} else {
 					fmt.Printf("  Creating config at %s... %s\n", userCfg, colorGreen("done"))

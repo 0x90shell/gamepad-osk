@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -243,9 +244,18 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 
 	// Save a theme
 	SaveTheme("nord")
-	path := filepath.Join(tmpDir, "gamepad-osk", "config.toml")
+	path := filepath.Join(tmpDir, "gamepad-osk", "config")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("config file not created: %v", err)
+	}
+
+	// Verify file is INI format (no TOML quotes)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: test path
+	if err != nil {
+		t.Fatalf("cannot read config: %v", err)
+	}
+	if strings.Contains(string(data), `"nord"`) {
+		t.Error("config contains TOML-style quoted string")
 	}
 
 	// Save position
@@ -265,6 +275,246 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 	cfg = LoadConfig("")
 	if cfg.Window.Position != "bottom" {
 		t.Errorf("saved position = %q, want bottom", cfg.Window.Position)
+	}
+}
+
+func TestParseINI(t *testing.T) {
+	input := `# test config
+[theme]
+name = cobalt
+
+[window]
+position = top
+margin = 30
+opacity = 0.85
+
+[keys]
+unit_size = 10
+padding = 6
+font_size = 14
+scale = 60
+repeat_delay_ms = 300
+repeat_rate_ms = 50
+
+[gamepad]
+device = /dev/input/event5
+grab = false
+grab_device = /dev/input/event6
+deadzone = 0.3
+long_press_ms = 400
+swap_xy = true
+mouse_stick = left
+
+[gamepad.buttons]
+press = b
+close = a
+backspace = y
+space = x
+shift = rt
+enter = lt
+left_click = lb
+right_click = rb
+position_toggle = select
+
+[mouse]
+enabled = false
+sensitivity = 12
+`
+	cfg := DefaultConfig()
+	if err := parseINI(strings.NewReader(input), &cfg); err != nil {
+		t.Fatalf("parseINI error: %v", err)
+	}
+
+	if cfg.Theme.Name != "cobalt" {
+		t.Errorf("theme.name = %q, want cobalt", cfg.Theme.Name)
+	}
+	if cfg.Window.Position != "top" {
+		t.Errorf("window.position = %q, want top", cfg.Window.Position)
+	}
+	if cfg.Window.Margin != 30 {
+		t.Errorf("window.margin = %d, want 30", cfg.Window.Margin)
+	}
+	if cfg.Window.Opacity != 0.85 {
+		t.Errorf("window.opacity = %f, want 0.85", cfg.Window.Opacity)
+	}
+	if cfg.Keys.Scale != 60 {
+		t.Errorf("keys.scale = %d, want 60", cfg.Keys.Scale)
+	}
+	if cfg.Keys.RepeatDelayMs != 300 {
+		t.Errorf("keys.repeat_delay_ms = %d, want 300", cfg.Keys.RepeatDelayMs)
+	}
+	if cfg.Gamepad.Device != "/dev/input/event5" {
+		t.Errorf("gamepad.device = %q, want /dev/input/event5", cfg.Gamepad.Device)
+	}
+	if cfg.Gamepad.Grab != false {
+		t.Error("gamepad.grab should be false")
+	}
+	if cfg.Gamepad.Deadzone != 0.3 {
+		t.Errorf("gamepad.deadzone = %f, want 0.3", cfg.Gamepad.Deadzone)
+	}
+	if cfg.Gamepad.SwapXY != "true" {
+		t.Errorf("gamepad.swap_xy = %q, want true", cfg.Gamepad.SwapXY)
+	}
+	if cfg.Gamepad.MouseStick != "left" {
+		t.Errorf("gamepad.mouse_stick = %q, want left", cfg.Gamepad.MouseStick)
+	}
+	if cfg.Gamepad.Buttons.Press != "b" {
+		t.Errorf("gamepad.buttons.press = %q, want b", cfg.Gamepad.Buttons.Press)
+	}
+	if cfg.Gamepad.Buttons.PositionToggle != "select" {
+		t.Errorf("gamepad.buttons.position_toggle = %q, want select", cfg.Gamepad.Buttons.PositionToggle)
+	}
+	if cfg.Mouse.Enabled != false {
+		t.Error("mouse.enabled should be false")
+	}
+	if cfg.Mouse.Sensitivity != 12 {
+		t.Errorf("mouse.sensitivity = %d, want 12", cfg.Mouse.Sensitivity)
+	}
+}
+
+func TestParseINIQuotedValues(t *testing.T) {
+	// TOML-migrated files may still have quoted strings
+	input := `[theme]
+name = "nord"
+
+[gamepad]
+device = ""
+swap_xy = "auto"
+`
+	cfg := DefaultConfig()
+	if err := parseINI(strings.NewReader(input), &cfg); err != nil {
+		t.Fatalf("parseINI error: %v", err)
+	}
+	if cfg.Theme.Name != "nord" {
+		t.Errorf("theme.name = %q, want nord (quotes stripped)", cfg.Theme.Name)
+	}
+	if cfg.Gamepad.Device != "" {
+		t.Errorf("gamepad.device = %q, want empty string", cfg.Gamepad.Device)
+	}
+	if cfg.Gamepad.SwapXY != "auto" {
+		t.Errorf("gamepad.swap_xy = %q, want auto", cfg.Gamepad.SwapXY)
+	}
+}
+
+func TestWriteINIRoundTrip(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Theme.Name = "cobalt"
+	cfg.Window.Opacity = 0.98
+	cfg.Gamepad.Buttons.Press = "b"
+
+	var buf strings.Builder
+	if err := writeINI(&buf, cfg); err != nil {
+		t.Fatalf("writeINI error: %v", err)
+	}
+
+	// Parse back
+	cfg2 := DefaultConfig()
+	if err := parseINI(strings.NewReader(buf.String()), &cfg2); err != nil {
+		t.Fatalf("parseINI error on round-trip: %v", err)
+	}
+
+	if cfg2.Theme.Name != "cobalt" {
+		t.Errorf("round-trip theme = %q, want cobalt", cfg2.Theme.Name)
+	}
+	if cfg2.Window.Opacity != 0.98 {
+		t.Errorf("round-trip opacity = %f, want 0.98", cfg2.Window.Opacity)
+	}
+	if cfg2.Gamepad.Buttons.Press != "b" {
+		t.Errorf("round-trip press = %q, want b", cfg2.Gamepad.Buttons.Press)
+	}
+	if cfg2.Gamepad.Grab != true {
+		t.Error("round-trip grab should be true (default)")
+	}
+	if cfg2.Mouse.Enabled != true {
+		t.Error("round-trip mouse.enabled should be true (default)")
+	}
+}
+
+func TestMigrateFromTOML(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Write a TOML config (with quoted strings, like BurntSushi/toml produces)
+	tomlDir := filepath.Join(tmpDir, "gamepad-osk")
+	if err := os.MkdirAll(tomlDir, 0755); err != nil { //nolint:gosec // G301: test dir
+		t.Fatal(err)
+	}
+	tomlPath := filepath.Join(tomlDir, "config.toml")
+	tomlContent := `[theme]
+  name = "cobalt"
+
+[window]
+  position = "top"
+  margin = 15
+  opacity = 0.90
+
+[keys]
+  scale = 60
+
+[gamepad]
+  device = ""
+  grab = true
+  deadzone = 0.3
+  swap_xy = "auto"
+  mouse_stick = "right"
+
+  [gamepad.buttons]
+    press = "a"
+    close = "b"
+
+[mouse]
+  enabled = true
+  sensitivity = 10
+`
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+
+	// LoadConfig should auto-migrate
+	cfg := LoadConfig("")
+
+	// Verify config values loaded correctly
+	if cfg.Theme.Name != "cobalt" {
+		t.Errorf("migrated theme = %q, want cobalt", cfg.Theme.Name)
+	}
+	if cfg.Window.Position != "top" {
+		t.Errorf("migrated position = %q, want top", cfg.Window.Position)
+	}
+	if cfg.Window.Margin != 15 {
+		t.Errorf("migrated margin = %d, want 15", cfg.Window.Margin)
+	}
+	if cfg.Gamepad.Deadzone != 0.3 {
+		t.Errorf("migrated deadzone = %f, want 0.3", cfg.Gamepad.Deadzone)
+	}
+
+	// Verify new config file exists
+	newPath := filepath.Join(tomlDir, "config")
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("migrated config not created: %v", err)
+	}
+
+	// Verify new config has no TOML-style quotes
+	data, err := os.ReadFile(newPath) //nolint:gosec // G304: test path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"cobalt"`) {
+		t.Error("migrated config still contains TOML-style quotes")
+	}
+
+	// Verify old file renamed to .v1.bak
+	bakPath := tomlPath + ".v1.bak"
+	if _, err := os.Stat(bakPath); err != nil {
+		t.Errorf("backup file not created: %v", err)
+	}
+	if _, err := os.Stat(tomlPath); !os.IsNotExist(err) {
+		t.Error("original config.toml should no longer exist")
+	}
+
+	// Re-running should not re-migrate (new config already exists)
+	cfg2 := LoadConfig("")
+	if cfg2.Theme.Name != "cobalt" {
+		t.Errorf("second load theme = %q, want cobalt", cfg2.Theme.Name)
 	}
 }
 
