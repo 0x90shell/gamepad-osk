@@ -22,6 +22,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Multi-monitor aware (positions on primary monitor)
 - Configurable: buttons, sticks, theme, scale, position, opacity, deadzone
 - IPC toggle via Unix socket (`gamepad-osk --toggle`) for evsieve/hotkey integration
+- Built-in configurable toggle combo (e.g. `guide+a`, `l3+r3`) for zero-dependency show/hide
 - Daemon mode for systemd user service
 - Single static binary, ~5MB
 
@@ -60,7 +61,7 @@ git clone https://github.com/0x90shell/gamepad-osk.git
 cd gamepad-osk
 go build -o gamepad-osk .
 sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
-sudo install -Dm644 config.toml /usr/share/gamepad-osk/config.toml
+sudo install -Dm644 config.example /usr/share/gamepad-osk/config
 sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
 ```
 
@@ -84,7 +85,7 @@ sudo udevadm control --reload-rules
 If you must use sudo, pass your config explicitly to avoid loading root's config:
 
 ```bash
-sudo gamepad-osk --config ~/.config/gamepad-osk/config.toml
+sudo gamepad-osk --config ~/.config/gamepad-osk/config
 ```
 
 ## Systemd User Service
@@ -107,7 +108,7 @@ gamepad-osk --toggle
 gamepad-osk                          # start (auto-detect gamepad)
 gamepad-osk --device /dev/input/X    # use specific device
 gamepad-osk --theme synthwave        # start with theme
-gamepad-osk --config /path/to.toml   # use specific config file
+gamepad-osk --config /path/to/config  # use specific config file
 gamepad-osk --toggle                 # toggle running instance
 gamepad-osk --daemon                 # start hidden, wait for toggle
 gamepad-osk --help                   # show all options
@@ -132,18 +133,20 @@ gamepad-osk --help                   # show all options
 | Start | Toggle keyboard top/bottom |
 | Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
+| Toggle combo (configurable) | Show/hide keyboard (daemon mode) |
 
 ## Configuration
 
 Config is loaded from (first found):
-1. `~/.config/gamepad-osk/config.toml`
-2. `/etc/gamepad-osk/config.toml`
-3. `config.toml` next to binary
-4. `config.toml` in working directory
+1. `--config` flag
+2. `~/.config/gamepad-osk/config`
+3. `/etc/gamepad-osk/config`
+4. `config` next to binary
+5. `config` in working directory
 
 A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
 
-See `config.toml` for all options including button remapping, mouse stick, theme, scale, opacity, and deadzone.
+See `config.example` for all options including button remapping, toggle combo, mouse stick, theme, scale, opacity, and deadzone.
 
 ## Themes
 
@@ -174,9 +177,23 @@ See `config.toml` for all options including button remapping, mouse stick, theme
 | ![tokyo_night](assets/tokyo_night.png)<br><sub>tokyo_night</sub> | ![tokyo_storm](assets/tokyo_storm.png)<br><sub>tokyo_storm</sub> | ![vapor](assets/vapor.png)<br><sub>vapor</sub> |
 | ![virtualboy](assets/virtualboy.png)<br><sub>virtualboy</sub> | ![wine](assets/wine.png)<br><sub>wine</sub> | ![zx_spectrum](assets/zx_spectrum.png)<br><sub>zx_spectrum</sub> |
 
+## Toggle Combo
+
+Set `toggle_combo` in config to show/hide the keyboard with a button combo, no external tools needed:
+
+```ini
+[gamepad]
+toggle_combo = guide+a       # or l3+r3, select+start, etc.
+combo_period_ms = 200        # timing window (ms)
+```
+
+Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, `guide`, `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right`. Requires 2-4 buttons.
+
+Leave `toggle_combo` empty to use `--toggle` / evsieve instead (default).
+
 ## Evsieve Integration
 
-Example evsieve config to toggle the keyboard with Guide+Start:
+For advanced input routing, use evsieve. Example to toggle the keyboard with Guide+Start:
 
 ```bash
 evsieve \

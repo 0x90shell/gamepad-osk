@@ -93,11 +93,11 @@ func NewInjector() (*Injector, error) {
 // The caller is responsible for logging fix steps via logPermissionFix().
 func uinputError(code int) error {
 	if _, err := os.Stat(uinputPath); os.IsNotExist(err) {
-		return errors.New("/dev/uinput not found — load the module: sudo modprobe uinput")
+		return errors.New("/dev/uinput not found - load the module: sudo modprobe uinput")
 	}
 	f, err := os.OpenFile(uinputPath, os.O_RDWR, 0) //nolint:gosec // G304: path is constant
 	if err != nil && os.IsPermission(err) {
-		return errors.New("cannot open /dev/uinput — permission denied")
+		return errors.New("cannot open /dev/uinput - permission denied")
 	}
 	if f != nil {
 		_ = f.Close()

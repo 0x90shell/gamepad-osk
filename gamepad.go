@@ -64,6 +64,7 @@ const (
 	ActionBackspaceRelease
 	ActionSpaceRelease
 	ActionEnterRelease
+	ActionToggle
 )
 
 type Action struct {
@@ -111,13 +112,23 @@ type GamepadReader struct {
 	mouseAxisX uint16
 	mouseAxisY uint16
 	deviceName string // currently unused; stored for future logging/diagnostics
+
+	// Toggle combo state
+	comboButtons    []ComboButton     // parsed from config at startup (nil = disabled)
+	comboPeriodMs   int               // timing window
+	btnHeld         map[uint16]bool   // current button press state
+	axisState       map[uint16]int32  // current axis values (for d-pad and triggers)
+	comboFirstPress time.Time         // when the first combo button was pressed
+	comboFired      bool              // edge-trigger flag (prevents repeat while held)
 }
 
 func NewGamepadReader(config Config) *GamepadReader {
 	gp := &GamepadReader{
-		config:  config,
-		axisMax: 32767,
-		trigMax: 255,
+		config:    config,
+		axisMax:   32767,
+		trigMax:   255,
+		btnHeld:   make(map[uint16]bool),
+		axisState: make(map[uint16]int32),
 	}
 
 	// Configure stick assignments (mouse_stick sets mouse, other stick = nav)
@@ -128,6 +139,20 @@ func NewGamepadReader(config Config) *GamepadReader {
 	} else {
 		gp.mouseAxisX, gp.mouseAxisY = ABS_RX, ABS_RY
 		gp.navAxisX, gp.navAxisY = ABS_X, ABS_Y
+	}
+
+	// Parse toggle combo
+	if config.Gamepad.ToggleCombo != "" {
+		buttons, err := parseComboString(config.Gamepad.ToggleCombo)
+		if err != nil {
+			log.Printf("Warning: invalid toggle_combo: %v", err)
+		} else {
+			gp.comboButtons = buttons
+			gp.comboPeriodMs = config.Gamepad.ComboPeriodMs
+			if gp.comboPeriodMs <= 0 {
+				gp.comboPeriodMs = 200
+			}
+		}
 	}
 
 	return gp
@@ -164,7 +189,7 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
 		if os.IsPermission(err) {
-			log.Print(colorRed("Error: cannot read " + path + " — permission denied"))
+			log.Print(colorRed("Error: cannot read " + path + " - permission denied"))
 			logPermissionFix()
 		} else {
 			log.Printf("Error opening %s: %v", path, err)
@@ -348,6 +373,14 @@ func (gp *GamepadReader) handleEvent(evType, evCode uint16, value int32) Action 
 func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 	pressed := value == 1
 
+	// Track button state for combo detection
+	gp.btnHeld[code] = pressed
+
+	// Check combo on every button event
+	if toggle := gp.checkCombo(); toggle.Type != ActionNone {
+		return toggle
+	}
+
 	if code == gp.pressBtn {
 		if pressed {
 			Debugf("Button 0x%x pressed (press btn)", code)
@@ -373,6 +406,16 @@ func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 	dz := gp.config.Gamepad.Deadzone
 	norm := float64(value) / gp.axisMax
+
+	// Track axis state for combo detection (d-pad and triggers)
+	gp.axisState[code] = value
+
+	// Check combo on axis events that could be combo-relevant (d-pad, triggers)
+	if code == ABS_HAT0X || code == ABS_HAT0Y || code == ABS_Z || code == ABS_RZ {
+		if toggle := gp.checkCombo(); toggle.Type != ActionNone {
+			return toggle
+		}
+	}
 
 	switch code {
 	case gp.navAxisX: // Nav stick X
@@ -440,6 +483,64 @@ func (gp *GamepadReader) updateNav(nav *NavAxis, direction int, isX bool) Action
 		nav.HeldSince = time.Time{}
 	}
 	return Action{Type: ActionNone}
+}
+
+// checkCombo checks if the toggle combo is fully satisfied and returns ActionToggle if so.
+// Implements edge-triggering (fires once per press) and timing window.
+func (gp *GamepadReader) checkCombo() Action {
+	if len(gp.comboButtons) == 0 {
+		return Action{Type: ActionNone}
+	}
+
+	allHeld := true
+	for _, cb := range gp.comboButtons {
+		if gp.isComboButtonHeld(cb) {
+			continue
+		}
+		allHeld = false
+		break
+	}
+
+	if allHeld && !gp.comboFired {
+		now := time.Now()
+		if gp.comboFirstPress.IsZero() {
+			gp.comboFirstPress = now
+		}
+		if now.Sub(gp.comboFirstPress) <= time.Duration(gp.comboPeriodMs)*time.Millisecond {
+			gp.comboFired = true
+			Debugf("Toggle combo fired: %s", gp.config.Gamepad.ToggleCombo)
+			return Action{Type: ActionToggle}
+		}
+		// Window expired - reset timer, will start fresh on next check
+		gp.comboFirstPress = time.Time{}
+	} else if !allHeld {
+		gp.comboFired = false
+		gp.comboFirstPress = time.Time{}
+	}
+
+	return Action{Type: ActionNone}
+}
+
+// isComboButtonHeld checks if a single combo button is currently satisfied.
+// A button is satisfied if any of its BtnCodes are held OR its axis matches.
+func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
+	// Check digital button codes
+	for _, code := range cb.BtnCodes {
+		if gp.btnHeld[code] {
+			return true
+		}
+	}
+	// Check axis (d-pad or analog trigger)
+	if cb.AxisCode != 0 {
+		axisVal := gp.axisState[cb.AxisCode]
+		if cb.AxisVal < 0 && axisVal < 0 {
+			return true // d-pad up or left (any negative value)
+		}
+		if cb.AxisVal > 0 && axisVal > 0 {
+			return true // d-pad down or right, or trigger past zero
+		}
+	}
+	return false
 }
 
 func (gp *GamepadReader) Close() {

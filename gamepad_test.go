@@ -318,6 +318,185 @@ func TestSwappedButtons(t *testing.T) {
 	}
 }
 
+// --- Toggle combo tests ---
+
+func newComboGamepad(combo string) *GamepadReader {
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = combo
+	cfg.Gamepad.ComboPeriodMs = 200
+	gp := NewGamepadReader(cfg)
+	gp.axisMax = 32767
+	gp.trigMax = 255
+	gp.initButtonMap()
+	return gp
+}
+
+func TestComboDetect_TwoButtons(t *testing.T) {
+	gp := newComboGamepad("select+start")
+
+	// Press select, then start
+	gp.handleButton(0x13a, 1) // select press - combo not yet complete
+	a := gp.handleButton(0x13b, 1) // start press - combo fires
+	if a.Type != ActionToggle {
+		t.Errorf("combo fire = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_PressOrder(t *testing.T) {
+	gp := newComboGamepad("select+start")
+
+	// Reverse order: start first, then select
+	gp.handleButton(0x13b, 1) // start press
+	a := gp.handleButton(0x13a, 1) // select press - combo fires
+	if a.Type != ActionToggle {
+		t.Errorf("reverse order combo = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_EdgeTrigger(t *testing.T) {
+	gp := newComboGamepad("select+start")
+
+	gp.handleButton(0x13a, 1)
+	a := gp.handleButton(0x13b, 1) // fires
+	if a.Type != ActionToggle {
+		t.Fatalf("first fire = %v, want ActionToggle", a.Type)
+	}
+
+	// While still held, additional events should not re-fire
+	a = gp.handleButton(0x13b, 1) // repeat event
+	if a.Type == ActionToggle {
+		t.Error("combo fired again while held - should be edge-triggered")
+	}
+}
+
+func TestComboDetect_ReleaseReset(t *testing.T) {
+	gp := newComboGamepad("select+start")
+
+	// Fire combo
+	gp.handleButton(0x13a, 1)
+	gp.handleButton(0x13b, 1)
+
+	// Release one button
+	gp.handleButton(0x13a, 0)
+
+	// Re-press - should fire again
+	a := gp.handleButton(0x13a, 1)
+	if a.Type != ActionToggle {
+		t.Errorf("re-press after release = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_TimingWindow(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "select+start"
+	cfg.Gamepad.ComboPeriodMs = 50 // very short window
+	gp := NewGamepadReader(cfg)
+	gp.axisMax = 32767
+	gp.trigMax = 255
+	gp.initButtonMap()
+
+	// Press select
+	gp.handleButton(0x13a, 1)
+
+	// Simulate expired window by setting comboFirstPress in the past
+	gp.comboFirstPress = time.Now().Add(-100 * time.Millisecond)
+
+	// Press start - window expired, should not fire
+	a := gp.handleButton(0x13b, 1)
+	if a.Type == ActionToggle {
+		t.Error("combo fired outside timing window")
+	}
+}
+
+func TestComboDetect_DpadAxis(t *testing.T) {
+	gp := newComboGamepad("dpad_up+a")
+
+	// D-pad up via ABS_HAT0Y = -1
+	gp.handleAxis(ABS_HAT0Y, -1)
+	a := gp.handleButton(BTN_SOUTH, 1)
+	if a.Type != ActionToggle {
+		t.Errorf("dpad_up(axis)+a = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_DpadButton(t *testing.T) {
+	gp := newComboGamepad("dpad_up+a")
+
+	// D-pad up via BTN_DPAD_UP (0x220) - some controllers send this
+	gp.handleButton(0x220, 1)
+	a := gp.handleButton(BTN_SOUTH, 1)
+	if a.Type != ActionToggle {
+		t.Errorf("dpad_up(btn)+a = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_AnalogTrigger(t *testing.T) {
+	gp := newComboGamepad("lt+a")
+
+	// LT via analog axis (ABS_Z value > 0)
+	gp.handleAxis(ABS_Z, 200)
+	a := gp.handleButton(BTN_SOUTH, 1)
+	if a.Type != ActionToggle {
+		t.Errorf("lt(axis)+a = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_DigitalTrigger(t *testing.T) {
+	gp := newComboGamepad("lt+a")
+
+	// LT via digital button (BTN_TL2) - Switch Pro
+	gp.handleButton(BTN_TL2, 1)
+	a := gp.handleButton(BTN_SOUTH, 1)
+	if a.Type != ActionToggle {
+		t.Errorf("lt(btn)+a = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_Disabled(t *testing.T) {
+	gp := newTestGamepad() // no toggle combo
+
+	// Press every button - should never get ActionToggle
+	for _, code := range []uint16{BTN_SOUTH, BTN_EAST, BTN_WEST, BTN_NORTH, BTN_TL, BTN_TR, 0x13a, 0x13b} {
+		a := gp.handleButton(code, 1)
+		if a.Type == ActionToggle {
+			t.Errorf("disabled combo fired on button 0x%x", code)
+		}
+	}
+}
+
+func TestComboDetect_ThreeButtons(t *testing.T) {
+	gp := newComboGamepad("select+start+rb")
+
+	gp.handleButton(0x13a, 1) // select
+	gp.handleButton(0x13b, 1) // start - only 2 of 3, no fire
+	a := gp.handleButton(BTN_TR, 1) // rb - all 3 held
+	if a.Type != ActionToggle {
+		t.Errorf("3-button combo = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_FourButtons(t *testing.T) {
+	gp := newComboGamepad("select+start+lb+rb")
+
+	gp.handleButton(0x13a, 1) // select
+	gp.handleButton(0x13b, 1) // start
+	gp.handleButton(BTN_TL, 1) // lb - only 3 of 4
+	a := gp.handleButton(BTN_TR, 1) // rb - all 4
+	if a.Type != ActionToggle {
+		t.Errorf("4-button combo = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestComboDetect_PartialPress(t *testing.T) {
+	gp := newComboGamepad("select+start+rb")
+
+	gp.handleButton(0x13a, 1) // select
+	a := gp.handleButton(0x13b, 1) // start - only 2 of 3
+	if a.Type == ActionToggle {
+		t.Error("partial press (2 of 3) should not fire combo")
+	}
+}
+
 func TestMouseStickLeft(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Gamepad.MouseStick = "left"

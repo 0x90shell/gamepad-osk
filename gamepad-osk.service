@@ -1,5 +1,5 @@
 [Unit]
-Description=gamepad-osk — Gamepad on-screen keyboard
+Description=gamepad-osk - Gamepad on-screen keyboard
 After=graphical-session.target
 
 [Service]

@@ -23,6 +23,12 @@ deadzone = 0.25
 long_press_ms = 500
 swap_xy = auto               # auto = detect Xbox 360, true = force swap, false = no swap
 mouse_stick = right           # left or right - nav uses the other stick
+toggle_combo =               # built-in show/hide combo (empty = disabled, use --toggle/evsieve)
+                             # format: button+button (2-4 buttons, + separated)
+                             # buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,
+                             #          dpad_up, dpad_down, dpad_left, dpad_right
+                             # examples: guide+a, l3+r3, select+start, select+start+lb+rb
+combo_period_ms = 200        # ms window for all combo buttons to be held (50-2000)
 
 [gamepad.buttons]            # button names: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select
 press = a                    # press highlighted key

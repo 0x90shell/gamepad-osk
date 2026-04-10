@@ -176,7 +176,7 @@ func (app *App) Run() error {
 
 	inj, err := NewInjector()
 	if err != nil {
-		log.Print(colorRed("Warning: key injection disabled — " + err.Error()))
+		log.Print(colorRed("Warning: key injection disabled - " + err.Error()))
 		logPermissionFix()
 		log.Printf("The on-screen keyboard will display but cannot send keystrokes.")
 	}
@@ -322,6 +322,14 @@ func (app *App) Run() error {
 }
 
 func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *Renderer) {
+	// Toggle combo works even when hidden (it's the show/hide mechanism)
+	if a.Type == ActionToggle {
+		app.lock.Lock()
+		app.togglePending = true
+		app.lock.Unlock()
+		return
+	}
+
 	// Block all input when keyboard is hidden
 	if !app.visible {
 		return

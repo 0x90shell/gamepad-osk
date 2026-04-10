@@ -143,7 +143,7 @@ func buttonLabel(name string) string {
 		"a": "A", "b": "B", "x": "X", "y": "Y",
 		"lb": "LB", "rb": "RB", "lt": "LT (hold)", "rt": "RT",
 		"l3": "L3 (stick click)", "r3": "R3 (stick click)",
-		"start": "Start", "select": "Select",
+		"start": "Start", "select": "Select", "guide": "Guide",
 	}
 	if l, ok := labels[name]; ok {
 		return l
@@ -172,7 +172,7 @@ OPTIONS
   --theme, -t NAME     Color theme (overrides config)
   --config, -c PATH    Config file path (overrides search order)
   --toggle             Toggle visibility of running instance (for evsieve/hotkey)
-  --daemon             Start hidden, wait for --toggle to show
+  --daemon             Start hidden, wait for toggle combo or --toggle to show
   --setup              Check system configuration (udev, permissions, config)
   --setup --install    Deploy udev rules, config, and systemd service
   --verbose, -v        Verbose logging (gamepad events, key injection, config)
@@ -199,6 +199,14 @@ CONTROLS (from config)
   %-24s Caps Lock
   %-24s Toggle keyboard top/bottom
   %-24s Accent popup (on vowels: é, ñ, ü)
+
+TOGGLE COMBO (config: toggle_combo)
+  Built-in show/hide combo for daemon mode. Set toggle_combo in config:
+    toggle_combo = guide+a         # 2-4 buttons, + separated
+    combo_period_ms = 200          # timing window (ms)
+  Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,
+           dpad_up, dpad_down, dpad_left, dpad_right
+  Empty = disabled (use --toggle / evsieve instead)
 
 THEMES
   %s

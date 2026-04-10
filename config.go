@@ -60,14 +60,16 @@ type ButtonsConfig struct {
 }
 
 type GamepadConfig struct {
-	Device      string
-	Grab        bool
-	GrabDevice  string
-	Deadzone    float64
-	LongPressMs int
-	SwapXY      string        // "auto", "true", "false"
-	MouseStick  string        // "left" or "right" (nav uses the other stick)
-	Buttons     ButtonsConfig
+	Device        string
+	Grab          bool
+	GrabDevice    string
+	Deadzone      float64
+	LongPressMs   int
+	SwapXY        string // "auto", "true", "false"
+	MouseStick    string // "left" or "right" (nav uses the other stick)
+	ToggleCombo   string // e.g. "select+start", empty = disabled
+	ComboPeriodMs int    // timing window for combo detection (default 200)
+	Buttons       ButtonsConfig
 }
 
 type MouseConfig struct {
@@ -81,11 +83,12 @@ func DefaultConfig() Config {
 		Window: WindowConfig{Position: "bottom", Margin: 20, Opacity: 0.95},
 		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 70, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
-			Grab:        true,
-			Deadzone:    0.25,
-			LongPressMs: 500,
-			SwapXY:      "auto",
-			MouseStick:  "right",
+			Grab:          true,
+			Deadzone:      0.25,
+			LongPressMs:   500,
+			SwapXY:        "auto",
+			MouseStick:    "right",
+			ComboPeriodMs: 200,
 			Buttons: ButtonsConfig{
 				Press:      "a",
 				Close:      "b",
@@ -123,7 +126,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 			continue
 		}
 
-		// Strip inline comments (but not inside values — no values contain #)
+		// Strip inline comments (but not inside values - no values contain #)
 		if idx := strings.Index(line, "#"); idx > 0 {
 			line = strings.TrimSpace(line[:idx])
 		}
@@ -217,6 +220,12 @@ func parseINI(r io.Reader, cfg *Config) error {
 				cfg.Gamepad.SwapXY = val
 			case "mouse_stick":
 				cfg.Gamepad.MouseStick = val
+			case "toggle_combo":
+				cfg.Gamepad.ToggleCombo = val
+			case "combo_period_ms":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Gamepad.ComboPeriodMs = n
+				}
 			default:
 				Debugf("unknown config key: gamepad.%s", key)
 			}
@@ -292,7 +301,9 @@ func writeINI(w io.Writer, cfg Config) error {
 	fmt.Fprintf(&b, "deadzone = %s\n", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f', -1, 64))
 	fmt.Fprintf(&b, "long_press_ms = %d\n", cfg.Gamepad.LongPressMs)
 	fmt.Fprintf(&b, "swap_xy = %s\n", cfg.Gamepad.SwapXY)
-	fmt.Fprintf(&b, "mouse_stick = %s\n\n", cfg.Gamepad.MouseStick)
+	fmt.Fprintf(&b, "mouse_stick = %s\n", cfg.Gamepad.MouseStick)
+	fmt.Fprintf(&b, "toggle_combo = %s\n", cfg.Gamepad.ToggleCombo)
+	fmt.Fprintf(&b, "combo_period_ms = %d\n\n", cfg.Gamepad.ComboPeriodMs)
 
 	b.WriteString("[gamepad.buttons]\n")
 	fmt.Fprintf(&b, "press = %s\n", cfg.Gamepad.Buttons.Press)
@@ -314,7 +325,7 @@ func writeINI(w io.Writer, cfg Config) error {
 }
 
 // migrateFromTOML converts a TOML config file to INI format.
-// TOML key=value is a superset of INI — just strip quotes from string values.
+// TOML key=value is a superset of INI - just strip quotes from string values.
 // Returns the new config path, or error.
 func migrateFromTOML(tomlPath, newPath string) error {
 	in, err := os.Open(tomlPath) //nolint:gosec // G304: config path from known locations
@@ -341,7 +352,7 @@ func migrateFromTOML(tomlPath, newPath string) error {
 			continue
 		}
 
-		// key = value — strip quotes from value
+		// key = value - strip quotes from value
 		parts := strings.SplitN(trimmed, "=", 2)
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
@@ -585,5 +596,15 @@ func ValidateConfig(cfg *Config) {
 	if cfg.Keys.RepeatRateMs < 20 || cfg.Keys.RepeatRateMs > 500 {
 		log.Printf("Warning: repeat_rate_ms %d out of range [20,500], using 80", cfg.Keys.RepeatRateMs)
 		cfg.Keys.RepeatRateMs = 80
+	}
+	if cfg.Gamepad.ComboPeriodMs < 50 || cfg.Gamepad.ComboPeriodMs > 2000 {
+		log.Printf("Warning: combo_period_ms %d out of range [50,2000], using 200", cfg.Gamepad.ComboPeriodMs)
+		cfg.Gamepad.ComboPeriodMs = 200
+	}
+	if cfg.Gamepad.ToggleCombo != "" {
+		if _, err := parseComboString(cfg.Gamepad.ToggleCombo); err != nil {
+			log.Printf("Warning: invalid toggle_combo %q: %v - disabling", cfg.Gamepad.ToggleCombo, err)
+			cfg.Gamepad.ToggleCombo = ""
+		}
 	}
 }

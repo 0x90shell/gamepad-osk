@@ -13,7 +13,7 @@ const (
 	udevRuleAlt  = "/etc/udev/rules.d/80-gamepad-osk.rules"
 )
 
-// Hardcoded canonical content — reviewed and versioned in source control.
+// Hardcoded canonical content - reviewed and versioned in source control.
 // Kept in sync with gamepad-osk.udev but intentionally not go:embed'd
 // to prevent accidental deployment of corrupted rule files.
 const udevRuleContent = "# gamepad-osk: gamepad reading + virtual keyboard injection\n" +
@@ -21,7 +21,7 @@ const udevRuleContent = "# gamepad-osk: gamepad reading + virtual keyboard injec
 	"KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"input\", MODE=\"0660\", TAG+=\"uaccess\"\n"
 
 const systemdServiceTemplate = `[Unit]
-Description=gamepad-osk — Gamepad on-screen keyboard
+Description=gamepad-osk - Gamepad on-screen keyboard
 After=graphical-session.target
 
 [Service]
@@ -66,14 +66,14 @@ func runDiagnose() int {
 	fmt.Println()
 
 	if os.Geteuid() == 0 {
-		fmt.Println(colorYellow("  Note: running as root — results reflect root access, not your user's."))
+		fmt.Println(colorYellow("  Note: running as root - results reflect root access, not your user's."))
 		fmt.Println(colorDim("  Run without sudo for an accurate check of your user's permissions."))
 		fmt.Println()
 	}
 
 	issues := 0
 
-	// Check device access first — udev rule status depends on this
+	// Check device access first - udev rule status depends on this
 	uinputOK := false
 	switch f, err := os.OpenFile("/dev/uinput", os.O_RDWR, 0); { //nolint:gosec // G304: constant path
 	case err == nil:
@@ -111,7 +111,7 @@ func runDiagnose() int {
 		}
 	}
 
-	// udev rules — only flag as a problem if device access is also failing
+	// udev rules - only flag as a problem if device access is also failing
 	udevFound := false
 	for _, path := range []string{udevRulePath, udevRuleAlt} {
 		if _, err := os.Stat(path); err == nil {
@@ -122,7 +122,7 @@ func runDiagnose() int {
 	}
 	if !udevFound {
 		if uinputOK && inputOK {
-			fmt.Printf("  %-14s %s not installed (not needed — device access works)\n", "udev rules", colorDim("[~]"))
+			fmt.Printf("  %-14s %s not installed (not needed - device access works)\n", "udev rules", colorDim("[~]"))
 		} else {
 			fmt.Printf("  %-14s %s not found\n", "udev rules", colorRed("[✗]"))
 			issues++
@@ -158,7 +158,7 @@ func runDiagnose() int {
 		fmt.Printf("  %-14s %s %s (will be created on first run)\n", "config", colorDim("[~]"), userCfg)
 	}
 
-	// 6. systemd service — check both system-wide and user-local paths
+	// 6. systemd service - check both system-wide and user-local paths
 	if hasSystemd() {
 		systemSvc := "/usr/lib/systemd/user/gamepad-osk.service"
 		userSvc := systemdUserServicePath()
@@ -213,7 +213,7 @@ func runInstall() int {
 			fmt.Printf("  Triggering udev... %s\n", colorGreen("done"))
 		}
 	} else {
-		fmt.Printf("  Installing udev rules... %s (need root — run with sudo)\n", colorRed("skipped"))
+		fmt.Printf("  Installing udev rules... %s (need root - run with sudo)\n", colorRed("skipped"))
 	}
 
 	// 2. config

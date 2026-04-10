@@ -545,6 +545,157 @@ func TestStickClickAutoMap(t *testing.T) {
 	}
 }
 
+func TestParseComboString(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantN   int
+		wantErr bool
+	}{
+		{"two buttons", "select+start", 2, false},
+		{"three buttons", "select+start+rb", 3, false},
+		{"four buttons", "select+start+lb+rb", 4, false},
+		{"with spaces", " select + start ", 2, false},
+		{"case insensitive", "Select+START", 2, false},
+		{"empty string", "", 0, false},
+		{"single button", "a", 0, true},
+		{"five buttons", "a+b+x+y+lb", 0, true},
+		{"unknown button", "a+banana", 0, true},
+		{"duplicate", "a+a", 0, true},
+		{"guide button", "guide+a", 2, false},
+		{"dpad buttons", "dpad_up+dpad_down", 2, false},
+		{"triggers", "lt+rt", 2, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buttons, err := parseComboString(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("parseComboString(%q) = no error, want error", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("parseComboString(%q) error: %v", tt.input, err)
+				return
+			}
+			if len(buttons) != tt.wantN {
+				t.Errorf("parseComboString(%q) = %d buttons, want %d", tt.input, len(buttons), tt.wantN)
+			}
+		})
+	}
+}
+
+func TestParseComboStringDpad(t *testing.T) {
+	buttons, err := parseComboString("dpad_up+a")
+	if err != nil {
+		t.Fatalf("parseComboString error: %v", err)
+	}
+	if len(buttons) != 2 {
+		t.Fatalf("got %d buttons, want 2", len(buttons))
+	}
+
+	// Find the dpad_up button
+	var dpad ComboButton
+	for _, b := range buttons {
+		if b.Name == "dpad_up" {
+			dpad = b
+			break
+		}
+	}
+	if dpad.Name == "" {
+		t.Fatal("dpad_up not found in parsed buttons")
+	}
+	if len(dpad.BtnCodes) == 0 {
+		t.Error("dpad_up should have BtnCodes (BTN_DPAD_UP)")
+	}
+	if dpad.AxisCode != ABS_HAT0Y {
+		t.Errorf("dpad_up AxisCode = 0x%x, want ABS_HAT0Y (0x%x)", dpad.AxisCode, ABS_HAT0Y)
+	}
+	if dpad.AxisVal != -1 {
+		t.Errorf("dpad_up AxisVal = %d, want -1", dpad.AxisVal)
+	}
+}
+
+func TestParseComboStringTriggers(t *testing.T) {
+	buttons, err := parseComboString("lt+rt")
+	if err != nil {
+		t.Fatalf("parseComboString error: %v", err)
+	}
+
+	var lt, rt ComboButton
+	for _, b := range buttons {
+		switch b.Name {
+		case "lt":
+			lt = b
+		case "rt":
+			rt = b
+		}
+	}
+	// LT: both BTN_TL2 and ABS_Z
+	if len(lt.BtnCodes) == 0 || lt.BtnCodes[0] != BTN_TL2 {
+		t.Errorf("lt BtnCodes = %v, want [BTN_TL2]", lt.BtnCodes)
+	}
+	if lt.AxisCode != ABS_Z {
+		t.Errorf("lt AxisCode = 0x%x, want ABS_Z", lt.AxisCode)
+	}
+	// RT: both BTN_TR2 and ABS_RZ
+	if len(rt.BtnCodes) == 0 || rt.BtnCodes[0] != BTN_TR2 {
+		t.Errorf("rt BtnCodes = %v, want [BTN_TR2]", rt.BtnCodes)
+	}
+	if rt.AxisCode != ABS_RZ {
+		t.Errorf("rt AxisCode = 0x%x, want ABS_RZ", rt.AxisCode)
+	}
+}
+
+func TestComboConfigRoundTrip(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "select+start"
+	cfg.Gamepad.ComboPeriodMs = 300
+
+	var buf strings.Builder
+	if err := writeINI(&buf, cfg); err != nil {
+		t.Fatalf("writeINI error: %v", err)
+	}
+
+	cfg2 := DefaultConfig()
+	if err := parseINI(strings.NewReader(buf.String()), &cfg2); err != nil {
+		t.Fatalf("parseINI error: %v", err)
+	}
+
+	if cfg2.Gamepad.ToggleCombo != "select+start" {
+		t.Errorf("round-trip toggle_combo = %q, want select+start", cfg2.Gamepad.ToggleCombo)
+	}
+	if cfg2.Gamepad.ComboPeriodMs != 300 {
+		t.Errorf("round-trip combo_period_ms = %d, want 300", cfg2.Gamepad.ComboPeriodMs)
+	}
+}
+
+func TestValidateComboConfig(t *testing.T) {
+	// Valid combo passes validation
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "select+start"
+	ValidateConfig(&cfg)
+	if cfg.Gamepad.ToggleCombo != "select+start" {
+		t.Errorf("valid combo cleared: %q", cfg.Gamepad.ToggleCombo)
+	}
+
+	// Invalid combo gets cleared
+	cfg.Gamepad.ToggleCombo = "banana+phone"
+	ValidateConfig(&cfg)
+	if cfg.Gamepad.ToggleCombo != "" {
+		t.Errorf("invalid combo not cleared: %q", cfg.Gamepad.ToggleCombo)
+	}
+
+	// combo_period_ms out of range
+	cfg.Gamepad.ComboPeriodMs = 10
+	ValidateConfig(&cfg)
+	if cfg.Gamepad.ComboPeriodMs != 200 {
+		t.Errorf("combo_period_ms = %d, want 200 after validation", cfg.Gamepad.ComboPeriodMs)
+	}
+}
+
 func TestTriggerDualMap(t *testing.T) {
 	cfg := DefaultConfig()
 	am := BuildActionMap(cfg.Gamepad)
