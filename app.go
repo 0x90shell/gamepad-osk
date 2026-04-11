@@ -22,6 +22,7 @@ type App struct {
 	config        Config
 	running       bool
 	visible       bool
+	daemon        bool
 	togglePending bool
 	lock          sync.Mutex
 	themeIdx int
@@ -192,7 +193,7 @@ func (app *App) Run() error {
 		log.Printf("Usage: gamepad-osk --device /dev/input/gamepad0")
 	}
 	defer gamepad.Close()
-	if cfg.Gamepad.Grab {
+	if cfg.Gamepad.Grab && app.visible {
 		gamepad.Grab()
 	}
 
@@ -263,6 +264,9 @@ func (app *App) Run() error {
 			app.togglePending = false
 			app.visible = !app.visible
 			if app.visible {
+				if cfg.Gamepad.Grab {
+					gamepad.Grab()
+				}
 				SDL3ShowWindow(window)
 				if opacity < 1.0 {
 					SDL3SetWindowOpacity(window, opacity) // re-apply after show
@@ -275,6 +279,7 @@ func (app *App) Run() error {
 				}
 			} else {
 				app.stopRepeat()
+				gamepad.Ungrab()
 				SDL3HideWindow(window)
 			}
 		}
@@ -435,6 +440,13 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		}
 		SavePosition(app.posTop)
 	case ActionClose:
+		if app.daemon {
+			// Daemon mode: close button hides instead of exiting
+			app.lock.Lock()
+			app.togglePending = true
+			app.lock.Unlock()
+			return
+		}
 		app.stopRepeat()
 		app.running = false
 		return

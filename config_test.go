@@ -10,8 +10,8 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Theme.Name != "dark" {
-		t.Errorf("default theme = %q, want dark", cfg.Theme.Name)
+	if cfg.Theme.Name != "matrix" {
+		t.Errorf("default theme = %q, want matrix", cfg.Theme.Name)
 	}
 	if cfg.Window.Position != "bottom" {
 		t.Errorf("default position = %q, want bottom", cfg.Window.Position)
@@ -56,7 +56,7 @@ func TestValidateConfig(t *testing.T) {
 		{"long_press_ms too low", func(c *Config) { c.Gamepad.LongPressMs = 10 },
 			func(c *Config) bool { return c.Gamepad.LongPressMs == 500 }, "should reset to 500"},
 		{"unknown theme", func(c *Config) { c.Theme.Name = "nonexistent" },
-			func(c *Config) bool { return c.Theme.Name == "dark" }, "should reset to dark"},
+			func(c *Config) bool { return c.Theme.Name == "matrix" }, "should reset to matrix"},
 		{"valid theme", func(c *Config) { c.Theme.Name = "nord" },
 			func(c *Config) bool { return c.Theme.Name == "nord" }, "should keep nord"},
 	}
@@ -226,14 +226,14 @@ func TestValidateScale(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Keys.Scale = 0
 	ValidateConfig(&cfg)
-	if cfg.Keys.Scale != 70 {
-		t.Errorf("scale = %d, want 70 after validation", cfg.Keys.Scale)
+	if cfg.Keys.Scale != 50 {
+		t.Errorf("scale = %d, want 50 after validation", cfg.Keys.Scale)
 	}
 
 	cfg.Keys.Scale = 200
 	ValidateConfig(&cfg)
-	if cfg.Keys.Scale != 70 {
-		t.Errorf("scale = %d, want 70 after validation", cfg.Keys.Scale)
+	if cfg.Keys.Scale != 50 {
+		t.Errorf("scale = %d, want 50 after validation", cfg.Keys.Scale)
 	}
 }
 
@@ -299,7 +299,6 @@ repeat_rate_ms = 50
 [gamepad]
 device = /dev/input/event5
 grab = false
-grab_device = /dev/input/event6
 deadzone = 0.3
 long_press_ms = 400
 swap_xy = true
@@ -693,6 +692,77 @@ func TestValidateComboConfig(t *testing.T) {
 	ValidateConfig(&cfg)
 	if cfg.Gamepad.ComboPeriodMs != 200 {
 		t.Errorf("combo_period_ms = %d, want 200 after validation", cfg.Gamepad.ComboPeriodMs)
+	}
+}
+
+func TestCheckConfig(t *testing.T) {
+	// Valid default config has no issues
+	cfg := DefaultConfig()
+	if issues := checkConfig(cfg); len(issues) != 0 {
+		t.Errorf("default config has issues: %v", issues)
+	}
+
+	// Each bad value produces an issue
+	cases := []struct {
+		name  string
+		apply func(*Config)
+		want  string
+	}{
+		{"bad theme", func(c *Config) { c.Theme.Name = "nonexistent" }, "unknown theme"},
+		{"bad scale low", func(c *Config) { c.Keys.Scale = 10 }, "scale"},
+		{"bad scale high", func(c *Config) { c.Keys.Scale = 200 }, "scale"},
+		{"bad deadzone", func(c *Config) { c.Gamepad.Deadzone = 2.0 }, "deadzone"},
+		{"bad sensitivity", func(c *Config) { c.Mouse.Sensitivity = 0 }, "sensitivity"},
+		{"bad repeat_delay", func(c *Config) { c.Keys.RepeatDelayMs = 50 }, "repeat_delay_ms"},
+		{"bad repeat_rate", func(c *Config) { c.Keys.RepeatRateMs = 5 }, "repeat_rate_ms"},
+		{"bad long_press", func(c *Config) { c.Gamepad.LongPressMs = 10 }, "long_press_ms"},
+		{"bad combo_period", func(c *Config) { c.Gamepad.ComboPeriodMs = 5 }, "combo_period_ms"},
+		{"bad toggle_combo", func(c *Config) { c.Gamepad.ToggleCombo = "a+banana" }, "toggle_combo"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := DefaultConfig()
+			tc.apply(&c)
+			issues := checkConfig(c)
+			if len(issues) == 0 {
+				t.Fatalf("expected issue containing %q, got none", tc.want)
+			}
+			found := false
+			for _, issue := range issues {
+				if strings.Contains(issue, tc.want) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected issue containing %q, got %v", tc.want, issues)
+			}
+		})
+	}
+}
+
+func TestCheckConfigFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config")
+
+	// Valid sections - no issues
+	if err := os.WriteFile(path, []byte("[theme]\nname = dark\n[keys]\nscale = 50\n"), 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+	if issues := checkConfigFile(path); len(issues) != 0 {
+		t.Errorf("valid config has section issues: %v", issues)
+	}
+
+	// Unknown section caught
+	if err := os.WriteFile(path, []byte("[theme]\nname = dark\n[kkeys]\nscale = 50\n"), 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+	issues := checkConfigFile(path)
+	if len(issues) == 0 {
+		t.Fatal("expected issue for [kkeys], got none")
+	}
+	if !strings.Contains(issues[0], "kkeys") {
+		t.Errorf("expected issue mentioning 'kkeys', got %q", issues[0])
 	}
 }
 

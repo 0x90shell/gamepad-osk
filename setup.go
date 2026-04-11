@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +74,7 @@ func runDiagnose() int {
 	}
 
 	issues := 0
+	configIssues := 0
 
 	// Check device access first - udev rule status depends on this
 	uinputOK := false
@@ -153,7 +156,23 @@ func runDiagnose() int {
 	// 5. config
 	userCfg := UserConfigPath()
 	if _, err := os.Stat(userCfg); err == nil {
-		fmt.Printf("  %-14s %s %s\n", "config", colorGreen("[✓]"), userCfg)
+		// Suppress log output from config parsing (unknown section warnings etc.)
+		log.SetOutput(io.Discard)
+		cfg := LoadConfig(userCfg)
+		log.SetOutput(os.Stderr)
+		problems := checkConfigFile(userCfg)
+		problems = append(problems, checkConfig(cfg)...)
+		if len(problems) > 0 {
+			fmt.Printf("  %-14s %s %s\n", "config", colorYellow("[!]"), userCfg)
+			for _, issue := range problems {
+				fmt.Printf("  %-14s   %s\n", "", colorYellow(issue))
+			}
+			fmt.Printf("  %-14s   %s\n", "", colorDim("Edit "+userCfg+" to fix"))
+			configIssues++
+			issues++
+		} else {
+			fmt.Printf("  %-14s %s %s\n", "config", colorGreen("[✓]"), userCfg)
+		}
 	} else {
 		fmt.Printf("  %-14s %s %s (will be created on first run)\n", "config", colorDim("[~]"), userCfg)
 	}
@@ -175,7 +194,12 @@ func runDiagnose() int {
 
 	fmt.Println()
 	if issues > 0 {
-		fmt.Println(colorYellow("  Issues found. Run: sudo gamepad-osk --setup --install"))
+		if issues > configIssues {
+			fmt.Println(colorYellow("  Permission issues found. Run: sudo gamepad-osk --setup --install"))
+		}
+		if configIssues > 0 {
+			fmt.Println(colorYellow("  Config issues found. Edit the config file to fix, then re-run --setup to verify."))
+		}
 		return 1
 	}
 	fmt.Println(colorGreen("  All checks passed."))
@@ -193,48 +217,48 @@ func runInstall() int {
 			existed = true
 		}
 		if err := os.WriteFile(udevRulePath, []byte(udevRuleContent), 0644); err != nil { //nolint:gosec // G306: udev rules are world-readable
-			fmt.Printf("  Installing udev rules... %s (%v)\n", colorRed("failed"), err)
+			fmt.Printf("  %-14s %s %v\n", "udev rules", colorRed("[✗]"), err)
 		} else if existed {
-			fmt.Printf("  Installing udev rules to %s... %s\n", udevRulePath, colorGreen("done (updated)"))
+			fmt.Printf("  %-14s %s %s (updated)\n", "udev rules", colorGreen("[✓]"), udevRulePath)
 		} else {
-			fmt.Printf("  Installing udev rules to %s... %s\n", udevRulePath, colorGreen("done"))
+			fmt.Printf("  %-14s %s %s\n", "udev rules", colorGreen("[✓]"), udevRulePath)
 		}
 
 		// Reload udev
 		ctx := context.Background()
 		if out, err := exec.CommandContext(ctx, "udevadm", "control", "--reload-rules").CombinedOutput(); err != nil {
-			fmt.Printf("  Reloading udev rules... %s (%s)\n", colorRed("failed"), string(out))
+			fmt.Printf("  %-14s %s %s\n", "udev reload", colorRed("[✗]"), string(out))
 		} else {
-			fmt.Printf("  Reloading udev rules... %s\n", colorGreen("done"))
+			fmt.Printf("  %-14s %s\n", "udev reload", colorGreen("[✓]"))
 		}
 		if out, err := exec.CommandContext(ctx, "udevadm", "trigger").CombinedOutput(); err != nil {
-			fmt.Printf("  Triggering udev... %s (%s)\n", colorRed("failed"), string(out))
+			fmt.Printf("  %-14s %s %s\n", "udev trigger", colorRed("[✗]"), string(out))
 		} else {
-			fmt.Printf("  Triggering udev... %s\n", colorGreen("done"))
+			fmt.Printf("  %-14s %s\n", "udev trigger", colorGreen("[✓]"))
 		}
 	} else {
-		fmt.Printf("  Installing udev rules... %s (need root - run with sudo)\n", colorRed("skipped"))
+		fmt.Printf("  %-14s %s need root - run with sudo\n", "udev rules", colorDim("[~]"))
 	}
 
 	// 2. config
 	userCfg := UserConfigPath()
 	if _, err := os.Stat(userCfg); err == nil {
-		fmt.Printf("  Creating config at %s... %s\n", userCfg, colorYellow("skipped (already exists)"))
+		fmt.Printf("  %-14s %s %s (already exists)\n", "config", colorDim("[~]"), userCfg)
 	} else {
 		dir := filepath.Dir(userCfg)
 		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: config dir
-			fmt.Printf("  Creating config... %s (%v)\n", colorRed("failed"), err)
+			fmt.Printf("  %-14s %s %v\n", "config", colorRed("[✗]"), err)
 		} else {
 			cfg := DefaultConfig()
 			f, err := os.Create(userCfg) //nolint:gosec // G304: user config path
 			if err != nil {
-				fmt.Printf("  Creating config... %s (%v)\n", colorRed("failed"), err)
+				fmt.Printf("  %-14s %s %v\n", "config", colorRed("[✗]"), err)
 			} else {
 				defer func() { _ = f.Close() }()
 				if err := writeINI(f, cfg); err != nil {
-					fmt.Printf("  Creating config... %s (%v)\n", colorRed("failed"), err)
+					fmt.Printf("  %-14s %s %v\n", "config", colorRed("[✗]"), err)
 				} else {
-					fmt.Printf("  Creating config at %s... %s\n", userCfg, colorGreen("done"))
+					fmt.Printf("  %-14s %s %s\n", "config", colorGreen("[✓]"), userCfg)
 				}
 			}
 		}
@@ -244,7 +268,7 @@ func runInstall() int {
 	// Root: /usr/lib/systemd/user/ (system-wide user unit, same as AUR PKGBUILD)
 	// Non-root: ~/.config/systemd/user/ (user-local)
 	if !hasSystemd() {
-		fmt.Printf("  Installing systemd service... %s\n", colorDim("skipped (systemd not detected)"))
+		fmt.Printf("  %-14s %s not detected\n", "systemd", colorDim("[~]"))
 	} else {
 		var svcPath string
 		if os.Geteuid() == 0 {
@@ -254,7 +278,7 @@ func runInstall() int {
 		}
 		svcDir := filepath.Dir(svcPath)
 		if err := os.MkdirAll(svcDir, 0755); err != nil { //nolint:gosec // G301: systemd user dir
-			fmt.Printf("  Installing systemd service... %s (%v)\n", colorRed("failed"), err)
+			fmt.Printf("  %-14s %s %v\n", "systemd", colorRed("[✗]"), err)
 		} else {
 			exePath := "/usr/bin/gamepad-osk"
 			if exe, err := os.Executable(); err == nil {
@@ -266,11 +290,11 @@ func runInstall() int {
 				existed = true
 			}
 			if err := os.WriteFile(svcPath, []byte(content), 0644); err != nil { //nolint:gosec // G306: service file
-				fmt.Printf("  Installing systemd service... %s (%v)\n", colorRed("failed"), err)
+				fmt.Printf("  %-14s %s %v\n", "systemd", colorRed("[✗]"), err)
 			} else if existed {
-				fmt.Printf("  Installing systemd service to %s... %s\n", svcPath, colorGreen("done (updated)"))
+				fmt.Printf("  %-14s %s %s (updated)\n", "systemd", colorGreen("[✓]"), svcPath)
 			} else {
-				fmt.Printf("  Installing systemd service to %s... %s\n", svcPath, colorGreen("done"))
+				fmt.Printf("  %-14s %s %s\n", "systemd", colorGreen("[✓]"), svcPath)
 			}
 		}
 	}

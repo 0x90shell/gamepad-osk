@@ -121,6 +121,7 @@ func main() {
 
 	app := NewApp(config)
 	if daemon {
+		app.daemon = true
 		app.visible = false
 	}
 
@@ -173,6 +174,7 @@ OPTIONS
   --config, -c PATH    Config file path (overrides search order)
   --toggle             Toggle visibility of running instance (for evsieve/hotkey)
   --daemon             Start hidden, wait for toggle combo or --toggle to show
+                       Close button (B) hides instead of exiting in daemon mode
   --setup              Check system configuration (udev, permissions, config)
   --setup --install    Deploy udev rules, config, and systemd service
   --verbose, -v        Verbose logging (gamepad events, key injection, config)
@@ -195,13 +197,13 @@ CONTROLS (from config)
   %-24s Enter (hold to repeat)
   %-24s Left mouse click (hold to drag)
   %-24s Right mouse click
-  %-24s Left mouse click
+  %-24s Left mouse click (stick click)
   %-24s Caps Lock
   %-24s Toggle keyboard top/bottom
   %-24s Accent popup (on vowels: é, ñ, ü)
 
 TOGGLE COMBO (config: toggle_combo)
-  Built-in show/hide combo for daemon mode. Set toggle_combo in config:
+  Built-in show/hide combo. Works in normal and daemon mode. Set in config:
     toggle_combo = guide+a         # 2-4 buttons, + separated
     combo_period_ms = 200          # timing window (ms)
   Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,

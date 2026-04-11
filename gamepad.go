@@ -152,6 +152,7 @@ func NewGamepadReader(config Config) *GamepadReader {
 			if gp.comboPeriodMs <= 0 {
 				gp.comboPeriodMs = 200
 			}
+			log.Printf("Toggle combo: %s (%dms window)", config.Gamepad.ToggleCombo, gp.comboPeriodMs)
 		}
 	}
 
@@ -487,42 +488,58 @@ func (gp *GamepadReader) updateNav(nav *NavAxis, direction int, isX bool) Action
 
 // checkCombo checks if the toggle combo is fully satisfied and returns ActionToggle if so.
 // Implements edge-triggering (fires once per press) and timing window.
+// Timer starts on the first button press, not when all buttons are held.
+// Window expiry only takes effect on the next press cycle (requires button release to reset).
 func (gp *GamepadReader) checkCombo() Action {
 	if len(gp.comboButtons) == 0 {
 		return Action{Type: ActionNone}
 	}
 
 	allHeld := true
+	anyHeld := false
 	for _, cb := range gp.comboButtons {
 		if gp.isComboButtonHeld(cb) {
-			continue
+			anyHeld = true
+		} else {
+			allHeld = false
 		}
-		allHeld = false
-		break
 	}
 
-	if allHeld && !gp.comboFired {
-		now := time.Now()
-		if gp.comboFirstPress.IsZero() {
-			gp.comboFirstPress = now
-		}
-		if now.Sub(gp.comboFirstPress) <= time.Duration(gp.comboPeriodMs)*time.Millisecond {
-			gp.comboFired = true
-			Debugf("Toggle combo fired: %s", gp.config.Gamepad.ToggleCombo)
-			return Action{Type: ActionToggle}
-		}
-		// Window expired - reset timer, will start fresh on next check
-		gp.comboFirstPress = time.Time{}
-	} else if !allHeld {
+	if !anyHeld {
+		// Full release - reset everything
 		gp.comboFired = false
 		gp.comboFirstPress = time.Time{}
+		return Action{Type: ActionNone}
 	}
 
+	if !allHeld {
+		// Partial hold - start timer on first press, reset edge trigger
+		gp.comboFired = false
+		if gp.comboFirstPress.IsZero() {
+			gp.comboFirstPress = time.Now()
+		}
+		return Action{Type: ActionNone}
+	}
+
+	// All held
+	if gp.comboFired {
+		return Action{Type: ActionNone}
+	}
+	if gp.comboFirstPress.IsZero() {
+		gp.comboFirstPress = time.Now()
+	}
+	if time.Since(gp.comboFirstPress) <= time.Duration(gp.comboPeriodMs)*time.Millisecond {
+		gp.comboFired = true
+		Debugf("Toggle combo fired: %s", gp.config.Gamepad.ToggleCombo)
+		return Action{Type: ActionToggle}
+	}
+	// Window expired while buttons still held - wait for release before allowing retry
 	return Action{Type: ActionNone}
 }
 
 // isComboButtonHeld checks if a single combo button is currently satisfied.
 // A button is satisfied if any of its BtnCodes are held OR its axis matches.
+// Analog triggers use the same 30% threshold as action detection to avoid noise.
 func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
 	// Check digital button codes
 	for _, code := range cb.BtnCodes {
@@ -534,10 +551,15 @@ func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
 	if cb.AxisCode != 0 {
 		axisVal := gp.axisState[cb.AxisCode]
 		if cb.AxisVal < 0 && axisVal < 0 {
-			return true // d-pad up or left (any negative value)
+			return true // d-pad up or left
 		}
-		if cb.AxisVal > 0 && axisVal > 0 {
-			return true // d-pad down or right, or trigger past zero
+		if cb.AxisVal > 0 {
+			// Triggers (ABS_Z, ABS_RZ): use threshold to avoid noise near zero
+			// D-pad down/right (ABS_HAT0X/Y = 1): any positive value suffices
+			if cb.AxisCode == ABS_Z || cb.AxisCode == ABS_RZ {
+				return axisVal > int32(gp.trigMax*0.3)
+			}
+			return axisVal > 0
 		}
 	}
 	return false

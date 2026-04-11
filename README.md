@@ -23,7 +23,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Configurable: buttons, sticks, theme, scale, position, opacity, deadzone
 - IPC toggle via Unix socket (`gamepad-osk --toggle`) for evsieve/hotkey integration
 - Built-in configurable toggle combo (e.g. `guide+a`, `l3+r3`) for zero-dependency show/hide
-- Daemon mode for systemd user service
+- Daemon mode for systemd user service (close button hides instead of exiting)
 - Single static binary, ~5MB
 
 ## Dependencies
@@ -110,7 +110,7 @@ gamepad-osk --device /dev/input/X    # use specific device
 gamepad-osk --theme synthwave        # start with theme
 gamepad-osk --config /path/to/config  # use specific config file
 gamepad-osk --toggle                 # toggle running instance
-gamepad-osk --daemon                 # start hidden, wait for toggle
+gamepad-osk --daemon                 # start hidden, B hides instead of exiting
 gamepad-osk --help                   # show all options
 ```
 
@@ -133,7 +133,7 @@ gamepad-osk --help                   # show all options
 | Start | Toggle keyboard top/bottom |
 | Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
-| Toggle combo (configurable) | Show/hide keyboard (daemon mode) |
+| Toggle combo (configurable) | Show/hide keyboard |
 
 ## Configuration
 
@@ -189,11 +189,13 @@ combo_period_ms = 200        # timing window (ms)
 
 Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, `guide`, `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right`. Requires 2-4 buttons.
 
+Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK running as a service (B hides instead of exiting).
+
 Leave `toggle_combo` empty to use `--toggle` / evsieve instead (default).
 
 ## Evsieve Integration
 
-For advanced input routing, use evsieve. Example to toggle the keyboard with Guide+Start:
+Use evsieve to show the keyboard with a button combo, then use B to hide it:
 
 ```bash
 evsieve \
@@ -202,11 +204,13 @@ evsieve \
   --output
 ```
 
+When the keyboard is hidden, `grab` is inactive and evsieve sees all events normally. Once shown, gamepad-osk grabs the device exclusively - controller input no longer reaches the game while you type. Use B to hide; gamepad-osk handles it internally while holding the grab.
+
+For zero-dependency show/hide without evsieve, use the built-in `toggle_combo` instead.
+
 ## Device Grab
 
 When `grab = true` (default), the gamepad is exclusively grabbed while the keyboard is visible. This prevents controller input from bleeding into the game while you're typing. The grab is released when the keyboard hides.
-
-If using evsieve, set `grab = false` in config and let evsieve handle routing.
 
 ## Wayland
 
