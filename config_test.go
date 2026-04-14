@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +115,101 @@ func TestBuildActionMap(t *testing.T) {
 	// Check position toggle
 	if am.BtnPress[0x13b] != ActionPositionToggle {
 		t.Errorf("Start = %v, want ActionPositionToggle", am.BtnPress[0x13b])
+	}
+}
+
+func TestBuildActionMap_PositionToggleDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.Buttons.PositionToggle = ""
+	am := BuildActionMap(cfg.Gamepad)
+
+	// ActionPositionToggle must not appear in any button slot
+	for code, action := range am.BtnPress {
+		if action == ActionPositionToggle {
+			t.Errorf("ActionPositionToggle mapped to button 0x%x with empty position_toggle", code)
+		}
+	}
+	for code, action := range am.BtnRelease {
+		if action == ActionPositionToggle {
+			t.Errorf("ActionPositionToggle mapped to release 0x%x with empty position_toggle", code)
+		}
+	}
+}
+
+func TestPosToggleLabel(t *testing.T) {
+	if got := posToggleLabel("start"); got != "Start" {
+		t.Errorf("posToggleLabel(start) = %q, want Start", got)
+	}
+	if got := posToggleLabel(""); got != "(disabled)" {
+		t.Errorf("posToggleLabel(\"\") = %q, want (disabled)", got)
+	}
+}
+
+func TestMouseLbl(t *testing.T) {
+	if got := mouseLbl(true, "Right stick"); got != "Right stick" {
+		t.Errorf("mouseLbl(true, ...) = %q, want label unchanged", got)
+	}
+	if got := mouseLbl(false, "Right stick"); got != "(disabled)" {
+		t.Errorf("mouseLbl(false, ...) = %q, want (disabled)", got)
+	}
+}
+
+// captureHelp prints help for cfg and returns the output.
+func captureHelp(t *testing.T, cfg Config) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	origStdout := os.Stdout
+	os.Stdout = w
+	printHelp(cfg)
+	_ = w.Close()
+	os.Stdout = origStdout
+	var buf strings.Builder
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("io.Copy: %v", err)
+	}
+	return buf.String()
+}
+
+func TestPrintHelpComboSection(t *testing.T) {
+	// Disabled combo shows setup instructions
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = ""
+	out := captureHelp(t, cfg)
+	if !strings.Contains(out, "Disabled.") {
+		t.Error("help with no toggle_combo should show Disabled")
+	}
+	if strings.Contains(out, "Active:") {
+		t.Error("help with no toggle_combo should not show Active")
+	}
+
+	// Configured combo shows active line
+	cfg.Gamepad.ToggleCombo = "select+start"
+	cfg.Gamepad.ComboPeriodMs = 200
+	out = captureHelp(t, cfg)
+	if !strings.Contains(out, "Active:") {
+		t.Error("help with toggle_combo set should show Active")
+	}
+	if !strings.Contains(out, "select+start") {
+		t.Error("help should show configured combo string")
+	}
+	if strings.Contains(out, "Disabled.") {
+		t.Error("help with toggle_combo set should not show Disabled")
+	}
+}
+
+func TestPrintHelpMouseDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mouse.Enabled = false
+	out := captureHelp(t, cfg)
+
+	// All 4 mouse rows should show (disabled); position_toggle disabled adds one more
+	// so require at least 4
+	count := strings.Count(out, "(disabled)")
+	if count < 4 {
+		t.Errorf("mouse disabled: got %d (disabled) occurrences in help, want >= 4", count)
 	}
 }
 
@@ -469,7 +566,9 @@ func TestMigrateFromTOML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// LoadConfig should auto-migrate
+	// LoadConfig should auto-migrate (suppress migration log output)
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(os.Stderr)
 	cfg := LoadConfig("")
 
 	// Verify config values loaded correctly

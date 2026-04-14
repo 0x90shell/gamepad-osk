@@ -212,6 +212,12 @@ For zero-dependency show/hide without evsieve, use the built-in `toggle_combo` i
 
 When `grab = true` (default), the gamepad is exclusively grabbed while the keyboard is visible. This prevents controller input from bleeding into the game while you're typing. The grab is released when the keyboard hides.
 
+## X11
+
+Works on any EWMH-compliant window manager. The keyboard renders always-on-top without stealing focus from the active window.
+
+**Fullscreen games (Bottles/Wine):** Toggling the OSK will not cause fullscreen games to minimize. If the OSK appears behind the game window, run the game in windowed or borderless mode.
+
 ## Wayland
 
 Uses wlr-layer-shell for native overlay support - no compositor rules needed. The keyboard renders as a non-focusable overlay that stays above all windows. Position toggle (Start) works natively.

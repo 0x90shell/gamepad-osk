@@ -125,10 +125,15 @@ func (app *App) Run() error {
 			return err
 		}
 	} else {
-		// X11: standard window with always-on-top
+		// X11: override-redirect handles z-ordering; SDL_WINDOW_ALWAYS_ON_TOP omitted.
+		// SDL3's X11 backend sends _NET_WM_STATE_ABOVE via XSendEvent to root when
+		// showing a window with that flag. xfwm4 processes it (even for override-redirect
+		// windows) and triggers fullscreen stack re-evaluation, causing xfce4-panel to
+		// re-appear. Override-redirect + XMapRaised (called by SDL ShowWindow) provides
+		// z-ordering without notifying the WM.
 		window, err = SDL3CreateWindow("gamepad-osk",
 			width, height,
-			SDL_WINDOW_HIDDEN|SDL_WINDOW_BORDERLESS|SDL_WINDOW_ALWAYS_ON_TOP)
+			SDL_WINDOW_HIDDEN|SDL_WINDOW_BORDERLESS)
 		if err != nil {
 			return err
 		}
@@ -166,7 +171,7 @@ func (app *App) Run() error {
 	// Set X11 hints AFTER renderer init (layer-shell handles this on Wayland)
 	if !hasLayerShell() {
 		SetNoFocusHints(window)
-		RestoreFocus()
+		// No RestoreFocus here: window is hidden, SDL init does not steal X11 focus when a WM is present
 	}
 
 	rend, err := NewRenderer(renderer, theme, unit, pad)
@@ -250,10 +255,11 @@ func (app *App) Run() error {
 			SDL3SetWindowOpacity(window, opacity) // re-apply after show
 		}
 		if !hasLayerShell() {
-			SDL3SetWindowPosition(window, x, y) // re-apply position after show (WM may override on hidden windows)
-			SDL3RaiseWindow(window)
-			SetNoFocusHints(window) // re-apply hints after show (always-on-top lost when created hidden)
-			RestoreFocus()
+			SDL3SetWindowPosition(window, x, y) // re-apply position after show (override-redirect set, but SDL may have buffered the old position)
+			SetNoFocusHints(window) // re-apply hints after show (ensures override-redirect is set before WM sees the mapped window)
+			// No RestoreFocus: XMapRaised does not change X11 focus; SDL3 X11_ShowWindow only calls
+			// XSetInputFocus when no WM is present. Calling RestoreFocus here would focus prev_focused
+			// (the terminal where the OSK was launched), changing _NET_ACTIVE_WINDOW and triggering xfce4-panel.
 		}
 	}
 
@@ -267,20 +273,26 @@ func (app *App) Run() error {
 				if cfg.Gamepad.Grab {
 					gamepad.Grab()
 				}
+				if !hasLayerShell() {
+					SaveFocusedWindow() // capture game window now — used by RestoreFocus on hide
+				}
 				SDL3ShowWindow(window)
 				if opacity < 1.0 {
 					SDL3SetWindowOpacity(window, opacity) // re-apply after show
 				}
 				if !hasLayerShell() {
 					SDL3SetWindowPosition(window, app.winX, app.winY)
-					SDL3RaiseWindow(window)
 					SetNoFocusHints(window)
-					RestoreFocus()
+					// No RestoreFocus: XMapRaised does not steal focus; calling XSetInputFocus here
+					// changes _NET_ACTIVE_WINDOW to prev_focused (terminal), triggering xfce4-panel.
 				}
 			} else {
 				app.stopRepeat()
 				gamepad.Ungrab()
 				SDL3HideWindow(window)
+				if !hasLayerShell() {
+					RestoreFocus()
+				}
 			}
 		}
 		app.lock.Unlock()

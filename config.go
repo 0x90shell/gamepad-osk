@@ -325,7 +325,7 @@ b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f',
 	b.WriteString(line(kv("enter", cfg.Gamepad.Buttons.Enter), "enter"))
 	b.WriteString(line(kv("left_click", cfg.Gamepad.Buttons.LeftClick), "left mouse button (hold to drag)"))
 	b.WriteString(line(kv("right_click", cfg.Gamepad.Buttons.RightClick), "right mouse button"))
-	b.WriteString(line(kv("position_toggle", cfg.Gamepad.Buttons.PositionToggle), "toggle keyboard top/bottom"))
+	b.WriteString(line(kv("position_toggle", cfg.Gamepad.Buttons.PositionToggle), "toggle keyboard top/bottom (empty = disabled)"))
 	b.WriteString("\n")
 
 	b.WriteString("[mouse]\n")

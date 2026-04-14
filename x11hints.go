@@ -18,12 +18,22 @@ void save_focused_window() {
     XCloseDisplay(dpy);
 }
 
+static int x11_suppress_focus_errors(Display *dpy, XErrorEvent *ev) {
+    (void)dpy; (void)ev;
+    // XSetInputFocus can only produce BadMatch (window not viewable, e.g. Wine
+    // fullscreen) or BadWindow (window destroyed or invalid). Both are expected
+    // when restoring focus to a window saved at startup.
+    return 0;
+}
+
 void restore_focus() {
     if (prev_focused == 0) return;
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return;
+    XErrorHandler prev = XSetErrorHandler(x11_suppress_focus_errors);
     XSetInputFocus(dpy, prev_focused, RevertToParent, CurrentTime);
-    XFlush(dpy);
+    XSync(dpy, False); // round-trip: flushes request and fires error handler before we restore it
+    XSetErrorHandler(prev);
     XCloseDisplay(dpy);
 }
 
@@ -58,6 +68,10 @@ int get_workarea(int *out_x, int *out_y, int *out_w, int *out_h) {
     return 1;
 }
 
+void set_prev_focused_for_test(unsigned long wid) {
+    prev_focused = (Window)wid;
+}
+
 void set_no_focus_hints(unsigned long window_id) {
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return;
@@ -65,32 +79,36 @@ void set_no_focus_hints(unsigned long window_id) {
     Window win = (Window)window_id;
     Window root = DefaultRootWindow(dpy);
 
+    // Override-redirect bypasses the WM entirely: the window is never added to
+    // _NET_CLIENT_LIST, never triggers _NET_ACTIVE_WINDOW changes, and never
+    // causes xfce4-panel's intelligent autohide to re-appear over fullscreen
+    // apps. Must be set before first map (SDL_ShowWindow). Persists across
+    // hide/show cycles (XUnmapWindow/XMapRaised).
+    XSetWindowAttributes oa;
+    oa.override_redirect = True;
+    XChangeWindowAttributes(dpy, win, CWOverrideRedirect, &oa);
+
+    // _NET_WM_WINDOW_TYPE_NOTIFICATION: retained for semantic correctness. The
+    // WM ignores hints on override-redirect windows, but some compositors still
+    // read the type for effects (shadows, etc.).
+    Atom wm_window_type = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
+    Atom type_notification = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+    XChangeProperty(dpy, win, wm_window_type, XA_ATOM, 32, PropModeReplace,
+                    (unsigned char*)&type_notification, 1);
+
     Atom wm_state = XInternAtom(dpy, "_NET_WM_STATE", False);
     Atom above = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
     Atom skip_tb = XInternAtom(dpy, "_NET_WM_STATE_SKIP_TASKBAR", False);
     Atom skip_pg = XInternAtom(dpy, "_NET_WM_STATE_SKIP_PAGER", False);
 
-    // Set property for initial mapping
+    // Set _NET_WM_STATE directly on the window. Do NOT use XSendEvent to root
+    // with SubstructureRedirectMask: xfwm4 processes ALL such client messages
+    // (even for override-redirect windows), which triggers fullscreen stack
+    // re-evaluation and causes xfce4-panel to re-appear. The WM cannot honor
+    // EWMH state changes for override-redirect windows anyway.
     Atom atoms[3] = {above, skip_tb, skip_pg};
     XChangeProperty(dpy, win, wm_state, XA_ATOM, 32, PropModeReplace,
                     (unsigned char*)atoms, 3);
-
-    // Send client messages for already-mapped windows (survives hide/show)
-    Atom state_atoms[3] = {above, skip_tb, skip_pg};
-    for (int i = 0; i < 3; i++) {
-        XEvent ev;
-        memset(&ev, 0, sizeof(ev));
-        ev.xclient.type = ClientMessage;
-        ev.xclient.window = win;
-        ev.xclient.message_type = wm_state;
-        ev.xclient.format = 32;
-        ev.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
-        ev.xclient.data.l[1] = state_atoms[i];
-        ev.xclient.data.l[2] = 0;
-        ev.xclient.data.l[3] = 1; // source: application
-        XSendEvent(dpy, root, False,
-                   SubstructureRedirectMask | SubstructureNotifyMask, &ev);
-    }
 
     // WM_HINTS: input = False
     XWMHints hints;
@@ -146,6 +164,10 @@ func GetWorkarea() (x, y, w, h int32, ok bool) {
 		return 0, 0, 0, 0, false
 	}
 	return int32(cx), int32(cy), int32(cw), int32(ch), true
+}
+
+func setPrevFocusedForTest(id uint64) {
+	C.set_prev_focused_for_test(C.ulong(id)) //nolint:gosec // G115: test helper, value is controlled
 }
 
 func SetNoFocusHints(window *Window) {

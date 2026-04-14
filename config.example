@@ -41,7 +41,7 @@ shift = lt                   # shift (hold)
 enter = rt                   # enter
 left_click = rb              # left mouse button (hold to drag)
 right_click = lb             # right mouse button
-position_toggle = start      # toggle keyboard top/bottom
+position_toggle = start      # toggle keyboard top/bottom (empty = disabled)
 
 [mouse]
 enabled = true               # enable mouse cursor via right stick

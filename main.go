@@ -162,6 +162,20 @@ func printHelp(cfg Config) {
 	if mouse == "left" {
 		nav = "right"
 	}
+	mouseC := strings.ToUpper(mouse[:1]) + mouse[1:]
+	navC := strings.ToUpper(nav[:1]) + nav[1:]
+
+	var comboHelp string
+	if cfg.Gamepad.ToggleCombo != "" {
+		comboHelp = fmt.Sprintf("  Active: %-20s (%dms window)\n  Change in config: toggle_combo, combo_period_ms",
+			cfg.Gamepad.ToggleCombo, cfg.Gamepad.ComboPeriodMs)
+	} else {
+		comboHelp = "  Disabled. Set in config:\n" +
+			"    toggle_combo = guide+a         # 2-4 buttons, + separated\n" +
+			"    combo_period_ms = 200          # timing window (ms)\n" +
+			"  Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,\n" +
+			"           dpad_up, dpad_down, dpad_left, dpad_right"
+	}
 
 	fmt.Printf(`gamepad-osk v%s - Gamepad-controlled on-screen keyboard for Linux
 
@@ -203,12 +217,7 @@ CONTROLS (from config)
   %-24s Accent popup (on vowels: é, ñ, ü)
 
 TOGGLE COMBO (config: toggle_combo)
-  Built-in show/hide combo. Works in normal and daemon mode. Set in config:
-    toggle_combo = guide+a         # 2-4 buttons, + separated
-    combo_period_ms = 200          # timing window (ms)
-  Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,
-           dpad_up, dpad_down, dpad_left, dpad_right
-  Empty = disabled (use --toggle / evsieve instead)
+%s
 
 THEMES
   %s
@@ -226,17 +235,33 @@ REQUIREMENTS
   User must be in 'input' group for gamepad and key injection
 `,
 		version,
-		strings.ToUpper(nav[:1])+nav[1:]+" stick / D-pad",
-		strings.ToUpper(mouse[:1])+mouse[1:]+" stick",
+		navC+" stick / D-pad",
+		mouseLbl(cfg.Mouse.Enabled, mouseC+" stick"),
 		buttonLabel(b.Press), buttonLabel(b.Close),
 		buttonLabel(b.Backspace), buttonLabel(b.Space),
 		buttonLabel(b.Shift), buttonLabel(b.Enter),
-		buttonLabel(b.LeftClick), buttonLabel(b.RightClick),
-		strings.ToUpper(mouse[:1])+mouse[1:]+" stick click",
-		strings.ToUpper(nav[:1])+nav[1:]+" stick click",
-		buttonLabel(b.PositionToggle),
+		mouseLbl(cfg.Mouse.Enabled, buttonLabel(b.LeftClick)),
+		mouseLbl(cfg.Mouse.Enabled, buttonLabel(b.RightClick)),
+		mouseLbl(cfg.Mouse.Enabled, mouseC+" stick click"),
+		navC+" stick click",
+		posToggleLabel(b.PositionToggle),
 		"Shift + hold A",
+		comboHelp,
 		availableThemes())
+}
+
+func mouseLbl(enabled bool, label string) string {
+	if !enabled {
+		return "(disabled)"
+	}
+	return label
+}
+
+func posToggleLabel(name string) string {
+	if name == "" {
+		return "(disabled)"
+	}
+	return buttonLabel(name)
 }
 
 func availableThemes() string {
