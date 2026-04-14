@@ -68,6 +68,104 @@ int get_workarea(int *out_x, int *out_y, int *out_w, int *out_h) {
     return 1;
 }
 
+// Check if the currently focused window has _NET_WM_STATE_FULLSCREEN.
+// Returns 1 if fullscreen, 0 otherwise. Safe on non-EWMH WMs.
+int is_fullscreen_active() {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return 0;
+
+    Window root = DefaultRootWindow(dpy);
+
+    // Get _NET_ACTIVE_WINDOW from root
+    Atom net_active = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", True);
+    if (net_active == None) { XCloseDisplay(dpy); return 0; }
+
+    Atom type_ret;
+    int fmt_ret;
+    unsigned long nitems, bytes_left;
+    unsigned char *data = NULL;
+
+    if (XGetWindowProperty(dpy, root, net_active, 0, 1, False, XA_WINDOW,
+            &type_ret, &fmt_ret, &nitems, &bytes_left, &data) != Success
+            || nitems < 1 || data == NULL) {
+        if (data) XFree(data);
+        XCloseDisplay(dpy);
+        return 0;
+    }
+    Window active = *(Window *)data;
+    XFree(data);
+
+    if (active == 0 || active == root) { XCloseDisplay(dpy); return 0; }
+
+    // Check _NET_WM_STATE for _FULLSCREEN
+    Atom net_wm_state = XInternAtom(dpy, "_NET_WM_STATE", True);
+    Atom fullscreen = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", True);
+    if (net_wm_state == None || fullscreen == None) { XCloseDisplay(dpy); return 0; }
+
+    data = NULL;
+    if (XGetWindowProperty(dpy, active, net_wm_state, 0, 32, False, XA_ATOM,
+            &type_ret, &fmt_ret, &nitems, &bytes_left, &data) != Success
+            || data == NULL) {
+        if (data) XFree(data);
+        XCloseDisplay(dpy);
+        return 0;
+    }
+
+    int found = 0;
+    Atom *atoms = (Atom *)data;
+    for (unsigned long i = 0; i < nitems; i++) {
+        if (atoms[i] == fullscreen) { found = 1; break; }
+    }
+    XFree(data);
+    XCloseDisplay(dpy);
+    return found;
+}
+
+// Walk up from w to find the top-level window (direct child of root).
+// XGetInputFocus may return a sub-window; we need the frame for correct geometry.
+static Window find_toplevel(Display *dpy, Window w) {
+    Window root = DefaultRootWindow(dpy);
+    Window parent, *children;
+    unsigned int nchildren;
+    while (w != root) {
+        if (!XQueryTree(dpy, w, &root, &parent, &children, &nchildren))
+            return w;
+        if (children) XFree(children);
+        if (parent == root) return w;
+        w = parent;
+    }
+    return w;
+}
+
+// Warp pointer to center of prev_focused top-level window.
+// Resolves to top-level first (XGetInputFocus may return a sub-window).
+// Error handler suppresses BadWindow if window was destroyed between save and warp.
+// Returns the warp target info for logging: window ID, x, y, w, h, warp_x, warp_y.
+void x11_warp_pointer_center(unsigned long *out_wid, int *out_x, int *out_y,
+                              int *out_w, int *out_h, int *out_wx, int *out_wy) {
+    *out_wid = 0; *out_x = 0; *out_y = 0; *out_w = 0; *out_h = 0; *out_wx = 0; *out_wy = 0;
+    if (prev_focused == 0) return;
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return;
+    XErrorHandler prev_handler = XSetErrorHandler(x11_suppress_focus_errors);
+
+    Window top = find_toplevel(dpy, prev_focused);
+    *out_wid = (unsigned long)top;
+
+    XWindowAttributes attr;
+    if (XGetWindowAttributes(dpy, top, &attr)) {
+        int wx = attr.width / 2;
+        int wy = attr.height / 2;
+        *out_x = attr.x; *out_y = attr.y;
+        *out_w = attr.width; *out_h = attr.height;
+        *out_wx = wx; *out_wy = wy;
+        XWarpPointer(dpy, None, top, 0, 0, 0, 0, wx, wy);
+    }
+    XSync(dpy, False);
+    XSetErrorHandler(prev_handler);
+    XCloseDisplay(dpy);
+}
+
 void set_prev_focused_for_test(unsigned long wid) {
     prev_focused = (Window)wid;
 }
@@ -168,6 +266,30 @@ func GetWorkarea() (x, y, w, h int32, ok bool) {
 
 func setPrevFocusedForTest(id uint64) {
 	C.set_prev_focused_for_test(C.ulong(id)) //nolint:gosec // G115: test helper, value is controlled
+}
+
+// IsFullscreenActive checks if the currently focused X11 window is fullscreen.
+// Returns false on Wayland or non-EWMH window managers.
+func IsFullscreenActive() bool {
+	if !hasX11 {
+		return false
+	}
+	return C.is_fullscreen_active() != 0
+}
+
+// WarpPointerCenter warps the pointer to the center of the previously focused
+// top-level window. Helps fullscreen games recover from pointer displacement.
+func WarpPointerCenter() {
+	if !hasX11 {
+		return
+	}
+	var wid C.ulong
+	var ox, oy, ow, oh, wx, wy C.int
+	C.x11_warp_pointer_center(&wid, &ox, &oy, &ow, &oh, &wx, &wy)
+	if wid != 0 {
+		Debugf("WarpPointer: window=0x%x pos=%d,%d size=%dx%d warp=%d,%d",
+			uint64(wid), int(ox), int(oy), int(ow), int(oh), int(wx), int(wy))
+	}
 }
 
 func SetNoFocusHints(window *Window) {

@@ -216,7 +216,11 @@ When `grab = true` (default), the gamepad is exclusively grabbed while the keybo
 
 Works on any EWMH-compliant window manager. The keyboard renders always-on-top without stealing focus from the active window.
 
-**Fullscreen games (Bottles/Wine):** Toggling the OSK will not cause fullscreen games to minimize. If the OSK appears behind the game window, run the game in windowed or borderless mode.
+**Fullscreen games (Bottles/Wine):** Toggling the OSK will not cause fullscreen games to minimize. When a fullscreen window is active, the keyboard positions at the screen edge (ignoring panel/taskbar offsets). On hide, the pointer is returned to the game window center to restore input focus.
+
+**Toggle combo tip:** Avoid using joystick clicks (L3/R3) in your toggle combo if they are mapped to mouse click or other actions. A combo like `guide+a` or `select+start` avoids conflicts. If the combo includes a button with an action, the first button pressed fires its action before the combo is detected.
+
+If the OSK appears behind the game window, run the game in windowed or borderless mode.
 
 ## Wayland
 

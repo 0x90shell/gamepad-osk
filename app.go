@@ -99,12 +99,6 @@ func (app *App) Run() error {
 	// Position: center horizontally, top or bottom based on config
 	x := posArea.X + (posArea.W-width)/2
 	margin := int32(cfg.Window.Margin) //nolint:gosec // G115: margin fits in int32
-	var y int32
-	if cfg.Window.Position == "top" {
-		y = posArea.Y + margin
-	} else {
-		y = posArea.Y + posArea.H - height - margin
-	}
 
 	SaveFocusedWindow()
 
@@ -137,22 +131,26 @@ func (app *App) Run() error {
 		if err != nil {
 			return err
 		}
-		SDL3SetWindowPosition(window, x, y)
+		// Position set after app fields are initialized (computeY needs them)
 	}
 	defer func() {
 		destroyLayerSurface()
 		SDL3DestroyWindow(window)
 	}()
 
-	// Store for position toggling
+	// Store for position toggling (must be set before computeY)
 	app.window = window
 	app.mon = mon
 	app.posArea = posArea
 	app.winH = height
 	app.winX = x
-	app.winY = y
 	app.margin = margin
 	app.posTop = cfg.Window.Position == "top"
+	app.winY = app.computeY()
+
+	if !isWayland {
+		SDL3SetWindowPosition(window, x, app.winY)
+	}
 
 	renderer, err := SDL3CreateRenderer(window)
 	if err != nil {
@@ -255,7 +253,7 @@ func (app *App) Run() error {
 			SDL3SetWindowOpacity(window, opacity) // re-apply after show
 		}
 		if !hasLayerShell() {
-			SDL3SetWindowPosition(window, x, y) // re-apply position after show (override-redirect set, but SDL may have buffered the old position)
+			SDL3SetWindowPosition(window, x, app.winY) // re-apply position after show (override-redirect set, but SDL may have buffered the old position)
 			SetNoFocusHints(window) // re-apply hints after show (ensures override-redirect is set before WM sees the mapped window)
 			// No RestoreFocus: XMapRaised does not change X11 focus; SDL3 X11_ShowWindow only calls
 			// XSetInputFocus when no WM is present. Calling RestoreFocus here would focus prev_focused
@@ -281,6 +279,7 @@ func (app *App) Run() error {
 					SDL3SetWindowOpacity(window, opacity) // re-apply after show
 				}
 				if !hasLayerShell() {
+					app.winY = app.computeY()
 					SDL3SetWindowPosition(window, app.winX, app.winY)
 					SetNoFocusHints(window)
 					// No RestoreFocus: XMapRaised does not steal focus; calling XSetInputFocus here
@@ -288,9 +287,19 @@ func (app *App) Run() error {
 				}
 			} else {
 				app.stopRepeat()
+				if inj != nil {
+					inj.ClickMouse(0x110, false) // BTN_LEFT release
+					inj.ClickMouse(0x111, false) // BTN_RIGHT release
+				}
 				gamepad.Ungrab()
 				SDL3HideWindow(window)
 				if !hasLayerShell() {
+					if IsFullscreenActive() {
+						Debugf("Fullscreen active on hide — warping pointer + restoring focus")
+						WarpPointerCenter()
+					} else {
+						Debugf("No fullscreen on hide — restoring focus")
+					}
 					RestoreFocus()
 				}
 			}
@@ -441,14 +450,8 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		if hasLayerShell() {
 			repositionLayerSurface(app.posTop, app.margin, app.window)
 		} else {
-			var newY int32
-			if app.posTop {
-				newY = app.posArea.Y + app.margin
-			} else {
-				newY = app.posArea.Y + app.posArea.H - app.winH - app.margin
-			}
-			app.winY = newY
-			SDL3SetWindowPosition(app.window, app.winX, newY)
+			app.winY = app.computeY()
+			SDL3SetWindowPosition(app.window, app.winX, app.winY)
 		}
 		SavePosition(app.posTop)
 	case ActionClose:
@@ -463,6 +466,20 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		app.running = false
 		return
 	}
+}
+
+// computeY returns the window Y position based on current fullscreen state.
+// When a fullscreen window is active, uses raw monitor bounds (screen edge).
+// Otherwise uses workarea bounds (respects panels/taskbars).
+func (app *App) computeY() int32 {
+	area := app.posArea
+	if IsFullscreenActive() {
+		area = app.mon
+	}
+	if app.posTop {
+		return area.Y + app.margin
+	}
+	return area.Y + area.H - app.winH - app.margin
 }
 
 func (app *App) startRepeat(action ActionType) {
