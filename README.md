@@ -15,6 +15,8 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + R3/RB click (hold to drag)
+- Live mouse sensitivity adjustment (Shift + arrow keys, saved to config)
+- Auto-reconnect on controller disconnect (timeout, power-off, unplug)
 - Key repeat on hold (configurable delay and rate)
 - Shift layer, Caps Lock, accent popup (Shift + hold on vowels)
 - Paste/Copy key, media keys (Play/Pause, Mute)
@@ -132,6 +134,7 @@ gamepad-osk --help                   # show all options
 | Nav stick click (L3) | Caps Lock |
 | Start | Toggle keyboard top/bottom |
 | Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
+| Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
 

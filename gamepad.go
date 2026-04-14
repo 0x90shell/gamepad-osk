@@ -318,6 +318,23 @@ func (gp *GamepadReader) ReadEvents() []Action {
 	for {
 		n, err := syscall.Read(int(gp.fd.Fd()), buf[:]) //nolint:gosec // G115: fd fits in int
 		if n != 24 || err != nil {
+			if err != nil && err != syscall.EAGAIN && err != syscall.EWOULDBLOCK {
+				log.Printf("Gamepad disconnected: %v", err)
+				gp.Ungrab()
+				_ = gp.fd.Close()
+				gp.fd = nil
+				gp.mouseX, gp.mouseY = 0, 0
+				gp.navX = NavAxis{}
+				gp.navY = NavAxis{}
+				gp.dpadX = NavAxis{}
+				gp.dpadY = NavAxis{}
+				gp.btnHeld = make(map[uint16]bool)
+				gp.axisState = make(map[uint16]int32)
+				gp.ltActive = false
+				gp.rtActive = false
+				gp.comboFirstPress = time.Time{}
+				gp.comboFired = false
+			}
 			break
 		}
 		evType := binary.LittleEndian.Uint16(buf[16:])
@@ -563,6 +580,44 @@ func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
 		}
 	}
 	return false
+}
+
+func (gp *GamepadReader) SetSensitivity(value int) {
+	gp.config.Mouse.Sensitivity = value
+}
+
+// NeedsPolling returns true when cached stick state requires continuous polling
+// (mouse movement or nav repeat active).
+func (gp *GamepadReader) NeedsPolling() bool {
+	if gp.fd == nil {
+		return false
+	}
+	if gp.config.Mouse.Enabled && (math.Abs(gp.mouseX) > 0.01 || math.Abs(gp.mouseY) > 0.01) {
+		return true
+	}
+	for _, nav := range []*NavAxis{&gp.navX, &gp.navY, &gp.dpadX, &gp.dpadY} {
+		if nav.Direction != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Reconnect attempts to re-open the gamepad after a disconnect.
+// Tries the configured device path first, then auto-detect.
+func (gp *GamepadReader) Reconnect() bool {
+	if gp.fd != nil {
+		return true
+	}
+	Debugf("Attempting gamepad reconnect...")
+	path := gp.config.Gamepad.Device
+	if path == "" {
+		path = gp.autoDetect()
+	}
+	if path == "" {
+		return false
+	}
+	return gp.Open(path)
 }
 
 func (gp *GamepadReader) Close() {

@@ -100,7 +100,7 @@ func DefaultConfig() Config {
 				PositionToggle: "start",
 			},
 		},
-		Mouse: MouseConfig{Enabled: true, Sensitivity: 8},
+		Mouse: MouseConfig{Enabled: true, Sensitivity: 10},
 	}
 }
 
@@ -309,7 +309,7 @@ b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f',
 	b.WriteString(line(kv("toggle_combo", cfg.Gamepad.ToggleCombo), "built-in show/hide combo (empty = disabled, use --toggle/evsieve)"))
 	b.WriteString("                             # format: button+button (2-4 buttons, + separated)\n")
 	b.WriteString("                             # buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,\n")
-	b.WriteString("                             #          dpad_up, dpad_down, dpad_left, dpad_right\n")
+	b.WriteString("                             #          up, down, left, right (or dpad_up, dpad_down, etc.)\n")
 	b.WriteString("                             # examples: guide+a, l3+r3, select+start, select+start+lb+rb\n")
 	b.WriteString(line(kvf("combo_period_ms", cfg.Gamepad.ComboPeriodMs), "ms window for all combo buttons to be held (50-2000)"))
 	b.WriteString("\n")
@@ -330,7 +330,7 @@ b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f',
 
 	b.WriteString("[mouse]\n")
 	b.WriteString(line(kvf("enabled", cfg.Mouse.Enabled), "enable mouse cursor via right stick"))
-	b.WriteString(line(kvf("sensitivity", cfg.Mouse.Sensitivity), "1-50, higher = faster cursor"))
+	b.WriteString(line(kvf("sensitivity", cfg.Mouse.Sensitivity), "1-50, higher = faster cursor (Shift+up/down to adjust live)"))
 
 	_, err := io.WriteString(w, b.String())
 	return err
@@ -563,6 +563,13 @@ func SaveTheme(themeName string) {
 	})
 }
 
+// SaveSensitivity writes the current mouse sensitivity to the user config file.
+func SaveSensitivity(value int) {
+	saveConfig(func(cfg *Config) {
+		cfg.Mouse.Sensitivity = value
+	})
+}
+
 // SavePosition writes the current position (top/bottom) to the user config file.
 func SavePosition(top bool) {
 	pos := "bottom"
@@ -671,8 +678,8 @@ func ValidateConfig(cfg *Config) {
 		cfg.Gamepad.Deadzone = 0.25
 	}
 	if cfg.Mouse.Sensitivity < 1 || cfg.Mouse.Sensitivity > 50 {
-		log.Printf("Warning: sensitivity %d out of range [1,50], using 8", cfg.Mouse.Sensitivity)
-		cfg.Mouse.Sensitivity = 8
+		log.Printf("Warning: sensitivity %d out of range [1,50], using 10", cfg.Mouse.Sensitivity)
+		cfg.Mouse.Sensitivity = 10
 	}
 	if cfg.Gamepad.LongPressMs < 100 || cfg.Gamepad.LongPressMs > 5000 {
 		log.Printf("Warning: long_press_ms %d out of range [100,5000], using 500", cfg.Gamepad.LongPressMs)

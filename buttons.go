@@ -188,6 +188,11 @@ func comboButtonTable() map[string]ComboButton {
 		"dpad_down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},   // BTN_DPAD_DOWN
 		"dpad_left":  {Name: "dpad_left", BtnCodes: []uint16{0x222}, AxisCode: ABS_HAT0X, AxisVal: -1},  // BTN_DPAD_LEFT
 		"dpad_right": {Name: "dpad_right", BtnCodes: []uint16{0x223}, AxisCode: ABS_HAT0X, AxisVal: 1},  // BTN_DPAD_RIGHT
+		// Shorthand aliases
+		"up":    {Name: "dpad_up", BtnCodes: []uint16{0x220}, AxisCode: ABS_HAT0Y, AxisVal: -1},
+		"down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},
+		"left":  {Name: "dpad_left", BtnCodes: []uint16{0x222}, AxisCode: ABS_HAT0X, AxisVal: -1},
+		"right": {Name: "dpad_right", BtnCodes: []uint16{0x223}, AxisCode: ABS_HAT0X, AxisVal: 1},
 	}
 }
 
@@ -214,15 +219,15 @@ func parseComboString(combo string) ([]ComboButton, error) {
 	var buttons []ComboButton
 	for _, name := range parts {
 		name = strings.TrimSpace(strings.ToLower(name))
-		if seen[name] {
-			return nil, fmt.Errorf("duplicate button in toggle_combo: %q", name)
-		}
-		seen[name] = true
-
 		cb, ok := table[name]
 		if !ok {
 			return nil, fmt.Errorf("unknown button in toggle_combo: %q", name)
 		}
+		// Deduplicate using canonical name (catches "up" + "dpad_up")
+		if seen[cb.Name] {
+			return nil, fmt.Errorf("duplicate button in toggle_combo: %q", name)
+		}
+		seen[cb.Name] = true
 		buttons = append(buttons, cb)
 	}
 

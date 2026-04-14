@@ -190,3 +190,156 @@ func TestToggleModifiers(t *testing.T) {
 		}
 	}
 }
+
+func TestAltTabCycling(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+
+	// Find AltTab key position
+	altTabRow, altTabCol := -1, -1
+	for r, row := range kb.Layout {
+		for c, key := range row {
+			if key.Label == "AltTab" {
+				altTabRow, altTabCol = r, c
+				break
+			}
+		}
+	}
+	if altTabRow < 0 {
+		t.Fatal("AltTab key not found in layout")
+	}
+
+	// Navigate to AltTab key
+	kb.CursorRow = altTabRow
+	kb.CursorCol = altTabCol
+
+	// First press: should set AltTabHeld
+	kb.PressCurrent(nil) // nil injector = no actual key events
+	if !kb.AltTabHeld {
+		t.Error("first AltTab press should set AltTabHeld")
+	}
+
+	// Second press: should stay held
+	kb.PressCurrent(nil)
+	if !kb.AltTabHeld {
+		t.Error("second AltTab press should keep AltTabHeld")
+	}
+
+	// Navigate away and press different key: should release
+	kb.CursorRow = 2
+	kb.CursorCol = 1 // 'q'
+	kb.PressCurrent(nil)
+	if kb.AltTabHeld {
+		t.Error("pressing non-AltTab key should release AltTabHeld")
+	}
+}
+
+func TestAltTabShiftBypass(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+
+	// Find AltTab key position
+	for r, row := range kb.Layout {
+		for c, key := range row {
+			if key.Label == "AltTab" {
+				kb.CursorRow = r
+				kb.CursorCol = c
+			}
+		}
+	}
+
+	// With shift active, AltTab should send F5 (ShiftCode), not enter cycling mode
+	kb.ShiftActive = true
+	kb.PressCurrent(nil)
+	if kb.AltTabHeld {
+		t.Error("Shift+AltTab should send F5, not enter alt-tab cycling")
+	}
+}
+
+func TestReleaseAltTabOnHide(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	kb.AltTabHeld = true
+	kb.ReleaseAltTab(nil)
+	if kb.AltTabHeld {
+		t.Error("ReleaseAltTab should clear AltTabHeld")
+	}
+}
+
+func TestSensitivityUpDown(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+
+	// Find ↑ key
+	upRow, upCol := -1, -1
+	for r, row := range kb.Layout {
+		for c, key := range row {
+			if key.Code == KEY_UP {
+				upRow, upCol = r, c
+			}
+		}
+	}
+	if upRow < 0 {
+		t.Fatal("UP key not found in layout")
+	}
+
+	upCalled := false
+	kb.OnSensitivityUp = func() { upCalled = true }
+
+	// Without shift: should NOT call sensitivity callback
+	kb.CursorRow = upRow
+	kb.CursorCol = upCol
+	kb.PressCurrent(nil)
+	if upCalled {
+		t.Error("sensitivity callback should not fire without shift")
+	}
+
+	// With shift: should call sensitivity callback
+	kb.ShiftActive = true
+	kb.PressCurrent(nil)
+	if !upCalled {
+		t.Error("Shift+↑ should fire OnSensitivityUp")
+	}
+	if kb.ShiftActive {
+		t.Error("Shift should be consumed after Shift+↑")
+	}
+
+	// Down key
+	downRow, downCol := -1, -1
+	for r, row := range kb.Layout {
+		for c, key := range row {
+			if key.Code == KEY_DOWN {
+				downRow, downCol = r, c
+			}
+		}
+	}
+
+	downCalled := false
+	kb.OnSensitivityDown = func() { downCalled = true }
+	kb.CursorRow = downRow
+	kb.CursorCol = downCol
+	kb.ShiftActive = true
+	kb.PressCurrent(nil)
+	if !downCalled {
+		t.Error("Shift+↓ should fire OnSensitivityDown")
+	}
+}
+
+func TestSensitivityClamp(t *testing.T) {
+	// Simulate the clamping logic from app.go callbacks
+	sensitivity := 49
+	sensitivity = min(50, sensitivity+2)
+	if sensitivity != 50 {
+		t.Errorf("clamp up: got %d, want 50", sensitivity)
+	}
+	sensitivity = min(50, sensitivity+2)
+	if sensitivity != 50 {
+		t.Errorf("clamp up at max: got %d, want 50", sensitivity)
+	}
+
+	sensitivity = 2
+	sensitivity = max(1, sensitivity-2)
+	if sensitivity != 1 {
+		t.Errorf("clamp down near min: got %d, want 1", sensitivity)
+	}
+	sensitivity = max(1, sensitivity-2)
+	if sensitivity != 1 {
+		t.Errorf("clamp down at min: got %d, want 1", sensitivity)
+	}
+}

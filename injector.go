@@ -156,6 +156,18 @@ func (inj *Injector) TypeUnicode(codepoint int) {
 	inj.syn()
 }
 
+func (inj *Injector) HoldKey(code int) {
+	Debugf("Inject hold key=%d", code)
+	inj.writeEvent(evKey, uint16(code), 1)
+	inj.syn()
+}
+
+func (inj *Injector) ReleaseKey(code int) {
+	Debugf("Inject release key=%d", code)
+	inj.writeEvent(evKey, uint16(code), 0)
+	inj.syn()
+}
+
 func (inj *Injector) ClickMouse(button uint16, pressed bool) {
 	val := int32(0)
 	if pressed {

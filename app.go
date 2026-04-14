@@ -3,6 +3,7 @@ package main //nolint:revive // main package needs no doc comment
 import (
 	"log"
 	"os"
+	"strconv"
 	"runtime"
 	"sort"
 	"sync"
@@ -40,6 +41,8 @@ type App struct {
 	repeatStart    time.Time  // when key was first pressed
 	repeatLast     time.Time  // when last repeat fired
 	repeatInitial  bool       // true = still in initial delay phase
+
+	reconnectLast time.Time // cooldown for gamepad reconnection attempts
 }
 
 func NewApp(config Config) *App {
@@ -88,12 +91,29 @@ func (app *App) Run() error {
 	// Use workarea on X11 to avoid panels/taskbars; fall back to monitor bounds.
 	// Workarea spans all monitors - intersect with primary to get per-monitor area.
 	posArea := mon
+	waOk := false
 	if wx, wy, ww, wh, ok := GetWorkarea(); ok && ww > 0 && wh > 0 {
+		waOk = true
 		wa := MonitorRect{X: wx, Y: wy, W: ww, H: wh}
 		posArea = intersectRect(mon, wa)
 		Debugf("Workarea: %dx%d+%d+%d, monitor: %dx%d+%d+%d, effective: %dx%d+%d+%d",
 			ww, wh, wx, wy, mon.W, mon.H, mon.X, mon.Y,
 			posArea.W, posArea.H, posArea.X, posArea.Y)
+	}
+	// Fallback: workarea available but didn't subtract panel for this monitor
+	// (multi-monitor XFCE reports combined workarea without per-monitor panel gaps).
+	// Scan _NET_WM_STRUT_PARTIAL on dock/panel windows directly.
+	if waOk && posArea == mon {
+		if top, bottom, left, right := GetStrutInsets(mon); top > 0 || bottom > 0 || left > 0 || right > 0 {
+			posArea = MonitorRect{
+				X: mon.X + left,
+				Y: mon.Y + top,
+				W: mon.W - left - right,
+				H: mon.H - top - bottom,
+			}
+			Debugf("Strut fallback: top=%d bottom=%d left=%d right=%d, effective: %dx%d+%d+%d",
+				top, bottom, left, right, posArea.W, posArea.H, posArea.X, posArea.Y)
+		}
 	}
 
 	// Position: center horizontally, top or bottom based on config
@@ -240,6 +260,18 @@ func (app *App) Run() error {
 		rend.SetTheme(Themes[name])
 		SaveTheme(name)
 	}
+	kb.OnSensitivityUp = func() {
+		cfg.Mouse.Sensitivity = min(50, cfg.Mouse.Sensitivity+2)
+		gamepad.SetSensitivity(cfg.Mouse.Sensitivity)
+		rend.FlashGlyph("\u27F9", strconv.Itoa(cfg.Mouse.Sensitivity))
+		SaveSensitivity(cfg.Mouse.Sensitivity)
+	}
+	kb.OnSensitivityDown = func() {
+		cfg.Mouse.Sensitivity = max(1, cfg.Mouse.Sensitivity-2)
+		gamepad.SetSensitivity(cfg.Mouse.Sensitivity)
+		rend.FlashGlyph("\u27FE", strconv.Itoa(cfg.Mouse.Sensitivity))
+		SaveSensitivity(cfg.Mouse.Sensitivity)
+	}
 
 	app.running = true
 
@@ -272,7 +304,7 @@ func (app *App) Run() error {
 					gamepad.Grab()
 				}
 				if !hasLayerShell() {
-					SaveFocusedWindow() // capture game window now — used by RestoreFocus on hide
+					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
 				}
 				SDL3ShowWindow(window)
 				if opacity < 1.0 {
@@ -287,6 +319,7 @@ func (app *App) Run() error {
 				}
 			} else {
 				app.stopRepeat()
+				kb.ReleaseAltTab(inj)
 				if inj != nil {
 					inj.ClickMouse(0x110, false) // BTN_LEFT release
 					inj.ClickMouse(0x111, false) // BTN_RIGHT release
@@ -294,11 +327,8 @@ func (app *App) Run() error {
 				gamepad.Ungrab()
 				SDL3HideWindow(window)
 				if !hasLayerShell() {
-					if IsFullscreenActive() {
-						Debugf("Fullscreen active on hide — warping pointer + restoring focus")
-						WarpPointerCenter()
-					} else {
-						Debugf("No fullscreen on hide — restoring focus")
+					if IsSavedWindowFullscreen() {
+						WarpPointerIfOutside()
 					}
 					RestoreFocus()
 				}
@@ -314,12 +344,33 @@ func (app *App) Run() error {
 		}
 
 		// Process gamepad events (evdev - works regardless of window focus)
+		prevFd := gamepad.Fd()
 		for _, action := range gamepad.ReadEvents() {
 			app.handleAction(action, kb, inj, rend)
+		}
+		if prevFd >= 0 && gamepad.Fd() < 0 {
+			rend.Flash("Controller lost")
+		}
+
+		// Gamepad reconnection (2s cooldown between attempts)
+		if gamepad.Fd() < 0 {
+			now := time.Now()
+			if now.Sub(app.reconnectLast) >= 2*time.Second {
+				app.reconnectLast = now
+				if gamepad.Reconnect() {
+					rend.Flash("Controller connected")
+					if app.visible && cfg.Gamepad.Grab {
+						gamepad.Grab()
+					}
+				}
+			}
 		}
 
 		// Long-press check
 		kb.CheckLongPress(cfg.Gamepad.LongPressMs)
+
+		// Alt+Tab timeout (auto-release after 3s idle)
+		kb.CheckAltTabTimeout(inj)
 
 		// Key repeat check
 		if app.repeatAction != ActionNone {
@@ -342,7 +393,28 @@ func (app *App) Run() error {
 			rend.Draw(kb)
 		}
 
-		// vsync in SDL_RenderPresent handles frame pacing
+		// Frame pacing: vsync in rend.Draw handles visible idle case.
+		// Explicit sleep needed when hidden or when stick is active (sub-vsync polling).
+		if !app.visible || gamepad.NeedsPolling() {
+			pollMs := 16 // hidden idle: ~60Hz for IPC + gamepad checks
+			if gamepad.NeedsPolling() {
+				pollMs = 4 // mouse/nav active: ~250Hz for smooth cursor
+			}
+			if app.repeatAction != ActionNone {
+				var nextMs int64
+				if app.repeatInitial {
+					nextMs = int64(cfg.Keys.RepeatDelayMs) - time.Since(app.repeatStart).Milliseconds()
+				} else {
+					nextMs = int64(cfg.Keys.RepeatRateMs) - time.Since(app.repeatLast).Milliseconds()
+				}
+				if nextMs > 0 && int(nextMs) < pollMs {
+					pollMs = int(nextMs)
+				}
+			}
+			if pollMs > 0 {
+				time.Sleep(time.Duration(pollMs) * time.Millisecond)
+			}
+		}
 	}
 	return nil
 }
@@ -364,6 +436,7 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 	switch a.Type { //nolint:exhaustive // ActionNone is filtered by caller
 
 	case ActionNavigate:
+		kb.ReleaseAltTab(inj)
 		kb.Navigate(a.DX, a.DY)
 		app.stopRepeat()
 	case ActionPress:

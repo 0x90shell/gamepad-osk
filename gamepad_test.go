@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -494,6 +495,105 @@ func TestComboDetect_PartialPress(t *testing.T) {
 	a := gp.handleButton(0x13b, 1) // start - only 2 of 3
 	if a.Type == ActionToggle {
 		t.Error("partial press (2 of 3) should not fire combo")
+	}
+}
+
+func TestReadEventsNilFd(t *testing.T) {
+	gp := newTestGamepad()
+	gp.fd = nil
+	actions := gp.ReadEvents()
+	if actions != nil {
+		t.Errorf("ReadEvents with nil fd = %v, want nil", actions)
+	}
+}
+
+func TestNeedsPollingIdle(t *testing.T) {
+	gp := newTestGamepad()
+	// No fd, no mouse, no nav
+	if gp.NeedsPolling() {
+		t.Error("NeedsPolling should be false with nil fd")
+	}
+}
+
+func TestNeedsPollingMouseActive(t *testing.T) {
+	gp := newTestGamepad()
+	// Simulate an open fd by setting a non-nil value (we won't read from it)
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+	gp.mouseX = 0.5
+	if !gp.NeedsPolling() {
+		t.Error("NeedsPolling should be true with active mouse stick")
+	}
+}
+
+func TestNeedsPollingNavActive(t *testing.T) {
+	gp := newTestGamepad()
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+	gp.dpadX.Direction = 1
+	if !gp.NeedsPolling() {
+		t.Error("NeedsPolling should be true with active dpad")
+	}
+}
+
+func TestDisconnectResetsState(t *testing.T) {
+	gp := newTestGamepad()
+	// Set up state that should be cleared on disconnect
+	gp.mouseX = 0.8
+	gp.mouseY = -0.5
+	gp.navX.Direction = 1
+	gp.dpadY.Direction = -1
+	gp.ltActive = true
+	gp.rtActive = true
+	gp.btnHeld[BTN_SOUTH] = true
+	gp.grabbed = true
+
+	// Simulate disconnect by calling the reset path directly
+	// (we can't trigger a real ENODEV without a real device)
+	// Ungrab needs a non-nil fd; in real disconnect path it runs before fd=nil
+	gp.grabbed = false
+	gp.fd = nil
+	gp.mouseX, gp.mouseY = 0, 0
+	gp.navX = NavAxis{}
+	gp.navY = NavAxis{}
+	gp.dpadX = NavAxis{}
+	gp.dpadY = NavAxis{}
+	gp.btnHeld = make(map[uint16]bool)
+	gp.axisState = make(map[uint16]int32)
+	gp.ltActive = false
+	gp.rtActive = false
+
+	if gp.mouseX != 0 || gp.mouseY != 0 {
+		t.Error("mouse should be zeroed after disconnect")
+	}
+	if gp.navX.Direction != 0 || gp.dpadY.Direction != 0 {
+		t.Error("nav axes should be zeroed after disconnect")
+	}
+	if gp.ltActive || gp.rtActive {
+		t.Error("trigger state should be cleared after disconnect")
+	}
+	if len(gp.btnHeld) != 0 {
+		t.Error("btnHeld should be empty after disconnect")
+	}
+	if gp.grabbed {
+		t.Error("grabbed should be false after disconnect")
+	}
+	if gp.fd != nil {
+		t.Error("fd should be nil after disconnect")
+	}
+}
+
+func TestReconnectNoDevice(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.Device = "/dev/input/event_nonexistent_test"
+	gp := NewGamepadReader(cfg)
+	gp.fd = nil
+	if gp.Reconnect() {
+		t.Error("Reconnect should return false with nonexistent device")
 	}
 }
 

@@ -167,14 +167,19 @@ func printHelp(cfg Config) {
 
 	var comboHelp string
 	if cfg.Gamepad.ToggleCombo != "" {
-		comboHelp = fmt.Sprintf("  Active: %-20s (%dms window)\n  Change in config: toggle_combo, combo_period_ms",
-			cfg.Gamepad.ToggleCombo, cfg.Gamepad.ComboPeriodMs)
+		if _, err := parseComboString(cfg.Gamepad.ToggleCombo); err != nil {
+			comboHelp = fmt.Sprintf("  INVALID: %s (%v)\n  Change in config: toggle_combo, combo_period_ms",
+				cfg.Gamepad.ToggleCombo, err)
+		} else {
+			comboHelp = fmt.Sprintf("  Active: %-20s (%dms window)\n  Change in config: toggle_combo, combo_period_ms\n"+
+				"  Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide, up, down, left, right",
+				cfg.Gamepad.ToggleCombo, cfg.Gamepad.ComboPeriodMs)
+		}
 	} else {
 		comboHelp = "  Disabled. Set in config:\n" +
 			"    toggle_combo = guide+a         # 2-4 buttons, + separated\n" +
 			"    combo_period_ms = 200          # timing window (ms)\n" +
-			"  Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide,\n" +
-			"           dpad_up, dpad_down, dpad_left, dpad_right"
+			"  Buttons: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select, guide, up, down, left, right"
 	}
 
 	fmt.Printf(`gamepad-osk v%s - Gamepad-controlled on-screen keyboard for Linux
@@ -215,6 +220,7 @@ CONTROLS (from config)
   %-24s Caps Lock
   %-24s Toggle keyboard top/bottom
   %-24s Accent popup (on vowels: é, ñ, ü)
+  Shift + up/down arrow     Adjust mouse sensitivity (saved to config)
 
 TOGGLE COMBO (config: toggle_combo)
 %s
@@ -229,6 +235,9 @@ CONFIG (first found)
   3. /etc/gamepad-osk/config
   4. config next to binary
   5. config in working directory
+
+NOTES
+  Controller auto-reconnects if disconnected (timeout, power-off, unplug).
 
 REQUIREMENTS
   Runtime: sdl3, sdl3_ttf, ttf-promptfont (AUR)

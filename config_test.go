@@ -52,9 +52,9 @@ func TestValidateConfig(t *testing.T) {
 		{"deadzone valid", func(c *Config) { c.Gamepad.Deadzone = 0.5 },
 			func(c *Config) bool { return c.Gamepad.Deadzone == 0.5 }, "should keep 0.5"},
 		{"sensitivity too low", func(c *Config) { c.Mouse.Sensitivity = 0 },
-			func(c *Config) bool { return c.Mouse.Sensitivity == 8 }, "should reset to 8"},
+			func(c *Config) bool { return c.Mouse.Sensitivity == 10 }, "should reset to 10"},
 		{"sensitivity too high", func(c *Config) { c.Mouse.Sensitivity = 100 },
-			func(c *Config) bool { return c.Mouse.Sensitivity == 8 }, "should reset to 8"},
+			func(c *Config) bool { return c.Mouse.Sensitivity == 10 }, "should reset to 10"},
 		{"long_press_ms too low", func(c *Config) { c.Gamepad.LongPressMs = 10 },
 			func(c *Config) bool { return c.Gamepad.LongPressMs == 500 }, "should reset to 500"},
 		{"unknown theme", func(c *Config) { c.Theme.Name = "nonexistent" },
@@ -197,6 +197,18 @@ func TestPrintHelpComboSection(t *testing.T) {
 	}
 	if strings.Contains(out, "Disabled.") {
 		t.Error("help with toggle_combo set should not show Disabled")
+	}
+}
+
+func TestPrintHelpInvalidCombo(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "select+banana"
+	out := captureHelp(t, cfg)
+	if !strings.Contains(out, "INVALID") {
+		t.Error("help with invalid combo should show INVALID")
+	}
+	if strings.Contains(out, "Active:") {
+		t.Error("help with invalid combo should not show Active")
 	}
 }
 
@@ -662,6 +674,10 @@ func TestParseComboString(t *testing.T) {
 		{"duplicate", "a+a", 0, true},
 		{"guide button", "guide+a", 2, false},
 		{"dpad buttons", "dpad_up+dpad_down", 2, false},
+		{"dpad shorthand", "up+down", 2, false},
+		{"dpad mixed", "up+dpad_down", 2, false},
+		{"shorthand+button", "select+up", 2, false},
+		{"cross-alias duplicate", "up+dpad_up", 0, true},
 		{"triggers", "lt+rt", 2, false},
 	}
 

@@ -209,7 +209,7 @@ var LayoutQWERTY = [][]KeyDef{
 		mod("Alt", KEY_LEFTALT, 1.25, "alt"),
 		k("Space", KEY_SPACE, 5.0),
 		mod("Alt", KEY_RIGHTALT, 1.25, "alt"),
-		k("←", KEY_LEFT, 0.75), k("→", KEY_RIGHT, 0.75), k("↑", KEY_UP, 0.75), k("↓", KEY_DOWN, 0.75),
+		k("←", KEY_LEFT, 0.75), k("→", KEY_RIGHT, 0.75), k("↑", KEY_UP, 0.75, "\u27F9"), k("↓", KEY_DOWN, 0.75, "\u27FE"),
 		k("Cfg", 0, 1.75),
 	},
 }

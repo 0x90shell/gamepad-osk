@@ -18,8 +18,9 @@ type Renderer struct {
 	font           *Font
 	fontSmall      *Font
 	fontGlyph      *Font
-	flashText string
-	flashEnd  time.Time
+	flashText      string
+	flashGlyphText string // rendered with Promptfont, placed before flashText
+	flashEnd       time.Time
 }
 
 func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Renderer, error) {
@@ -110,6 +111,9 @@ func (r *Renderer) drawModifierBar(kb *KeyboardState) {
 	if kb.MetaActive {
 		labels = append(labels, "SUPER")
 	}
+	if kb.AltTabHeld {
+		labels = append(labels, "ALT-TAB")
+	}
 
 	x := r.pad
 	tc := r.theme.ModifierActiveText
@@ -120,19 +124,41 @@ func (r *Renderer) drawModifierBar(kb *KeyboardState) {
 	}
 
 	// Status flash (right-aligned, 2 seconds)
-	if r.flashText != "" && time.Now().Before(r.flashEnd) {
+	if (r.flashText != "" || r.flashGlyphText != "") && time.Now().Before(r.flashEnd) {
 		sw, _ := SDL3GetRenderOutputSize(r.renderer)
-		surf, err := TTF3RenderTextBlended(r.fontSmall, r.flashText, r.theme.KeyText)
-		if err == nil {
-			tex := SDL3CreateTextureFromSurface(r.renderer, surf)
-			if tex != nil {
-				surfW := SDL3SurfaceWidth(surf)
-				surfH := SDL3SurfaceHeight(surf)
-				dst := FRect{X: float32(sw - surfW - r.pad), Y: float32(r.pad + 2), W: float32(surfW), H: float32(surfH)}
-				SDL3RenderTexture(r.renderer, tex, nil, &dst)
-				SDL3DestroyTexture(tex)
+		rightEdge := float32(sw - r.pad)
+
+		// Render text part (right-aligned)
+		if r.flashText != "" {
+			surf, err := TTF3RenderTextBlended(r.fontSmall, r.flashText, r.theme.KeyText)
+			if err == nil {
+				tex := SDL3CreateTextureFromSurface(r.renderer, surf)
+				if tex != nil {
+					surfW := SDL3SurfaceWidth(surf)
+					surfH := SDL3SurfaceHeight(surf)
+					dst := FRect{X: rightEdge - float32(surfW), Y: float32(r.pad + 2), W: float32(surfW), H: float32(surfH)}
+					SDL3RenderTexture(r.renderer, tex, nil, &dst)
+					rightEdge = dst.X - 4
+					SDL3DestroyTexture(tex)
+				}
+				SDL3DestroySurface(surf)
 			}
-			SDL3DestroySurface(surf)
+		}
+
+		// Render glyph part (Promptfont, left of text)
+		if r.flashGlyphText != "" && r.fontGlyph != nil {
+			surf, err := TTF3RenderTextBlended(r.fontGlyph, r.flashGlyphText, r.theme.KeyText)
+			if err == nil {
+				tex := SDL3CreateTextureFromSurface(r.renderer, surf)
+				if tex != nil {
+					surfW := SDL3SurfaceWidth(surf)
+					surfH := SDL3SurfaceHeight(surf)
+					dst := FRect{X: rightEdge - float32(surfW), Y: float32(r.pad + 2), W: float32(surfW), H: float32(surfH)}
+					SDL3RenderTexture(r.renderer, tex, nil, &dst)
+					SDL3DestroyTexture(tex)
+				}
+				SDL3DestroySurface(surf)
+			}
 		}
 	}
 }
@@ -194,12 +220,21 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 	} else if key.IsModifier && isModActive(key, kb) {
 		tc = t.ModifierActiveText
 	}
-	r.renderText(r.font, label, tc, rect, AlignCenter)
+	// Use Promptfont for labels containing its codepoints (e.g. mouse speed icons)
+	labelFont := r.font
+	if r.fontGlyph != nil && hasPromptfontRune(label) {
+		labelFont = r.fontGlyph
+	}
+	r.renderText(labelFont, label, tc, rect, AlignCenter)
 
 	// Shift hint (top-right)
 	if key.ShiftLabel != "" && !key.IsModifier && !isCursor {
 		if kb.ShiftActive == kb.CapsActive {
-			r.renderText(r.fontSmall, key.ShiftLabel, t.ModifierText,
+			hintFont := r.fontSmall
+			if r.fontGlyph != nil && hasPromptfontRune(key.ShiftLabel) {
+				hintFont = r.fontGlyph
+			}
+			r.renderText(hintFont, key.ShiftLabel, t.ModifierText,
 				FRect{X: float32(x), Y: float32(y), W: float32(w - 4), H: float32(h)}, AlignTopRight)
 		}
 	}
@@ -299,6 +334,14 @@ func (r *Renderer) SetTheme(t Theme) {
 }
 
 func (r *Renderer) Flash(text string) {
+	r.flashText = text
+	r.flashGlyphText = ""
+	r.flashEnd = time.Now().Add(2 * time.Second)
+}
+
+// FlashGlyph renders a Promptfont glyph followed by text in the normal font.
+func (r *Renderer) FlashGlyph(glyph string, text string) {
+	r.flashGlyphText = glyph
 	r.flashText = text
 	r.flashEnd = time.Now().Add(2 * time.Second)
 }
@@ -407,6 +450,17 @@ func findFont(names ...string) string {
 		}
 	}
 	return ""
+}
+
+// hasPromptfontRune returns true if the string contains codepoints from
+// Promptfont's mapped range (U+2600-U+27FF).
+func hasPromptfontRune(s string) bool {
+	for _, r := range s {
+		if r >= 0x2600 && r <= 0x27FF {
+			return true
+		}
+	}
+	return false
 }
 
 func max32(a, b int32) int32 {
