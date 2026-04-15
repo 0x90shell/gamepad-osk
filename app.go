@@ -307,6 +307,7 @@ func (app *App) Run() error {
 					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
 				}
 				SDL3ShowWindow(window)
+				rend.MarkDirty()
 				if opacity < 1.0 {
 					SDL3SetWindowOpacity(window, opacity) // re-apply after show
 				}
@@ -367,7 +368,9 @@ func (app *App) Run() error {
 		}
 
 		// Long-press check
-		kb.CheckLongPress(cfg.Gamepad.LongPressMs)
+		if kb.CheckLongPress(cfg.Gamepad.LongPressMs) {
+			rend.MarkDirty()
+		}
 
 		// Alt+Tab timeout (auto-release after 3s idle)
 		kb.CheckAltTabTimeout(inj)
@@ -388,14 +391,28 @@ func (app *App) Run() error {
 			}
 		}
 
+		// Check flash/key flash expiry to trigger final redraw
+		if app.visible {
+			if rend.flashText != "" && time.Now().After(rend.flashEnd) {
+				rend.MarkDirty()
+				rend.flashText = ""
+				rend.flashGlyphText = ""
+			}
+			if kb.FlashCode != 0 && time.Now().After(kb.FlashUntil) {
+				rend.MarkDirty()
+				kb.FlashCode = 0
+			}
+		}
+
 		// Render
 		if app.visible {
 			rend.Draw(kb)
 		}
 
-		// Frame pacing: vsync in rend.Draw handles visible idle case.
-		// Explicit sleep needed when hidden or when stick is active (sub-vsync polling).
-		if !app.visible || gamepad.NeedsPolling() {
+		// Frame pacing: vsync in rend.Draw handles active rendering.
+		// Sleep when hidden, when visible but idle (nothing to draw), or
+		// when stick is active (sub-vsync polling for smooth cursor).
+		if !app.visible || rend.dirtyFrames <= 0 || gamepad.NeedsPolling() {
 			pollMs := 16 // hidden idle: ~60Hz for IPC + gamepad checks
 			if gamepad.NeedsPolling() {
 				pollMs = 4 // mouse/nav active: ~250Hz for smooth cursor
@@ -432,6 +449,8 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 	if !app.visible {
 		return
 	}
+
+	rend.MarkDirty()
 
 	switch a.Type { //nolint:exhaustive // ActionNone is filtered by caller
 

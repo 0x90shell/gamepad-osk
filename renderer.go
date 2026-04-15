@@ -5,9 +5,21 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unsafe"
 )
 
 const promptFontPath = "/usr/share/fonts/TTF/promptfont.ttf"
+
+type texCacheKey struct {
+	text string
+	font uintptr // font pointer as identity
+	color Color
+}
+
+type texCacheEntry struct {
+	tex  *Texture
+	w, h float32
+}
 
 type Renderer struct {
 	renderer       *SDLRenderer
@@ -21,6 +33,8 @@ type Renderer struct {
 	flashText      string
 	flashGlyphText string // rendered with Promptfont, placed before flashText
 	flashEnd       time.Time
+	texCache       map[texCacheKey]texCacheEntry
+	dirtyFrames    int // redraw counter for double/triple buffering
 }
 
 func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Renderer, error) {
@@ -54,18 +68,25 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	}
 
 	return &Renderer{
-		renderer:  r,
-		theme:     theme,
-		unit:      unitSize,
-		pad:       padding,
-		statusH:   max32(20, int32(float64(unitSize)*0.4)),
-		font:      font,
-		fontSmall: fontSmall,
-		fontGlyph: fontGlyph,
+		renderer:    r,
+		theme:       theme,
+		unit:        unitSize,
+		pad:         padding,
+		statusH:     max32(20, int32(float64(unitSize)*0.4)),
+		font:        font,
+		fontSmall:   fontSmall,
+		fontGlyph:   fontGlyph,
+		texCache:    make(map[texCacheKey]texCacheEntry),
+		dirtyFrames: 3, // force initial draw
 	}, nil
 }
 
 func (r *Renderer) Draw(kb *KeyboardState) {
+	if r.dirtyFrames <= 0 {
+		return
+	}
+	r.dirtyFrames--
+
 	t := r.theme
 	setColor(r.renderer, t.Bg)
 	SDL3RenderClear(r.renderer)
@@ -91,6 +112,12 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 	}
 
 	SDL3RenderPresent(r.renderer)
+}
+
+// MarkDirty signals that the display needs updating.
+// Redraws for 3 frames to cover double/triple buffering.
+func (r *Renderer) MarkDirty() {
+	r.dirtyFrames = 3
 }
 
 func (r *Renderer) drawModifierBar(kb *KeyboardState) {
@@ -130,58 +157,62 @@ func (r *Renderer) drawModifierBar(kb *KeyboardState) {
 
 		// Render text part (right-aligned)
 		if r.flashText != "" {
-			surf, err := TTF3RenderTextBlended(r.fontSmall, r.flashText, r.theme.KeyText)
-			if err == nil {
-				tex := SDL3CreateTextureFromSurface(r.renderer, surf)
-				if tex != nil {
-					surfW := SDL3SurfaceWidth(surf)
-					surfH := SDL3SurfaceHeight(surf)
-					dst := FRect{X: rightEdge - float32(surfW), Y: float32(r.pad + 2), W: float32(surfW), H: float32(surfH)}
-					SDL3RenderTexture(r.renderer, tex, nil, &dst)
-					rightEdge = dst.X - 4
-					SDL3DestroyTexture(tex)
-				}
-				SDL3DestroySurface(surf)
+			entry := r.cachedText(r.fontSmall, r.flashText, r.theme.KeyText)
+			if entry.tex != nil {
+				dst := FRect{X: rightEdge - entry.w, Y: float32(r.pad + 2), W: entry.w, H: entry.h}
+				SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
+				rightEdge = dst.X - 4
 			}
 		}
 
 		// Render glyph part (Promptfont, left of text)
-		if r.flashGlyphText != "" && r.fontGlyph != nil {
-			surf, err := TTF3RenderTextBlended(r.fontGlyph, r.flashGlyphText, r.theme.KeyText)
-			if err == nil {
-				tex := SDL3CreateTextureFromSurface(r.renderer, surf)
-				if tex != nil {
-					surfW := SDL3SurfaceWidth(surf)
-					surfH := SDL3SurfaceHeight(surf)
-					dst := FRect{X: rightEdge - float32(surfW), Y: float32(r.pad + 2), W: float32(surfW), H: float32(surfH)}
-					SDL3RenderTexture(r.renderer, tex, nil, &dst)
-					SDL3DestroyTexture(tex)
-				}
-				SDL3DestroySurface(surf)
+		if r.flashGlyphText != "" {
+			entry := r.cachedText(r.fontGlyph, r.flashGlyphText, r.theme.KeyText)
+			if entry.tex != nil {
+				dst := FRect{X: rightEdge - entry.w, Y: float32(r.pad + 2), W: entry.w, H: entry.h}
+				SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
 			}
 		}
 	}
 }
 
 func (r *Renderer) drawPill(label string, x, y int32, bg Color, fg Color) {
-	surf, err := TTF3RenderTextBlended(r.fontSmall, label, fg)
-	if err != nil {
+	entry := r.cachedText(r.fontSmall, label, fg)
+	if entry.tex == nil {
 		return
 	}
-	surfW := SDL3SurfaceWidth(surf)
-	surfH := SDL3SurfaceHeight(surf)
-	defer SDL3DestroySurface(surf)
-	pw := surfW + 10
-	ph := surfH + 4
+	pw := int32(entry.w) + 10
+	ph := int32(entry.h) + 4
 	pill := FRect{X: float32(x), Y: float32(y), W: float32(pw), H: float32(ph)}
 	setColor(r.renderer, bg)
 	SDL3RenderFillRect(r.renderer, pill)
-	tex := SDL3CreateTextureFromSurface(r.renderer, surf)
-	if tex != nil {
-		dst := FRect{X: float32(x + 5), Y: float32(y + 2), W: float32(surfW), H: float32(surfH)}
-		SDL3RenderTexture(r.renderer, tex, nil, &dst)
-		SDL3DestroyTexture(tex)
+	dst := FRect{X: float32(x + 5), Y: float32(y + 2), W: entry.w, H: entry.h}
+	SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
+}
+
+// cachedText returns a cached texture entry, rasterizing on first use.
+func (r *Renderer) cachedText(font *Font, text string, color Color) texCacheEntry {
+	if text == "" || font == nil {
+		return texCacheEntry{}
 	}
+	key := texCacheKey{text: text, font: uintptr(unsafe.Pointer(font)), color: color} //nolint:gosec // G103: pointer used as identity key only, not dereferenced
+	if entry, ok := r.texCache[key]; ok {
+		return entry
+	}
+	surf, err := TTF3RenderTextBlended(font, text, color)
+	if err != nil {
+		return texCacheEntry{}
+	}
+	tex := SDL3CreateTextureFromSurface(r.renderer, surf)
+	w := float32(SDL3SurfaceWidth(surf))
+	h := float32(SDL3SurfaceHeight(surf))
+	SDL3DestroySurface(surf)
+	if tex == nil {
+		return texCacheEntry{}
+	}
+	entry := texCacheEntry{tex: tex, w: w, h: h}
+	r.texCache[key] = entry
+	return entry
 }
 
 func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardState) {
@@ -286,57 +317,55 @@ const (
 )
 
 func (r *Renderer) renderText(font *Font, text string, color Color, rect FRect, align TextAlign) {
-	if text == "" || font == nil {
+	entry := r.cachedText(font, text, color)
+	if entry.tex == nil {
 		return
 	}
-	surf, err := TTF3RenderTextBlended(font, text, color)
-	if err != nil {
-		return
-	}
-	defer SDL3DestroySurface(surf)
-
-	tex := SDL3CreateTextureFromSurface(r.renderer, surf)
-	if tex == nil {
-		return
-	}
-	defer SDL3DestroyTexture(tex)
-
-	surfW := float32(SDL3SurfaceWidth(surf))
-	surfH := float32(SDL3SurfaceHeight(surf))
 
 	var dst FRect
 	switch align {
 	case AlignCenter:
 		dst = FRect{
-			X: rect.X + (rect.W-surfW)/2,
-			Y: rect.Y + (rect.H-surfH)/2,
-			W: surfW, H: surfH,
+			X: rect.X + (rect.W-entry.w)/2,
+			Y: rect.Y + (rect.H-entry.h)/2,
+			W: entry.w, H: entry.h,
 		}
 	case AlignTopRight:
 		dst = FRect{
-			X: rect.X + rect.W - surfW,
+			X: rect.X + rect.W - entry.w,
 			Y: rect.Y + 2,
-			W: surfW, H: surfH,
+			W: entry.w, H: entry.h,
 		}
 	case AlignBottomRight:
 		dst = FRect{
-			X: rect.X + rect.W - surfW,
-			Y: rect.Y + rect.H - surfH,
-			W: surfW, H: surfH,
+			X: rect.X + rect.W - entry.w,
+			Y: rect.Y + rect.H - entry.h,
+			W: entry.w, H: entry.h,
 		}
 	}
-	SDL3RenderTexture(r.renderer, tex, nil, &dst)
+	SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
 }
 
 func (r *Renderer) SetTheme(t Theme) {
 	r.theme = t
+	r.flushTexCache()
 	r.Flash(t.Name)
+}
+
+func (r *Renderer) flushTexCache() {
+	for k, entry := range r.texCache {
+		if entry.tex != nil {
+			SDL3DestroyTexture(entry.tex)
+		}
+		delete(r.texCache, k)
+	}
 }
 
 func (r *Renderer) Flash(text string) {
 	r.flashText = text
 	r.flashGlyphText = ""
 	r.flashEnd = time.Now().Add(2 * time.Second)
+	r.MarkDirty()
 }
 
 // FlashGlyph renders a Promptfont glyph followed by text in the normal font.
@@ -344,9 +373,11 @@ func (r *Renderer) FlashGlyph(glyph string, text string) {
 	r.flashGlyphText = glyph
 	r.flashText = text
 	r.flashEnd = time.Now().Add(2 * time.Second)
+	r.MarkDirty()
 }
 
 func (r *Renderer) Destroy() {
+	r.flushTexCache()
 	if r.font != nil {
 		TTF3CloseFont(r.font)
 	}
