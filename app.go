@@ -329,8 +329,18 @@ func (app *App) Run() error {
 				}
 			} else {
 				app.stopRepeat()
+				kb.CapsActive = false
+				kb.ShiftActive = false
+				kb.ShiftHeld = false
+				kb.CtrlActive = false
+				kb.AltActive = false
+				kb.MetaActive = false
 				kb.ReleaseAltTab(inj)
 				if inj != nil {
+					inj.ReleaseKey(KEY_LEFTSHIFT)
+					inj.ReleaseKey(KEY_LEFTCTRL)
+					inj.ReleaseKey(KEY_LEFTALT)
+					inj.ReleaseKey(KEY_LEFTMETA)
 					inj.ClickMouse(0x110, false) // BTN_LEFT release
 					inj.ClickMouse(0x111, false) // BTN_RIGHT release
 				}
@@ -523,8 +533,10 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		app.stopRepeat()
 	case ActionShiftOn:
 		kb.ShiftActive = true
+		kb.ShiftHeld = true
 	case ActionShiftOff:
 		kb.ShiftActive = false
+		kb.ShiftHeld = false
 	case ActionCapsToggle:
 		kb.CapsActive = !kb.CapsActive
 	case ActionMouseMove:

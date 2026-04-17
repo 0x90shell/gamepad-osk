@@ -10,6 +10,7 @@ type KeyboardState struct {
 	CursorRow       int
 	CursorCol       int
 	ShiftActive     bool
+	ShiftHeld       bool // true when held via gamepad trigger (not auto-released)
 	CapsActive      bool
 	CtrlActive      bool
 	AltActive       bool
@@ -138,7 +139,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 			if inj != nil {
 				inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
 			}
-			if kb.ShiftActive && !kb.CapsActive {
+			if kb.ShiftActive {
 				kb.ShiftActive = false
 			}
 		} else if inj != nil {
@@ -154,7 +155,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 			if kb.OnThemeCycleReverse != nil {
 				kb.OnThemeCycleReverse()
 			}
-			if kb.ShiftActive && !kb.CapsActive {
+			if kb.ShiftActive {
 				kb.ShiftActive = false
 			}
 		} else if kb.OnThemeCycle != nil {
@@ -190,7 +191,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		} else if key.Code == KEY_DOWN && kb.OnSensitivityDown != nil {
 			kb.OnSensitivityDown()
 		}
-		if kb.ShiftActive && !kb.CapsActive {
+		if kb.ShiftActive {
 			kb.ShiftActive = false
 		}
 		return
@@ -205,7 +206,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 				inj.PressKey(key.Code, key.Combo)
 			}
 		}
-		if kb.ShiftActive && !kb.CapsActive {
+		if kb.ShiftActive {
 			kb.ShiftActive = false
 		}
 		kb.CtrlActive = false
@@ -235,7 +236,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		inj.PressKey(code, mods)
 	}
 
-	if kb.ShiftActive && !kb.CapsActive {
+	if kb.ShiftActive && !kb.ShiftHeld {
 		kb.ShiftActive = false
 	}
 	kb.CtrlActive = false
