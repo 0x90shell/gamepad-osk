@@ -132,9 +132,8 @@ func (app *App) Run() error {
 	var window *Window
 	var err error
 	if isWayland {
-		// Wayland: create roleless surface + attach layer-shell overlay
-		window, err = createLayerShellWindow("gamepad-osk", width, height,
-			app.posTop, margin)
+		// Wayland: create roleless surface (layer-shell attached after renderer creation)
+		window, err = createWaylandWindow("gamepad-osk", width, height)
 		if err != nil {
 			return err
 		}
@@ -180,6 +179,11 @@ func (app *App) Run() error {
 	SDL3SetRenderVSync(renderer, 1)
 	SDL3SetRenderDrawBlendMode(renderer, 1) // SDL_BLENDMODE_BLEND
 	Debugf("Renderer: %s", SDL3GetRendererName(renderer))
+
+	// Attach layer-shell after renderer (renderer creation would destroy the surface otherwise)
+	if isWayland {
+		attachLayerShell(window, width, height, app.posTop, margin)
+	}
 
 	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
 	if cfg.Window.Opacity < 1.0 {
@@ -306,12 +310,15 @@ func (app *App) Run() error {
 				if !hasLayerShell() {
 					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
 				}
+				if isWayland {
+					remapLayerSurface(window)
+				}
 				SDL3ShowWindow(window)
 				rend.MarkDirty()
 				if opacity < 1.0 {
 					SDL3SetWindowOpacity(window, opacity) // re-apply after show
 				}
-				if !hasLayerShell() {
+				if !isWayland {
 					app.winY = app.computeY()
 					SDL3SetWindowPosition(window, app.winX, app.winY)
 					SetNoFocusHints(window)
@@ -326,8 +333,11 @@ func (app *App) Run() error {
 					inj.ClickMouse(0x111, false) // BTN_RIGHT release
 				}
 				gamepad.Ungrab()
+				if isWayland {
+					unmapLayerSurface(window)
+				}
 				SDL3HideWindow(window)
-				if !hasLayerShell() {
+				if !isWayland {
 					if IsSavedWindowFullscreen() {
 						WarpPointerIfOutside()
 					}
@@ -373,7 +383,9 @@ func (app *App) Run() error {
 		}
 
 		// Alt+Tab timeout (auto-release after 3s idle)
-		kb.CheckAltTabTimeout(inj)
+		if kb.CheckAltTabTimeout(inj) {
+			rend.MarkDirty()
+		}
 
 		// Key repeat check
 		if app.repeatAction != ActionNone {

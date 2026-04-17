@@ -244,10 +244,13 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 }
 
 // CheckAltTabTimeout auto-releases Alt if the cycling has been idle too long.
-func (kb *KeyboardState) CheckAltTabTimeout(inj *Injector) {
+// Returns true if Alt was released.
+func (kb *KeyboardState) CheckAltTabTimeout(inj *Injector) bool {
 	if kb.AltTabHeld && time.Since(kb.AltTabLastTab) >= 3*time.Second {
 		kb.ReleaseAltTab(inj)
+		return true
 	}
+	return false
 }
 
 // ReleaseAltTab releases held Alt from Alt+Tab cycling if active.

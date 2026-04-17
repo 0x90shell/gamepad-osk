@@ -155,7 +155,32 @@ static void reposition_layer_surface(int anchor_top, int margin,
     }
 }
 
-// Destroy the layer surface.
+// Unmap the layer surface (hide without destroying).
+static void unmap_layer_surface(SDL_Window *sdl_win) {
+    if (!wl_surf) return;
+    wl_surface_attach(wl_surf, NULL, 0, 0);
+    wl_surface_commit(wl_surf);
+
+    SDL_PropertiesID gprops = SDL_GetGlobalProperties();
+    struct wl_display *display = SDL_GetPointerProperty(gprops,
+        SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
+    if (display) wl_display_roundtrip(display);
+}
+
+// Remap the layer surface (show after unmap).
+// The next rendered frame will attach a buffer and commit.
+static void remap_layer_surface(SDL_Window *sdl_win) {
+    if (!wl_surf || !layer_surface) return;
+    // Re-commit the surface state so the compositor reconfigures
+    wl_surface_commit(wl_surf);
+
+    SDL_PropertiesID gprops = SDL_GetGlobalProperties();
+    struct wl_display *display = SDL_GetPointerProperty(gprops,
+        SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
+    if (display) wl_display_roundtrip(display);
+}
+
+// Destroy the layer surface (cleanup on exit).
 static void destroy_layer_surface() {
     if (layer_surface) {
         zwlr_layer_surface_v1_destroy(layer_surface);
@@ -181,10 +206,9 @@ import (
 
 var layerShellActive bool
 
-// createLayerShellWindow creates an SDL3 window with a roleless Wayland surface
-// and attaches a wlr-layer-shell overlay role.
-// Falls back to a standard SDL3 window if the compositor doesn't support layer-shell.
-func createLayerShellWindow(title string, w, h int32, top bool, margin int32) (*Window, error) {
+// createWaylandWindow creates an SDL3 window with a roleless Wayland surface.
+// The renderer must be created before calling attachLayerShell.
+func createWaylandWindow(title string, w, h int32) (*Window, error) {
 	window, err := SDL3CreateWindowWithProps(title, 0, 0, w, h,
 		true,  // hidden
 		true,  // borderless
@@ -197,7 +221,12 @@ func createLayerShellWindow(title string, w, h int32, top bool, margin int32) (*
 		return SDL3CreateWindowWithProps(title, 0, 0, w, h,
 			true, true, true, false)
 	}
+	return window, nil
+}
 
+// attachLayerShell attaches a wlr-layer-shell overlay role to the window.
+// Must be called AFTER SDL3CreateRenderer (renderer creation would destroy the surface otherwise).
+func attachLayerShell(window *Window, w, h int32, top bool, margin int32) {
 	anchorTop := 0
 	if top {
 		anchorTop = 1
@@ -219,8 +248,6 @@ func createLayerShellWindow(title string, w, h int32, top bool, margin int32) (*
 		log.Printf("Warning: failed to attach layer-shell (error %d), using standard window", ret)
 		layerShellActive = false
 	}
-
-	return window, nil
 }
 
 // repositionLayerSurface changes the layer surface anchor between top and bottom.
@@ -234,6 +261,20 @@ func repositionLayerSurface(top bool, margin int32, window *Window) {
 	}
 	C.reposition_layer_surface(C.int(anchorTop), C.int(margin),
 		(*C.SDL_Window)(window.ptr))
+}
+
+// unmapLayerSurface hides the layer surface without destroying it.
+func unmapLayerSurface(window *Window) {
+	if layerShellActive {
+		C.unmap_layer_surface((*C.SDL_Window)(window.ptr))
+	}
+}
+
+// remapLayerSurface shows the layer surface after an unmap.
+func remapLayerSurface(window *Window) {
+	if layerShellActive {
+		C.remap_layer_surface((*C.SDL_Window)(window.ptr))
+	}
 }
 
 // destroyLayerSurface cleans up the layer-shell resources.
