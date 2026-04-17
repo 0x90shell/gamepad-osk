@@ -4,6 +4,7 @@ package main
 #cgo pkg-config: wayland-client
 #include <wayland-client.h>
 #include "wlr-layer-shell-client.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <SDL3/SDL.h>
@@ -17,13 +18,75 @@ static struct wl_surface *wl_surf = NULL;
 static uint32_t configure_serial = 0;
 static int configured = 0;
 
-// --- Registry listener: discover layer_shell global ---
+// --- Output matching ---
+static struct wl_output *target_output = NULL;
+static int target_x = 0, target_y = 0;
+
+// Track outputs during registry discovery
+#define MAX_OUTPUTS 8
+static struct {
+    struct wl_output *output;
+    int x, y;
+    int done; // geometry received
+} discovered_outputs[MAX_OUTPUTS];
+static int num_outputs = 0;
+
+static void output_geometry(void *data, struct wl_output *output,
+    int32_t x, int32_t y, int32_t pw, int32_t ph,
+    int32_t subpixel, const char *make, const char *model, int32_t transform) {
+    (void)pw; (void)ph; (void)subpixel; (void)make; (void)model; (void)transform;
+    // Find this output in our list and store geometry
+    for (int i = 0; i < num_outputs; i++) {
+        if (discovered_outputs[i].output == output) {
+            discovered_outputs[i].x = x;
+            discovered_outputs[i].y = y;
+            discovered_outputs[i].done = 1;
+            break;
+        }
+    }
+}
+
+static void output_mode(void *data, struct wl_output *output,
+    uint32_t flags, int32_t w, int32_t h, int32_t refresh) {
+    (void)data; (void)output; (void)flags; (void)w; (void)h; (void)refresh;
+}
+static void output_done(void *data, struct wl_output *output) {
+    (void)data; (void)output;
+}
+static void output_scale(void *data, struct wl_output *output, int32_t factor) {
+    (void)data; (void)output; (void)factor;
+}
+static void output_name(void *data, struct wl_output *output, const char *name) {
+    (void)data; (void)output; (void)name;
+}
+static void output_description(void *data, struct wl_output *output, const char *desc) {
+    (void)data; (void)output; (void)desc;
+}
+
+static const struct wl_output_listener output_listener = {
+    .geometry = output_geometry,
+    .mode = output_mode,
+    .done = output_done,
+    .scale = output_scale,
+    .name = output_name,
+    .description = output_description,
+};
+
+// --- Registry listener: discover layer_shell and outputs ---
 static void registry_global(void *data, struct wl_registry *registry,
     uint32_t name, const char *interface, uint32_t version) {
     (void)data;
     if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         layer_shell = wl_registry_bind(registry, name,
             &zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
+    }
+    if (strcmp(interface, "wl_output") == 0 && num_outputs < MAX_OUTPUTS) {
+        struct wl_output *out = wl_registry_bind(registry, name,
+            &wl_output_interface, version < 4 ? version : 4);
+        discovered_outputs[num_outputs].output = out;
+        discovered_outputs[num_outputs].done = 0;
+        wl_output_add_listener(out, &output_listener, NULL);
+        num_outputs++;
     }
 }
 
@@ -56,9 +119,51 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
     .closed = layer_surface_closed,
 };
 
-// Attach layer-shell role to an SDL3 window's wl_surface.
+// Select the wl_output matching the target monitor position.
+static void select_target_output() {
+    target_output = NULL;
+    fprintf(stderr, "[layer-shell] target monitor: %d,%d, discovered %d outputs\n",
+        target_x, target_y, num_outputs);
+    for (int i = 0; i < num_outputs; i++) {
+        fprintf(stderr, "[layer-shell]   output %d: %d,%d done=%d\n",
+            i, discovered_outputs[i].x, discovered_outputs[i].y,
+            discovered_outputs[i].done);
+        if (discovered_outputs[i].done &&
+            discovered_outputs[i].x == target_x &&
+            discovered_outputs[i].y == target_y) {
+            target_output = discovered_outputs[i].output;
+            fprintf(stderr, "[layer-shell]   -> matched output %d\n", i);
+            return;
+        }
+    }
+    fprintf(stderr, "[layer-shell]   -> no match, compositor picks\n");
+}
+
+// Discover layer_shell global and outputs. Only called once (first attach).
+// Safe to roundtrip here because no renderer exists yet.
+static int discover_globals(SDL_Window *sdl_win) {
+    SDL_PropertiesID gprops = SDL_GetGlobalProperties();
+    struct wl_display *display = SDL_GetPointerProperty(gprops,
+        SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
+    if (!display) return -2;
+
+    struct wl_registry *registry = wl_display_get_registry(display);
+    wl_registry_add_listener(registry, &registry_listener, NULL);
+    wl_display_roundtrip(display); // discover globals
+    wl_display_roundtrip(display); // receive output geometry events
+
+    wl_registry_destroy(registry);
+
+    if (!layer_shell) return -1;
+
+    select_target_output();
+    return 0;
+}
+
+// Attach layer-shell role asynchronously (no roundtrip wait).
+// Configure arrives via SDL's event pump. Check is_layer_shell_ready() before rendering.
 // Returns 0 on success, -1 if layer_shell not available, -2 on other error.
-static int attach_layer_shell(SDL_Window *sdl_win, int width, int height,
+static int attach_layer_shell_async(SDL_Window *sdl_win, int width, int height,
     int anchor_top, int margin) {
 
     // Get wl_display from SDL3
@@ -67,63 +172,59 @@ static int attach_layer_shell(SDL_Window *sdl_win, int width, int height,
         SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
     if (!display) return -2;
 
-    // Get wl_surface from SDL3 window
-    SDL_PropertiesID wprops = SDL_GetWindowProperties(sdl_win);
-    wl_surf = SDL_GetPointerProperty(wprops,
-        SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL);
-    if (!wl_surf) return -2;
+    // Get wl_surface from SDL3 window (only on first call, SDL owns it)
+    if (!wl_surf) {
+        SDL_PropertiesID wprops = SDL_GetWindowProperties(sdl_win);
+        wl_surf = SDL_GetPointerProperty(wprops,
+            SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL);
+        if (!wl_surf) return -2;
+    }
 
-    // Discover layer_shell global
-    struct wl_registry *registry = wl_display_get_registry(display);
-    wl_registry_add_listener(registry, &registry_listener, NULL);
-    wl_display_roundtrip(display);
-
+    // Discover globals on first call only
     if (!layer_shell) {
-        wl_registry_destroy(registry);
-        return -1; // compositor doesn't support layer-shell
+        int ret = discover_globals(sdl_win);
+        if (ret != 0) return ret;
     }
 
-    // Create layer surface
+    // Clear any pending EGL buffer state before attaching layer-shell role.
+    // SDL's eglSwapBuffers may have queued a buffer on the wl_surface from
+    // a previous frame. Attaching NULL ensures the commit below doesn't
+    // carry a stale buffer that would violate the layer-shell protocol.
+    wl_surface_attach(wl_surf, NULL, 0, 0);
+    wl_surface_commit(wl_surf);
+
+    // Create layer surface on target output
     layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        layer_shell, wl_surf, NULL,
+        layer_shell, wl_surf, target_output,
         ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "gamepad-osk");
-    if (!layer_surface) {
-        wl_registry_destroy(registry);
-        return -2;
-    }
+    if (!layer_surface) return -2;
 
     zwlr_layer_surface_v1_add_listener(layer_surface, &layer_surface_listener, NULL);
 
-    // Configure anchors, size, margins
-    uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-                      ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    // Configure anchors, size, margins.
+    // Anchor only TOP or BOTTOM (no horizontal anchors) so the compositor
+    // centers the surface. KDE left-aligns when LEFT|RIGHT are set with
+    // an explicit width; omitting them gives consistent centering everywhere.
+    uint32_t anchor = 0;
     if (anchor_top) {
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+        anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+        zwlr_layer_surface_v1_set_margin(layer_surface, margin, 0, 0, 0);
     } else {
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+        anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+        zwlr_layer_surface_v1_set_margin(layer_surface, 0, 0, margin, 0);
     }
     zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
     zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 
-    if (anchor_top) {
-        zwlr_layer_surface_v1_set_margin(layer_surface, margin, 0, 0, 0);
-    } else {
-        zwlr_layer_surface_v1_set_margin(layer_surface, 0, 0, margin, 0);
-    }
-
     zwlr_layer_surface_v1_set_keyboard_interactivity(layer_surface,
         ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
-    // 0 = respect other surfaces' exclusive zones (auto-avoid panels/taskbars)
     zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, 0);
 
-    // Commit and wait for configure
-    wl_surface_commit(wl_surf);
+    // Commit to trigger configure -- DO NOT WAIT (no roundtrip)
     configured = 0;
-    while (!configured) {
-        wl_display_roundtrip(display);
-    }
+    wl_surface_commit(wl_surf);
+    wl_display_flush(display);
 
-    wl_registry_destroy(registry);
     return 0;
 }
 
@@ -132,13 +233,12 @@ static void reposition_layer_surface(int anchor_top, int margin,
     SDL_Window *sdl_win) {
     if (!layer_surface) return;
 
-    uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-                      ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    uint32_t anchor = 0;
     if (anchor_top) {
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+        anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
         zwlr_layer_surface_v1_set_margin(layer_surface, margin, 0, 0, 0);
     } else {
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+        anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
         zwlr_layer_surface_v1_set_margin(layer_surface, 0, 0, margin, 0);
     }
     zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
@@ -151,52 +251,52 @@ static void reposition_layer_surface(int anchor_top, int margin,
         wl_surface_commit(wl_surf);
     }
     if (display) {
-        wl_display_roundtrip(display);
+        wl_display_flush(display);
     }
 }
 
-// Unmap the layer surface (hide without destroying).
-static void unmap_layer_surface(SDL_Window *sdl_win) {
-    if (!wl_surf) return;
-    wl_surface_attach(wl_surf, NULL, 0, 0);
-    wl_surface_commit(wl_surf);
-
-    SDL_PropertiesID gprops = SDL_GetGlobalProperties();
-    struct wl_display *display = SDL_GetPointerProperty(gprops,
-        SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
-    if (display) wl_display_roundtrip(display);
-}
-
-// Remap the layer surface (show after unmap).
-// The next rendered frame will attach a buffer and commit.
-static void remap_layer_surface(SDL_Window *sdl_win) {
-    if (!wl_surf || !layer_surface) return;
-    // Re-commit the surface state so the compositor reconfigures
-    wl_surface_commit(wl_surf);
-
-    SDL_PropertiesID gprops = SDL_GetGlobalProperties();
-    struct wl_display *display = SDL_GetPointerProperty(gprops,
-        SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
-    if (display) wl_display_roundtrip(display);
-}
-
-// Destroy the layer surface (cleanup on exit).
+// Destroy the layer surface (hide or cleanup).
+// Preserves layer_shell global and wl_surf for re-attach.
 static void destroy_layer_surface() {
     if (layer_surface) {
         zwlr_layer_surface_v1_destroy(layer_surface);
         layer_surface = NULL;
     }
+    configured = 0;
+}
+
+// Full cleanup on exit.
+static void cleanup_layer_shell() {
+    destroy_layer_surface();
     if (layer_shell) {
         zwlr_layer_shell_v1_destroy(layer_shell);
         layer_shell = NULL;
     }
+    for (int i = 0; i < num_outputs; i++) {
+        if (discovered_outputs[i].output) {
+            wl_output_destroy(discovered_outputs[i].output);
+            discovered_outputs[i].output = NULL;
+        }
+    }
+    num_outputs = 0;
+    target_output = NULL;
     wl_surf = NULL;
-    configured = 0;
 }
 
-// Check if layer shell was successfully attached.
+// Check if layer shell is configured and ready for rendering.
+static int is_layer_shell_ready() {
+    return layer_surface != NULL && configured;
+}
+
+// Check if layer shell was attached (may not be configured yet).
 static int has_layer_shell() {
     return layer_surface != NULL;
+}
+
+// Set the target monitor position for output matching.
+static void set_target_monitor(int x, int y) {
+    target_x = x;
+    target_y = y;
 }
 */
 import "C"
@@ -206,8 +306,12 @@ import (
 
 var layerShellActive bool
 
+// setTargetMonitor sets the target monitor position for wl_output matching.
+func setTargetMonitor(x, y int32) {
+	C.set_target_monitor(C.int(x), C.int(y))
+}
+
 // createWaylandWindow creates an SDL3 window with a roleless Wayland surface.
-// The renderer must be created before calling attachLayerShell.
 func createWaylandWindow(title string, w, h int32) (*Window, error) {
 	window, err := SDL3CreateWindowWithProps(title, 0, 0, w, h,
 		true,  // hidden
@@ -224,14 +328,14 @@ func createWaylandWindow(title string, w, h int32) (*Window, error) {
 	return window, nil
 }
 
-// attachLayerShell attaches a wlr-layer-shell overlay role to the window.
-// Must be called AFTER SDL3CreateRenderer (renderer creation would destroy the surface otherwise).
-func attachLayerShell(window *Window, w, h int32, top bool, margin int32) {
+// attachLayerShellAsync attaches a wlr-layer-shell overlay role asynchronously.
+// Configure arrives via SDL's event pump. Check IsLayerShellReady() before rendering.
+func attachLayerShellAsync(window *Window, w, h int32, top bool, margin int32) {
 	anchorTop := 0
 	if top {
 		anchorTop = 1
 	}
-	ret := int(C.attach_layer_shell(
+	ret := int(C.attach_layer_shell_async(
 		(*C.SDL_Window)(window.ptr),
 		C.int(w), C.int(h),
 		C.int(anchorTop), C.int(margin),
@@ -240,7 +344,7 @@ func attachLayerShell(window *Window, w, h int32, top bool, margin int32) {
 	switch ret {
 	case 0:
 		layerShellActive = true
-		log.Printf("Layer-shell overlay attached successfully")
+		log.Printf("Layer-shell overlay requested (waiting for configure)")
 	case -1:
 		log.Printf("Warning: compositor does not support wlr-layer-shell, using standard window")
 		layerShellActive = false
@@ -248,6 +352,11 @@ func attachLayerShell(window *Window, w, h int32, top bool, margin int32) {
 		log.Printf("Warning: failed to attach layer-shell (error %d), using standard window", ret)
 		layerShellActive = false
 	}
+}
+
+// IsLayerShellReady returns true if the layer surface is configured and ready for rendering.
+func IsLayerShellReady() bool {
+	return bool(C.is_layer_shell_ready() != 0)
 }
 
 // repositionLayerSurface changes the layer surface anchor between top and bottom.
@@ -263,21 +372,8 @@ func repositionLayerSurface(top bool, margin int32, window *Window) {
 		(*C.SDL_Window)(window.ptr))
 }
 
-// unmapLayerSurface hides the layer surface without destroying it.
-func unmapLayerSurface(window *Window) {
-	if layerShellActive {
-		C.unmap_layer_surface((*C.SDL_Window)(window.ptr))
-	}
-}
-
-// remapLayerSurface shows the layer surface after an unmap.
-func remapLayerSurface(window *Window) {
-	if layerShellActive {
-		C.remap_layer_surface((*C.SDL_Window)(window.ptr))
-	}
-}
-
-// destroyLayerSurface cleans up the layer-shell resources.
+// destroyLayerSurface destroys the layer surface (for hide).
+// Preserves layer_shell global for re-attach.
 func destroyLayerSurface() {
 	if layerShellActive {
 		C.destroy_layer_surface()
@@ -285,7 +381,13 @@ func destroyLayerSurface() {
 	}
 }
 
-// hasLayerShell returns true if layer-shell is active.
+// cleanupLayerShell fully cleans up all layer-shell resources (exit).
+func cleanupLayerShell() {
+	C.cleanup_layer_shell()
+	layerShellActive = false
+}
+
+// hasLayerShell returns true if layer-shell was attached (may not be configured).
 func hasLayerShell() bool {
 	return layerShellActive
 }

@@ -11,6 +11,7 @@ import (
 )
 
 var themeOrder []string
+var isWayland bool
 
 func init() {
 	for name := range Themes {
@@ -128,11 +129,12 @@ func (app *App) Run() error {
 		log.Printf("Warning: cannot set SDL_APP_ID: %v", err)
 	}
 
-	isWayland := os.Getenv("WAYLAND_DISPLAY") != ""
+	isWayland = os.Getenv("WAYLAND_DISPLAY") != ""
 	var window *Window
 	var err error
 	if isWayland {
-		// Wayland: create roleless surface (layer-shell attached after renderer creation)
+		// Wayland: create roleless surface, attach layer-shell asynchronously
+		setTargetMonitor(mon.X, mon.Y)
 		window, err = createWaylandWindow("gamepad-osk", width, height)
 		if err != nil {
 			return err
@@ -153,7 +155,7 @@ func (app *App) Run() error {
 		// Position set after app fields are initialized (computeY needs them)
 	}
 	defer func() {
-		destroyLayerSurface()
+		cleanupLayerShell()
 		SDL3DestroyWindow(window)
 	}()
 
@@ -171,6 +173,11 @@ func (app *App) Run() error {
 		SDL3SetWindowPosition(window, x, app.winY)
 	}
 
+	// Attach layer-shell asynchronously -- configure arrives via SDL event pump
+	if isWayland {
+		attachLayerShellAsync(window, width, height, app.posTop, margin)
+	}
+
 	renderer, err := SDL3CreateRenderer(window)
 	if err != nil {
 		return err
@@ -179,11 +186,6 @@ func (app *App) Run() error {
 	SDL3SetRenderVSync(renderer, 1)
 	SDL3SetRenderDrawBlendMode(renderer, 1) // SDL_BLENDMODE_BLEND
 	Debugf("Renderer: %s", SDL3GetRendererName(renderer))
-
-	// Attach layer-shell after renderer (renderer creation would destroy the surface otherwise)
-	if isWayland {
-		attachLayerShell(window, width, height, app.posTop, margin)
-	}
 
 	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
 	if cfg.Window.Opacity < 1.0 {
@@ -283,18 +285,16 @@ func (app *App) Run() error {
 
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
-		rend.Draw(kb) // render first frame before showing
-		SDL3ShowWindow(window)
-		if opacity < 1.0 {
-			SDL3SetWindowOpacity(window, opacity) // re-apply after show
+		if !isWayland {
+			rend.Draw(kb) // render first frame before showing (Wayland: gated by IsLayerShellReady)
+			SDL3ShowWindow(window)
+			if opacity < 1.0 {
+				SDL3SetWindowOpacity(window, opacity) // re-apply after show
+			}
+			SDL3SetWindowPosition(window, x, app.winY)
+			SetNoFocusHints(window)
 		}
-		if !hasLayerShell() {
-			SDL3SetWindowPosition(window, x, app.winY) // re-apply position after show (override-redirect set, but SDL may have buffered the old position)
-			SetNoFocusHints(window) // re-apply hints after show (ensures override-redirect is set before WM sees the mapped window)
-			// No RestoreFocus: XMapRaised does not change X11 focus; SDL3 X11_ShowWindow only calls
-			// XSetInputFocus when no WM is present. Calling RestoreFocus here would focus prev_focused
-			// (the terminal where the OSK was launched), changing _NET_ACTIVE_WINDOW and triggering xfce4-panel.
-		}
+		// Wayland: first frame renders after configure arrives via SDL event pump
 	}
 
 	for app.running {
@@ -311,9 +311,10 @@ func (app *App) Run() error {
 					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
 				}
 				if isWayland {
-					remapLayerSurface(window)
+					attachLayerShellAsync(window, width, height, app.posTop, margin)
+				} else {
+					SDL3ShowWindow(window)
 				}
-				SDL3ShowWindow(window)
 				rend.MarkDirty()
 				if opacity < 1.0 {
 					SDL3SetWindowOpacity(window, opacity) // re-apply after show
@@ -334,9 +335,10 @@ func (app *App) Run() error {
 				}
 				gamepad.Ungrab()
 				if isWayland {
-					unmapLayerSurface(window)
+					destroyLayerSurface()
+				} else {
+					SDL3HideWindow(window)
 				}
-				SDL3HideWindow(window)
 				if !isWayland {
 					if IsSavedWindowFullscreen() {
 						WarpPointerIfOutside()
