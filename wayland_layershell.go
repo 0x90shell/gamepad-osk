@@ -4,7 +4,6 @@ package main
 #cgo pkg-config: wayland-client
 #include <wayland-client.h>
 #include "wlr-layer-shell-client.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <SDL3/SDL.h>
@@ -122,21 +121,14 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 // Select the wl_output matching the target monitor position.
 static void select_target_output() {
     target_output = NULL;
-    fprintf(stderr, "[layer-shell] target monitor: %d,%d, discovered %d outputs\n",
-        target_x, target_y, num_outputs);
     for (int i = 0; i < num_outputs; i++) {
-        fprintf(stderr, "[layer-shell]   output %d: %d,%d done=%d\n",
-            i, discovered_outputs[i].x, discovered_outputs[i].y,
-            discovered_outputs[i].done);
         if (discovered_outputs[i].done &&
             discovered_outputs[i].x == target_x &&
             discovered_outputs[i].y == target_y) {
             target_output = discovered_outputs[i].output;
-            fprintf(stderr, "[layer-shell]   -> matched output %d\n", i);
             return;
         }
     }
-    fprintf(stderr, "[layer-shell]   -> no match, compositor picks\n");
 }
 
 // Discover layer_shell global and outputs. Only called once (first attach).
@@ -164,7 +156,7 @@ static int discover_globals(SDL_Window *sdl_win) {
 // Configure arrives via SDL's event pump. Check is_layer_shell_ready() before rendering.
 // Returns 0 on success, -1 if layer_shell not available, -2 on other error.
 static int attach_layer_shell_async(SDL_Window *sdl_win, int width, int height,
-    int anchor_top, int margin) {
+    int anchor_top, int margin, int panel_avoid) {
 
     // Get wl_display from SDL3
     SDL_PropertiesID gprops = SDL_GetGlobalProperties();
@@ -184,6 +176,13 @@ static int attach_layer_shell_async(SDL_Window *sdl_win, int width, int height,
     if (!layer_shell) {
         int ret = discover_globals(sdl_win);
         if (ret != 0) return ret;
+    }
+
+    // Destroy existing layer surface if re-attaching (e.g. daemon toggle)
+    if (layer_surface) {
+        zwlr_layer_surface_v1_destroy(layer_surface);
+        layer_surface = NULL;
+        configured = 0;
     }
 
     // Clear any pending EGL buffer state before attaching layer-shell role.
@@ -218,7 +217,7 @@ static int attach_layer_shell_async(SDL_Window *sdl_win, int width, int height,
 
     zwlr_layer_surface_v1_set_keyboard_interactivity(layer_surface,
         ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
-    zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, 0);
+    zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, panel_avoid ? 0 : -1);
 
     // Commit to trigger configure -- DO NOT WAIT (no roundtrip)
     configured = 0;
@@ -330,15 +329,19 @@ func createWaylandWindow(title string, w, h int32) (*Window, error) {
 
 // attachLayerShellAsync attaches a wlr-layer-shell overlay role asynchronously.
 // Configure arrives via SDL's event pump. Check IsLayerShellReady() before rendering.
-func attachLayerShellAsync(window *Window, w, h int32, top bool, margin int32) {
+func attachLayerShellAsync(window *Window, w, h int32, top bool, margin int32, panelAvoid bool) {
 	anchorTop := 0
 	if top {
 		anchorTop = 1
 	}
+	pa := 0
+	if panelAvoid {
+		pa = 1
+	}
 	ret := int(C.attach_layer_shell_async(
 		(*C.SDL_Window)(window.ptr),
 		C.int(w), C.int(h),
-		C.int(anchorTop), C.int(margin),
+		C.int(anchorTop), C.int(margin), C.int(pa),
 	))
 
 	switch ret {

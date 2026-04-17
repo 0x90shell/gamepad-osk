@@ -238,6 +238,7 @@ CONFIG (first found)
 
 NOTES
   Controller auto-reconnects if disconnected (timeout, power-off, unplug).
+  Wayland: panel_avoid controls panel spacing (true = respect panels, false = screen edge).
 
 REQUIREMENTS
   Runtime: sdl3, sdl3_ttf, ttf-promptfont (AUR)

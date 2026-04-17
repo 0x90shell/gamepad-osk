@@ -36,6 +36,7 @@ type WindowConfig struct {
 	Margin       int
 	BottomMargin int     // deprecated, migrated to Margin
 	Opacity      float64
+	PanelAvoid   bool    // Wayland: respect panel exclusive zones (false = always screen edge)
 }
 
 type KeysConfig struct {
@@ -79,7 +80,7 @@ type MouseConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		Theme:  ThemeConfig{Name: "matrix"},
-		Window: WindowConfig{Position: "bottom", Margin: 0, Opacity: 0.95},
+		Window: WindowConfig{Position: "bottom", Margin: 0, Opacity: 0.95, PanelAvoid: true},
 		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
 			Grab:          true,
@@ -105,6 +106,16 @@ func DefaultConfig() Config {
 }
 
 // --- INI config parser/writer ---
+
+// parseBool parses a bool value, logging a warning and returning the default on bad input.
+func parseBool(key, val string, defaultVal bool) bool {
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Printf("Warning: %s has invalid bool value, using %v", key, defaultVal)
+		return defaultVal
+	}
+	return b
+}
 
 // parseINI reads an INI-style config file into a Config.
 // Supports [section] and [section.subsection] headers, key = value pairs,
@@ -165,6 +176,8 @@ func parseINI(r io.Reader, cfg *Config) error {
 				if f, err := strconv.ParseFloat(val, 64); err == nil {
 					cfg.Window.Opacity = f
 				}
+			case "panel_avoid":
+				cfg.Window.PanelAvoid = parseBool("panel_avoid", val, true)
 			default:
 				Debugf("unknown config key: window.%s", key)
 			}
@@ -202,9 +215,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 			case "device":
 				cfg.Gamepad.Device = val
 			case "grab":
-				if b, err := strconv.ParseBool(val); err == nil {
-					cfg.Gamepad.Grab = b
-				}
+				cfg.Gamepad.Grab = parseBool("grab", val, true)
 			case "deadzone":
 				if f, err := strconv.ParseFloat(val, 64); err == nil {
 					cfg.Gamepad.Deadzone = f
@@ -252,9 +263,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 		case "mouse":
 			switch key {
 			case "enabled":
-				if b, err := strconv.ParseBool(val); err == nil {
-					cfg.Mouse.Enabled = b
-				}
+				cfg.Mouse.Enabled = parseBool("enabled", val, true)
 			case "sensitivity":
 				if n, err := strconv.Atoi(val); err == nil {
 					cfg.Mouse.Sensitivity = n
@@ -288,6 +297,7 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString(line(kv("position", cfg.Window.Position), "bottom or top"))
 	b.WriteString(line(kvf("margin", cfg.Window.Margin), "pixels from screen edge"))
 	b.WriteString(line(kv("opacity", strconv.FormatFloat(cfg.Window.Opacity, 'f', -1, 64)), "0.0-1.0 (1.0 = fully opaque)"))
+	b.WriteString(line(kv("panel_avoid", strconv.FormatBool(cfg.Window.PanelAvoid)), "Wayland: respect panel spacing (false = always screen edge)"))
 	b.WriteString("\n")
 
 	b.WriteString("[keys]\n")
@@ -617,22 +627,36 @@ func checkConfigFile(path string) []string {
 	}
 	defer func() { _ = f.Close() }()
 	var issues []string
+	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "[") {
+		if strings.HasPrefix(line, "[") {
+			// Strip inline comment before checking suffix
+			sec := line
+			if idx := strings.Index(sec, "#"); idx > 0 {
+				sec = strings.TrimSpace(sec[:idx])
+			}
+			if strings.HasSuffix(sec, "]") {
+				section := strings.ToLower(sec[1 : len(sec)-1])
+				if !knownSections[section] {
+					issues = append(issues, fmt.Sprintf("unknown section [%s] - keys under it are ignored (check for typos)", section))
+				}
+			}
 			continue
 		}
-		// Strip inline comment before checking suffix
-		if idx := strings.Index(line, "#"); idx > 0 {
-			line = strings.TrimSpace(line[:idx])
-		}
-		if !strings.HasSuffix(line, "]") {
-			continue
-		}
-		section := strings.ToLower(line[1 : len(line)-1])
-		if !knownSections[section] {
-			issues = append(issues, fmt.Sprintf("unknown section [%s] - keys under it are ignored (check for typos)", section))
+		// Check bool fields for invalid values
+		if idx := strings.Index(line, "="); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			if boolKeys[key] {
+				val := strings.TrimSpace(line[idx+1:])
+				if ci := strings.Index(val, "#"); ci > 0 {
+					val = strings.TrimSpace(val[:ci])
+				}
+				if _, err := strconv.ParseBool(val); err != nil {
+					issues = append(issues, fmt.Sprintf("%s = %q is not a valid bool (use true/false)", key, val))
+				}
+			}
 		}
 	}
 	return issues
@@ -663,6 +687,18 @@ func checkConfig(cfg Config) []string {
 	}
 	if cfg.Gamepad.ComboPeriodMs < 50 || cfg.Gamepad.ComboPeriodMs > 2000 {
 		issues = append(issues, fmt.Sprintf("combo_period_ms %d out of range [50,2000]", cfg.Gamepad.ComboPeriodMs))
+	}
+	if p := cfg.Window.Position; p != "bottom" && p != "top" {
+		issues = append(issues, fmt.Sprintf("position %q is not valid (use bottom or top)", p))
+	}
+	if cfg.Window.Opacity < 0 || cfg.Window.Opacity > 1 {
+		issues = append(issues, fmt.Sprintf("opacity %.2f out of range [0,1]", cfg.Window.Opacity))
+	}
+	if m := cfg.Gamepad.MouseStick; m != "" && m != "left" && m != "right" {
+		issues = append(issues, fmt.Sprintf("mouse_stick %q is not valid (use left or right)", m))
+	}
+	if s := cfg.Gamepad.SwapXY; s != "" && s != "auto" && s != "true" && s != "false" {
+		issues = append(issues, fmt.Sprintf("swap_xy %q is not valid (use auto, true, or false)", s))
 	}
 	if cfg.Gamepad.ToggleCombo != "" {
 		if _, err := parseComboString(cfg.Gamepad.ToggleCombo); err != nil {

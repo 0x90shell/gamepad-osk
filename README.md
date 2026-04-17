@@ -219,7 +219,7 @@ When `grab = true` (default), the gamepad is exclusively grabbed while the keybo
 
 Works on any EWMH-compliant window manager. The keyboard renders always-on-top without stealing focus from the active window.
 
-**Fullscreen games (Bottles/Wine):** Toggling the OSK will not cause fullscreen games to minimize. When a fullscreen window is active, the keyboard positions at the screen edge (ignoring panel/taskbar offsets). On hide, the pointer is returned to the game window center to restore input focus.
+**Fullscreen games (Bottles/Wine):** Toggling the OSK will not cause fullscreen games to minimize. On X11, the keyboard detects fullscreen windows and positions at the screen edge (ignoring panel/taskbar offsets). On hide, the pointer is returned to the game window center to restore input focus. On Wayland, set `panel_avoid = false` in config to position at the screen edge regardless of panels.
 
 **Toggle combo tip:** Avoid using joystick clicks (L3/R3) in your toggle combo if they are mapped to mouse click or other actions. A combo like `guide+a` or `select+start` avoids conflicts. If the combo includes a button with an action, the first button pressed fires its action before the combo is detected.
 
@@ -235,6 +235,10 @@ Uses wlr-layer-shell for native overlay support - no compositor rules needed. Th
 - **KDE Plasma 6** - native (via Layer Shell Qt)
 - **COSMIC (Pop!_OS)** - native (via Smithay)
 - **GNOME (Mutter)** - no layer-shell support; falls back to standard window (same as X11 without hints)
+
+**Wayland limitations:**
+- Pointer warp on hide is not available (Wayland does not allow clients to move the cursor). If you move the mouse to another monitor with the right stick, you need to move it back before hiding.
+- Window opacity (`opacity` config) is not supported. SDL_SetWindowOpacity is a no-op on Wayland. See TODO.md for planned client-side fallback.
 
 ## License
 

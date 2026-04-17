@@ -173,9 +173,10 @@ func (app *App) Run() error {
 		SDL3SetWindowPosition(window, x, app.winY)
 	}
 
-	// Attach layer-shell asynchronously -- configure arrives via SDL event pump
-	if isWayland {
-		attachLayerShellAsync(window, width, height, app.posTop, margin)
+	// Attach layer-shell asynchronously -- configure arrives via SDL event pump.
+	// Skip in daemon mode (starts hidden, first toggle-show will attach).
+	if isWayland && app.visible {
+		attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
 	}
 
 	renderer, err := SDL3CreateRenderer(window)
@@ -311,7 +312,7 @@ func (app *App) Run() error {
 					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
 				}
 				if isWayland {
-					attachLayerShellAsync(window, width, height, app.posTop, margin)
+					attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
 				} else {
 					SDL3ShowWindow(window)
 				}
