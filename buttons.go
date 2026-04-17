@@ -1,13 +1,26 @@
 package main
 
-import "log"
+import (
+	"fmt"
+	"log"
+	"strings"
+)
 
 // ButtonInfo maps a config button name to evdev code and Promptfont glyph.
 type ButtonInfo struct {
 	EvdevBtn  uint16 // for EV_KEY buttons (BTN_*)
-	EvdevAxis uint16 // for EV_ABS axes (ABS_Z, ABS_RZ) — 0 if not axis-based
+	EvdevAxis uint16 // for EV_ABS axes (ABS_Z, ABS_RZ) - 0 if not axis-based
 	IsAxis    bool
 	Glyph     string // Promptfont Unicode character
+}
+
+// ComboButton describes one button in a toggle combo.
+// A combo button is "satisfied" if any of its BtnCodes are held OR its axis matches.
+type ComboButton struct {
+	Name     string   // config name ("dpad_up", "lt", etc.)
+	BtnCodes []uint16 // evdev button codes that satisfy this
+	AxisCode uint16   // axis code (ABS_HAT0Y for dpad_up, ABS_Z for lt), 0 if none
+	AxisVal  int32    // axis value that satisfies (-1 for dpad_up, 1 for dpad_down)
 }
 
 // buttonTable returns the mapping from button name to evdev info.
@@ -151,4 +164,72 @@ func BuildKeyGlyphs(cfg GamepadConfig) map[int]string {
 	glyphs[0] = "\u2699"
 
 	return glyphs
+}
+
+// comboButtonTable returns the full set of buttons available for toggle combos.
+// This is separate from buttonTable because combos need d-pad and guide which
+// aren't assignable to OSK actions, and need dual-input info (axis + button codes).
+func comboButtonTable() map[string]ComboButton {
+	return map[string]ComboButton{
+		"a":          {Name: "a", BtnCodes: []uint16{BTN_SOUTH}},
+		"b":          {Name: "b", BtnCodes: []uint16{BTN_EAST}},
+		"x":          {Name: "x", BtnCodes: []uint16{BTN_WEST}},
+		"y":          {Name: "y", BtnCodes: []uint16{BTN_NORTH}},
+		"lb":         {Name: "lb", BtnCodes: []uint16{BTN_TL}},
+		"rb":         {Name: "rb", BtnCodes: []uint16{BTN_TR}},
+		"l3":         {Name: "l3", BtnCodes: []uint16{BTN_THUMBL}},
+		"r3":         {Name: "r3", BtnCodes: []uint16{BTN_THUMBR}},
+		"start":      {Name: "start", BtnCodes: []uint16{0x13b}},  // BTN_START
+		"select":     {Name: "select", BtnCodes: []uint16{0x13a}}, // BTN_SELECT
+		"guide":      {Name: "guide", BtnCodes: []uint16{0x13c}},  // BTN_MODE
+		"lt":         {Name: "lt", BtnCodes: []uint16{BTN_TL2}, AxisCode: ABS_Z, AxisVal: 1},
+		"rt":         {Name: "rt", BtnCodes: []uint16{BTN_TR2}, AxisCode: ABS_RZ, AxisVal: 1},
+		"dpad_up":    {Name: "dpad_up", BtnCodes: []uint16{0x220}, AxisCode: ABS_HAT0Y, AxisVal: -1},    // BTN_DPAD_UP
+		"dpad_down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},   // BTN_DPAD_DOWN
+		"dpad_left":  {Name: "dpad_left", BtnCodes: []uint16{0x222}, AxisCode: ABS_HAT0X, AxisVal: -1},  // BTN_DPAD_LEFT
+		"dpad_right": {Name: "dpad_right", BtnCodes: []uint16{0x223}, AxisCode: ABS_HAT0X, AxisVal: 1},  // BTN_DPAD_RIGHT
+		// Shorthand aliases
+		"up":    {Name: "dpad_up", BtnCodes: []uint16{0x220}, AxisCode: ABS_HAT0Y, AxisVal: -1},
+		"down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},
+		"left":  {Name: "dpad_left", BtnCodes: []uint16{0x222}, AxisCode: ABS_HAT0X, AxisVal: -1},
+		"right": {Name: "dpad_right", BtnCodes: []uint16{0x223}, AxisCode: ABS_HAT0X, AxisVal: 1},
+	}
+}
+
+// parseComboString parses a toggle_combo config value like "select+start" into ComboButtons.
+// Returns nil, nil if the string is empty (combo disabled).
+// Returns error if the string is invalid (unknown button, <2 or >4 buttons, duplicates).
+func parseComboString(combo string) ([]ComboButton, error) {
+	combo = strings.TrimSpace(combo)
+	if combo == "" {
+		return nil, nil
+	}
+
+	table := comboButtonTable()
+	parts := strings.Split(combo, "+")
+
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("toggle_combo requires at least 2 buttons, got %d", len(parts))
+	}
+	if len(parts) > 4 {
+		return nil, fmt.Errorf("toggle_combo supports at most 4 buttons, got %d", len(parts))
+	}
+
+	seen := make(map[string]bool)
+	var buttons []ComboButton
+	for _, name := range parts {
+		name = strings.TrimSpace(strings.ToLower(name))
+		cb, ok := table[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown button in toggle_combo: %q", name)
+		}
+		// Deduplicate using canonical name (catches "up" + "dpad_up")
+		if seen[cb.Name] {
+			return nil, fmt.Errorf("duplicate button in toggle_combo: %q", name)
+		}
+		seen[cb.Name] = true
+		buttons = append(buttons, cb)
+	}
+
+	return buttons, nil
 }

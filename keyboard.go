@@ -10,6 +10,7 @@ type KeyboardState struct {
 	CursorRow       int
 	CursorCol       int
 	ShiftActive     bool
+	ShiftHeld       bool // true when held via gamepad trigger (not auto-released)
 	CapsActive      bool
 	CtrlActive      bool
 	AltActive       bool
@@ -20,6 +21,10 @@ type KeyboardState struct {
 	targetX         float64
 	targetXSet      bool
 
+	// Alt+Tab cycling: Alt held at OS level across multiple Tab presses
+	AltTabHeld    bool
+	AltTabLastTab time.Time // last Tab press, for auto-release timeout
+
 	// Visual flash for shortcut keys
 	FlashCode  int
 	FlashUntil time.Time
@@ -27,6 +32,10 @@ type KeyboardState struct {
 	// Callbacks for Cfg key
 	OnThemeCycle        func()
 	OnThemeCycleReverse func()
+
+	// Callbacks for live mouse sensitivity adjustment (Shift+↑/↓)
+	OnSensitivityUp   func()
+	OnSensitivityDown func()
 }
 
 type AccentPopupState struct {
@@ -110,7 +119,9 @@ func (kb *KeyboardState) DisplayLabel(key KeyDef) string {
 func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if kb.AccentPopup != nil {
 		accent := kb.AccentPopup.Accents[kb.AccentPopup.Selected]
-		inj.TypeUnicode(accent.Codepoint)
+		if inj != nil {
+			inj.TypeUnicode(accent.Codepoint)
+		}
 		kb.CloseAccentPopup()
 		return
 	}
@@ -121,48 +132,81 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	// Paste/Copy button — Paste normally, Copy when shifted
+	// Paste/Copy button - Paste normally, Copy when shifted
 	if key.Label == "Paste" {
 		shiftOn := kb.ShiftActive != kb.CapsActive
 		if shiftOn {
-			inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
-			if kb.ShiftActive && !kb.CapsActive {
+			if inj != nil {
+				inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
+			}
+			if kb.ShiftActive {
 				kb.ShiftActive = false
 			}
-		} else {
+		} else if inj != nil {
 			inj.PressKey(KEY_V, []int{KEY_LEFTCTRL})
 		}
 		return
 	}
 
-	// Cfg button — cycle theme (shift = reverse)
+	// Cfg button - cycle theme (shift = reverse)
 	if key.Label == "Cfg" {
 		shiftOn := kb.ShiftActive != kb.CapsActive
 		if shiftOn {
 			if kb.OnThemeCycleReverse != nil {
 				kb.OnThemeCycleReverse()
 			}
-			if kb.ShiftActive && !kb.CapsActive {
+			if kb.ShiftActive {
 				kb.ShiftActive = false
 			}
-		} else {
-			if kb.OnThemeCycle != nil {
-				kb.OnThemeCycle()
-			}
+		} else if kb.OnThemeCycle != nil {
+			kb.OnThemeCycle()
 		}
 		return
 	}
 
 	shiftOn := kb.ShiftActive != kb.CapsActive
 
+	// AltTab cycling: hold Alt across multiple Tab presses
+	if key.Label == "AltTab" && !shiftOn {
+		if !kb.AltTabHeld {
+			if inj != nil {
+				inj.HoldKey(KEY_LEFTALT)
+			}
+			kb.AltTabHeld = true
+		}
+		kb.AltTabLastTab = time.Now()
+		if inj != nil {
+			inj.PressKey(KEY_TAB, nil)
+		}
+		return
+	}
+
+	// Release held Alt if pressing any other key
+	kb.ReleaseAltTab(inj)
+
+	// Shift+↑/↓: adjust mouse sensitivity instead of sending key
+	if shiftOn && (key.Code == KEY_UP || key.Code == KEY_DOWN) {
+		if key.Code == KEY_UP && kb.OnSensitivityUp != nil {
+			kb.OnSensitivityUp()
+		} else if key.Code == KEY_DOWN && kb.OnSensitivityDown != nil {
+			kb.OnSensitivityDown()
+		}
+		if kb.ShiftActive {
+			kb.ShiftActive = false
+		}
+		return
+	}
+
 	// Combo keys (shortcut row): default sends combo, shift sends ShiftCode
 	if len(key.Combo) > 0 || key.ShiftCode != 0 {
-		if shiftOn && key.ShiftCode != 0 {
-			inj.PressKey(key.ShiftCode, nil)
-		} else {
-			inj.PressKey(key.Code, key.Combo)
+		if inj != nil {
+			if shiftOn && key.ShiftCode != 0 {
+				inj.PressKey(key.ShiftCode, nil)
+			} else {
+				inj.PressKey(key.Code, key.Combo)
+			}
 		}
-		if kb.ShiftActive && !kb.CapsActive {
+		if kb.ShiftActive {
 			kb.ShiftActive = false
 		}
 		kb.CtrlActive = false
@@ -188,14 +232,37 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		mods = append(mods, KEY_LEFTMETA)
 	}
 
-	inj.PressKey(code, mods)
+	if inj != nil {
+		inj.PressKey(code, mods)
+	}
 
-	if kb.ShiftActive && !kb.CapsActive {
+	if kb.ShiftActive && !kb.ShiftHeld {
 		kb.ShiftActive = false
 	}
 	kb.CtrlActive = false
 	kb.AltActive = false
 	kb.MetaActive = false
+}
+
+// CheckAltTabTimeout auto-releases Alt if the cycling has been idle too long.
+// Returns true if Alt was released.
+func (kb *KeyboardState) CheckAltTabTimeout(inj *Injector) bool {
+	if kb.AltTabHeld && time.Since(kb.AltTabLastTab) >= 3*time.Second {
+		kb.ReleaseAltTab(inj)
+		return true
+	}
+	return false
+}
+
+// ReleaseAltTab releases held Alt from Alt+Tab cycling if active.
+func (kb *KeyboardState) ReleaseAltTab(inj *Injector) {
+	if !kb.AltTabHeld {
+		return
+	}
+	if inj != nil {
+		inj.ReleaseKey(KEY_LEFTALT)
+	}
+	kb.AltTabHeld = false
 }
 
 func (kb *KeyboardState) StartLongPress() {

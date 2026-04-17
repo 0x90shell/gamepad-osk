@@ -1,28 +1,26 @@
 package main
 
-import "github.com/veandco/go-sdl2/sdl"
-
 type Theme struct {
 	Name               string
-	Bg                 sdl.Color
-	KeyBg              sdl.Color
-	KeyBgPressed       sdl.Color
-	KeyBorder          sdl.Color
-	KeyText            sdl.Color
-	HighlightBg        sdl.Color
-	HighlightBorder    sdl.Color
-	ModifierBg         sdl.Color
-	ModifierActiveBg   sdl.Color
-	ModifierActiveText sdl.Color // pill text color (dark on light bg, white on dark bg)
-	ModifierText       sdl.Color
-	FnKeyBg            sdl.Color
-	AccentPopupBg      sdl.Color
-	AccentPopupText    sdl.Color
-	AccentHighlightBg  sdl.Color
-	GlyphColor         sdl.Color
+	Bg                 Color
+	KeyBg              Color
+	KeyBgPressed       Color
+	KeyBorder          Color
+	KeyText            Color
+	HighlightBg        Color
+	HighlightBorder    Color
+	ModifierBg         Color
+	ModifierActiveBg   Color
+	ModifierActiveText Color // pill text color (dark on light bg, white on dark bg)
+	ModifierText       Color
+	FnKeyBg            Color
+	AccentPopupBg      Color
+	AccentPopupText    Color
+	AccentHighlightBg  Color
+	GlyphColor         Color
 }
 
-func c(r, g, b uint8) sdl.Color { return sdl.Color{R: r, G: g, B: b, A: 255} }
+func c(r, g, b uint8) Color { return Color{R: r, G: g, B: b, A: 255} }
 
 var w = c(255, 255, 255) // white pill text
 var d = c(20, 20, 20)    // dark pill text

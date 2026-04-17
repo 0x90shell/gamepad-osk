@@ -1,6 +1,6 @@
 package main
 
-// Linux evdev keycodes (from linux/input-event-codes.h)
+//nolint:revive // Match Linux evdev naming
 const (
 	KEY_ESC       = 1
 	KEY_1         = 2
@@ -108,9 +108,9 @@ type KeyDef struct {
 	ShiftCode int
 }
 
-func k(label string, code int, opts ...interface{}) KeyDef {
+func k(label string, code int, opts ...any) KeyDef {
 	kd := KeyDef{Label: label, Code: code, Width: 1.0}
-	for i := 0; i < len(opts); i++ {
+	for i := range opts {
 		switch v := opts[i].(type) {
 		case float64:
 			kd.Width = v
@@ -126,6 +126,8 @@ func k(label string, code int, opts ...interface{}) KeyDef {
 }
 
 // combo creates a key that sends modifier+code as default, with shift sending shiftCode
+//
+//nolint:unparam // width kept for API flexibility
 func combo(label string, code int, mods []int, shiftLabel string, shiftCode int, width float64) KeyDef {
 	return KeyDef{Label: label, Code: code, Width: width, ShiftLabel: shiftLabel,
 		Combo: mods, ShiftCode: shiftCode}
@@ -207,7 +209,7 @@ var LayoutQWERTY = [][]KeyDef{
 		mod("Alt", KEY_LEFTALT, 1.25, "alt"),
 		k("Space", KEY_SPACE, 5.0),
 		mod("Alt", KEY_RIGHTALT, 1.25, "alt"),
-		k("←", KEY_LEFT, 0.75), k("→", KEY_RIGHT, 0.75), k("↑", KEY_UP, 0.75), k("↓", KEY_DOWN, 0.75),
+		k("←", KEY_LEFT, 0.75), k("→", KEY_RIGHT, 0.75), k("↑", KEY_UP, 0.75, "\u27F9"), k("↓", KEY_DOWN, 0.75, "\u27FE"),
 		k("Cfg", 0, 1.75),
 	},
 }

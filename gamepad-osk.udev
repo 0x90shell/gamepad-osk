@@ -1,0 +1,8 @@
+# gamepad-osk: gamepad reading + virtual keyboard injection
+#
+# GROUP/MODE: universal - works on systemd-udevd, eudev, and all init systems
+# TAG+="uaccess": adds per-session ACLs on logind/elogind systems (silently
+#   ignored on bare eudev - users there rely on input group membership)
+# static_node: ensures /dev/uinput exists before the kernel module loads
+KERNEL=="event*", SUBSYSTEM=="input", GROUP="input", MODE="0660", TAG+="uaccess"
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", GROUP="input", MODE="0660", TAG+="uaccess"

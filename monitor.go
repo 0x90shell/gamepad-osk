@@ -1,35 +1,56 @@
 package main
 
-import "github.com/veandco/go-sdl2/sdl"
-
 type MonitorRect struct {
 	X, Y, W, H int32
 }
 
-// GetPrimaryMonitor returns the bounds of display 0 (usually primary).
-// Falls back to the largest display if display 0 fails.
+// intersectRect returns the overlap of two rectangles.
+// If they don't overlap, returns a (falls back to monitor bounds).
+func intersectRect(a, b MonitorRect) MonitorRect {
+	x1 := max32(a.X, b.X)
+	y1 := max32(a.Y, b.Y)
+	x2 := min32(a.X+a.W, b.X+b.W)
+	y2 := min32(a.Y+a.H, b.Y+b.H)
+	if x2 > x1 && y2 > y1 {
+		return MonitorRect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}
+	}
+	return a
+}
+
+func min32(a, b int32) int32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func GetPrimaryMonitor() MonitorRect {
-	n, err := sdl.GetNumVideoDisplays()
-	if err != nil || n == 0 {
+	displays := SDL3GetDisplays()
+	if len(displays) == 0 {
 		return MonitorRect{0, 0, 1920, 1080}
 	}
-
-	// Display 0 is typically the primary
-	rect, err := sdl.GetDisplayBounds(0)
-	if err == nil {
-		return MonitorRect{rect.X, rect.Y, rect.W, rect.H}
-	}
-
-	// Fallback: largest display
-	var best sdl.Rect
-	for i := 0; i < n; i++ {
-		r, err := sdl.GetDisplayBounds(i)
-		if err == nil && r.W*r.H > best.W*best.H {
-			best = r
+	primary := SDL3GetPrimaryDisplay()
+	if primary != 0 {
+		if r, ok := SDL3GetDisplayBounds(primary); ok {
+			return MonitorRect(r)
 		}
 	}
-	if best.W > 0 {
-		return MonitorRect{best.X, best.Y, best.W, best.H}
+	if r, ok := SDL3GetDisplayBounds(displays[0]); ok {
+		return MonitorRect(r)
+	}
+	var bestArea int32
+	var best MonitorRect
+	for _, id := range displays {
+		if r, ok := SDL3GetDisplayBounds(id); ok {
+			area := r.W * r.H
+			if area > bestArea {
+				bestArea = area
+				best = MonitorRect(r)
+			}
+		}
+	}
+	if bestArea > 0 {
+		return best
 	}
 	return MonitorRect{0, 0, 1920, 1080}
 }

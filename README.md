@@ -9,11 +9,14 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 ## Features
 
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
-- SDL2 GameController for normalized input (works with any controller)
+- Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
+- Evdev gamepad input (works with any controller)
 - Xbox 360 pad auto-detection (swap_xy quirk handled automatically)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + R3/RB click (hold to drag)
+- Live mouse sensitivity adjustment (Shift + arrow keys, saved to config)
+- Auto-reconnect on controller disconnect (timeout, power-off, unplug)
 - Key repeat on hold (configurable delay and rate)
 - Shift layer, Caps Lock, accent popup (Shift + hold on vowels)
 - Paste/Copy key, media keys (Play/Pause, Mute)
@@ -21,14 +24,15 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Multi-monitor aware (positions on primary monitor)
 - Configurable: buttons, sticks, theme, scale, position, opacity, deadzone
 - IPC toggle via Unix socket (`gamepad-osk --toggle`) for evsieve/hotkey integration
-- Daemon mode for systemd user service
+- Built-in configurable toggle combo (e.g. `guide+a`, `l3+r3`) for zero-dependency show/hide
+- Daemon mode for systemd user service (close button hides instead of exiting)
 - Single static binary, ~5MB
 
 ## Dependencies
 
-**Runtime:** `sdl2` `sdl2_ttf` `ttf-promptfont` (AUR)
+**Runtime:** `sdl3` `sdl3_ttf` `ttf-promptfont` (AUR)
 
-**Build:** `go` `sdl2` `sdl2_ttf` `libx11`
+**Build:** `go` `sdl3` `sdl3_ttf` `libx11` `wayland` `wlr-protocols`
 
 ## Installation
 
@@ -47,11 +51,11 @@ yay --devel --save
 
 ### From source
 
-Install dependencies first:
+Install build dependencies (Arch):
 
 ```bash
-sudo pacman -S sdl2 sdl2_ttf go libx11    # build + runtime deps
-yay -S ttf-promptfont                       # AUR: controller button glyphs
+sudo pacman -S go sdl3 sdl3_ttf libx11 wayland wlr-protocols
+yay -S ttf-promptfont
 ```
 
 ```bash
@@ -59,8 +63,31 @@ git clone https://github.com/0x90shell/gamepad-osk.git
 cd gamepad-osk
 go build -o gamepad-osk .
 sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
-sudo install -Dm644 config.toml /usr/share/gamepad-osk/config.toml
+sudo install -Dm644 config.example /usr/share/gamepad-osk/config
 sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
+```
+
+## Permissions
+
+gamepad-osk reads directly from `/dev/input` for gamepad input and `/dev/uinput` for key injection. Your user must be in the `input` group:
+
+```bash
+sudo usermod -aG input $USER
+```
+
+Log out and back in for the group change to take effect. Verify with `groups`.
+
+AUR packages install a udev rule that sets the correct permissions on input devices. If installing from source, copy the rule manually:
+
+```bash
+sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
+sudo udevadm control --reload-rules
+```
+
+If you must use sudo, pass your config explicitly to avoid loading root's config:
+
+```bash
+sudo gamepad-osk --config ~/.config/gamepad-osk/config
 ```
 
 ## Systemd User Service
@@ -83,8 +110,9 @@ gamepad-osk --toggle
 gamepad-osk                          # start (auto-detect gamepad)
 gamepad-osk --device /dev/input/X    # use specific device
 gamepad-osk --theme synthwave        # start with theme
+gamepad-osk --config /path/to/config  # use specific config file
 gamepad-osk --toggle                 # toggle running instance
-gamepad-osk --daemon                 # start hidden, wait for toggle
+gamepad-osk --daemon                 # start hidden, B hides instead of exiting
 gamepad-osk --help                   # show all options
 ```
 
@@ -106,19 +134,22 @@ gamepad-osk --help                   # show all options
 | Nav stick click (L3) | Caps Lock |
 | Start | Toggle keyboard top/bottom |
 | Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
+| Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
+| Toggle combo (configurable) | Show/hide keyboard |
 
 ## Configuration
 
 Config is loaded from (first found):
-1. `~/.config/gamepad-osk/config.toml`
-2. `/etc/gamepad-osk/config.toml`
-3. `config.toml` next to binary
-4. `config.toml` in working directory
+1. `--config` flag
+2. `~/.config/gamepad-osk/config`
+3. `/etc/gamepad-osk/config`
+4. `config` next to binary
+5. `config` in working directory
 
 A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
 
-See `config.toml` for all options including button remapping, mouse stick, theme, scale, opacity, and deadzone.
+See `config.example` for all options including button remapping, toggle combo, mouse stick, theme, scale, opacity, and deadzone.
 
 ## Themes
 
@@ -149,9 +180,25 @@ See `config.toml` for all options including button remapping, mouse stick, theme
 | ![tokyo_night](assets/tokyo_night.png)<br><sub>tokyo_night</sub> | ![tokyo_storm](assets/tokyo_storm.png)<br><sub>tokyo_storm</sub> | ![vapor](assets/vapor.png)<br><sub>vapor</sub> |
 | ![virtualboy](assets/virtualboy.png)<br><sub>virtualboy</sub> | ![wine](assets/wine.png)<br><sub>wine</sub> | ![zx_spectrum](assets/zx_spectrum.png)<br><sub>zx_spectrum</sub> |
 
+## Toggle Combo
+
+Set `toggle_combo` in config to show/hide the keyboard with a button combo, no external tools needed:
+
+```ini
+[gamepad]
+toggle_combo = guide+a       # or l3+r3, select+start, etc.
+combo_period_ms = 200        # timing window (ms)
+```
+
+Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, `guide`, `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right`. Requires 2-4 buttons.
+
+Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK running as a service (B hides instead of exiting).
+
+Leave `toggle_combo` empty to use `--toggle` / evsieve instead (default).
+
 ## Evsieve Integration
 
-Example evsieve config to toggle the keyboard with Guide+Start:
+Use evsieve to show the keyboard with a button combo, then use B to hide it:
 
 ```bash
 evsieve \
@@ -160,36 +207,38 @@ evsieve \
   --output
 ```
 
+When the keyboard is hidden, `grab` is inactive and evsieve sees all events normally. Once shown, gamepad-osk grabs the device exclusively - controller input no longer reaches the game while you type. Use B to hide; gamepad-osk handles it internally while holding the grab.
+
+For zero-dependency show/hide without evsieve, use the built-in `toggle_combo` instead.
+
 ## Device Grab
 
 When `grab = true` (default), the gamepad is exclusively grabbed while the keyboard is visible. This prevents controller input from bleeding into the game while you're typing. The grab is released when the keyboard hides.
 
-If using evsieve, set `grab = false` in config and let evsieve handle routing.
+## X11
+
+Works on any EWMH-compliant window manager. The keyboard renders always-on-top without stealing focus from the active window.
+
+**Fullscreen games (Bottles/Wine):** Toggling the OSK will not cause fullscreen games to minimize. On X11, the keyboard detects fullscreen windows and positions at the screen edge (ignoring panel/taskbar offsets). On hide, the pointer is returned to the game window center to restore input focus. On Wayland, set `panel_avoid = false` in config to position at the screen edge regardless of panels.
+
+**Toggle combo tip:** Avoid using joystick clicks (L3/R3) in your toggle combo if they are mapped to mouse click or other actions. A combo like `guide+a` or `select+start` avoids conflicts. If the combo includes a button with an action, the first button pressed fires its action before the combo is detected.
+
+If the OSK appears behind the game window, run the game in windowed or borderless mode.
 
 ## Wayland
 
-Tested on Sway. Input, rendering, key injection, mouse cursor, and key repeat all work natively. The binary auto-detects Wayland and uses the native backend (no XWayland).
+Uses wlr-layer-shell for native overlay support - no compositor rules needed. The keyboard renders as a non-focusable overlay that stays above all windows. Position toggle (Start) works natively.
 
-Window positioning and always-on-top require compositor rules — Wayland has no client-side API for these. The top/bottom toggle (Start) is a no-op on Wayland.
+**Supported compositors:**
+- **wlroots-based** (Sway, wayfire, river, labwc, dwl) - native
+- **Hyprland** - native
+- **KDE Plasma 6** - native (via Layer Shell Qt)
+- **COSMIC (Pop!_OS)** - native (via Smithay)
+- **GNOME (Mutter)** - no layer-shell support; falls back to standard window (same as X11 without hints)
 
-**Sway** (`~/.config/sway/config`):
-```
-for_window [app_id="gamepad-osk"] floating enable, sticky enable, move position center, move down 300
-```
-
-**Hyprland** (`~/.config/hypr/hyprland.conf`):
-```
-windowrulev2 = float, class:^(gamepad-osk)$
-windowrulev2 = pin, class:^(gamepad-osk)$
-windowrulev2 = nofocus, class:^(gamepad-osk)$
-windowrulev2 = move 50%-w/2 100%-h-20, class:^(gamepad-osk)$
-```
-
-**Known Wayland limitations:**
-- Window position set by compositor, not the app
-- Top/bottom toggle (Start) has no effect
-- Always-on-top not supported (window can be covered by other windows)
-- Multi-monitor placement is compositor-dependent
+**Wayland limitations:**
+- Pointer warp on hide is not available (Wayland does not allow clients to move the cursor). If you move the mouse to another monitor with the right stick, you need to move it back before hiding.
+- Window opacity (`opacity` config) is not supported. SDL_SetWindowOpacity is a no-op on Wayland. See TODO.md for planned client-side fallback.
 
 ## License
 

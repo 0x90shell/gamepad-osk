@@ -1,76 +1,99 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"unsafe"
 )
 
 const promptFontPath = "/usr/share/fonts/TTF/promptfont.ttf"
 
+type texCacheKey struct {
+	text string
+	font uintptr // font pointer as identity
+	color Color
+}
+
+type texCacheEntry struct {
+	tex  *Texture
+	w, h float32
+}
+
 type Renderer struct {
-	renderer       *sdl.Renderer
+	renderer       *SDLRenderer
 	theme          Theme
 	unit           int32
 	pad            int32
 	statusH        int32 // height of modifier status bar
-	font           *ttf.Font
-	fontSmall      *ttf.Font
-	fontGlyph      *ttf.Font
-	flashText string
-	flashEnd  time.Time
+	font           *Font
+	fontSmall      *Font
+	fontGlyph      *Font
+	flashText      string
+	flashGlyphText string // rendered with Promptfont, placed before flashText
+	flashEnd       time.Time
+	texCache       map[texCacheKey]texCacheEntry
+	dirtyFrames    int // redraw counter for double/triple buffering
 }
 
-func NewRenderer(r *sdl.Renderer, theme Theme, unitSize, padding int32) (*Renderer, error) {
+func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Renderer, error) {
 	fontSize := max32(12, int32(float64(unitSize)*0.32))
 	glyphSize := max32(12, int32(float64(unitSize)*0.28))
 
-	if err := ttf.Init(); err != nil {
+	if err := TTF3Init(); err != nil {
 		return nil, err
 	}
 
 	fontPath := findFont("DejaVu Sans", "Liberation Sans", "FreeSans")
 	if fontPath == "" {
-		return nil, fmt.Errorf("no suitable font found")
+		return nil, errors.New("no suitable font found")
 	}
 
-	font, err := ttf.OpenFont(fontPath, int(fontSize))
+	font, err := TTF3OpenFont(fontPath, float32(fontSize))
 	if err != nil {
 		return nil, err
 	}
-	fontSmall, err := ttf.OpenFont(fontPath, int(max32(10, fontSize-4)))
+	fontSmall, err := TTF3OpenFont(fontPath, float32(max32(10, fontSize-4)))
 	if err != nil {
 		return nil, err
 	}
 
-	var fontGlyph *ttf.Font
+	var fontGlyph *Font
 	if _, err := os.Stat(promptFontPath); err == nil {
-		fontGlyph, _ = ttf.OpenFont(promptFontPath, int(glyphSize))
+		fontGlyph, _ = TTF3OpenFont(promptFontPath, float32(glyphSize))
 	}
 	if fontGlyph == nil {
-		fontGlyph, _ = ttf.OpenFont(fontPath, int(max32(10, fontSize-6)))
+		fontGlyph, _ = TTF3OpenFont(fontPath, float32(max32(10, fontSize-6)))
 	}
 
 	return &Renderer{
-		renderer:  r,
-		theme:     theme,
-		unit:      unitSize,
-		pad:       padding,
-		statusH:   max32(20, int32(float64(unitSize)*0.4)),
-		font:      font,
-		fontSmall: fontSmall,
-		fontGlyph: fontGlyph,
+		renderer:    r,
+		theme:       theme,
+		unit:        unitSize,
+		pad:         padding,
+		statusH:     max32(20, int32(float64(unitSize)*0.4)),
+		font:        font,
+		fontSmall:   fontSmall,
+		fontGlyph:   fontGlyph,
+		texCache:    make(map[texCacheKey]texCacheEntry),
+		dirtyFrames: 3, // force initial draw
 	}, nil
 }
 
 func (r *Renderer) Draw(kb *KeyboardState) {
+	if r.dirtyFrames <= 0 {
+		return
+	}
+	// Wayland: don't render until layer-shell configure is received
+	if isWayland && !IsLayerShellReady() {
+		return
+	}
+	r.dirtyFrames--
+
 	t := r.theme
 	setColor(r.renderer, t.Bg)
-	r.renderer.Clear()
+	SDL3RenderClear(r.renderer)
 
 	// Draw modifier status bar
 	r.drawModifierBar(kb)
@@ -92,7 +115,13 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 		r.drawAccentPopup(kb)
 	}
 
-	r.renderer.Present()
+	SDL3RenderPresent(r.renderer)
+}
+
+// MarkDirty signals that the display needs updating.
+// Redraws for 3 frames to cover double/triple buffering.
+func (r *Renderer) MarkDirty() {
+	r.dirtyFrames = 3
 }
 
 func (r *Renderer) drawModifierBar(kb *KeyboardState) {
@@ -113,61 +142,91 @@ func (r *Renderer) drawModifierBar(kb *KeyboardState) {
 	if kb.MetaActive {
 		labels = append(labels, "SUPER")
 	}
+	if kb.AltTabHeld {
+		labels = append(labels, "ALT-TAB")
+	}
 
 	x := r.pad
 	tc := r.theme.ModifierActiveText
 	for _, label := range labels {
 		r.drawPill(label, x, r.pad, r.theme.ModifierActiveBg, tc)
-		surf, err := r.fontSmall.RenderUTF8Blended(label, tc)
-		if err == nil {
-			x += surf.W + 10 + 6
-			surf.Free()
-		}
+		tw, _ := TTF3GetStringSize(r.fontSmall, label)
+		x += tw + 10 + 6
 	}
 
 	// Status flash (right-aligned, 2 seconds)
-	if r.flashText != "" && time.Now().Before(r.flashEnd) {
-		sw, _, _ := r.renderer.GetOutputSize()
-		surf, err := r.fontSmall.RenderUTF8Blended(r.flashText, r.theme.KeyText)
-		if err == nil {
-			tex, _ := r.renderer.CreateTextureFromSurface(surf)
-			if tex != nil {
-				dst := sdl.Rect{X: sw - surf.W - r.pad, Y: r.pad + 2, W: surf.W, H: surf.H}
-				r.renderer.Copy(tex, nil, &dst)
-				tex.Destroy()
+	if (r.flashText != "" || r.flashGlyphText != "") && time.Now().Before(r.flashEnd) {
+		sw, _ := SDL3GetRenderOutputSize(r.renderer)
+		rightEdge := float32(sw - r.pad)
+
+		// Render text part (right-aligned)
+		if r.flashText != "" {
+			entry := r.cachedText(r.fontSmall, r.flashText, r.theme.KeyText)
+			if entry.tex != nil {
+				dst := FRect{X: rightEdge - entry.w, Y: float32(r.pad + 2), W: entry.w, H: entry.h}
+				SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
+				rightEdge = dst.X - 4
 			}
-			surf.Free()
+		}
+
+		// Render glyph part (Promptfont, left of text)
+		if r.flashGlyphText != "" {
+			entry := r.cachedText(r.fontGlyph, r.flashGlyphText, r.theme.KeyText)
+			if entry.tex != nil {
+				dst := FRect{X: rightEdge - entry.w, Y: float32(r.pad + 2), W: entry.w, H: entry.h}
+				SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
+			}
 		}
 	}
 }
 
-func (r *Renderer) drawPill(label string, x, y int32, bg sdl.Color, fg sdl.Color) {
-	surf, err := r.fontSmall.RenderUTF8Blended(label, fg)
-	if err != nil {
+func (r *Renderer) drawPill(label string, x, y int32, bg Color, fg Color) {
+	entry := r.cachedText(r.fontSmall, label, fg)
+	if entry.tex == nil {
 		return
 	}
-	defer surf.Free()
-	pw := surf.W + 10
-	ph := surf.H + 4
-	pill := sdl.Rect{X: x, Y: y, W: pw, H: ph}
+	pw := int32(entry.w) + 10
+	ph := int32(entry.h) + 4
+	pill := FRect{X: float32(x), Y: float32(y), W: float32(pw), H: float32(ph)}
 	setColor(r.renderer, bg)
-	r.renderer.FillRect(&pill)
-	tex, _ := r.renderer.CreateTextureFromSurface(surf)
-	if tex != nil {
-		dst := sdl.Rect{X: x + 5, Y: y + 2, W: surf.W, H: surf.H}
-		r.renderer.Copy(tex, nil, &dst)
-		tex.Destroy()
+	SDL3RenderFillRect(r.renderer, pill)
+	dst := FRect{X: float32(x + 5), Y: float32(y + 2), W: entry.w, H: entry.h}
+	SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
+}
+
+// cachedText returns a cached texture entry, rasterizing on first use.
+func (r *Renderer) cachedText(font *Font, text string, color Color) texCacheEntry {
+	if text == "" || font == nil {
+		return texCacheEntry{}
 	}
+	key := texCacheKey{text: text, font: uintptr(unsafe.Pointer(font)), color: color} //nolint:gosec // G103: pointer used as identity key only, not dereferenced
+	if entry, ok := r.texCache[key]; ok {
+		return entry
+	}
+	surf, err := TTF3RenderTextBlended(font, text, color)
+	if err != nil {
+		return texCacheEntry{}
+	}
+	tex := SDL3CreateTextureFromSurface(r.renderer, surf)
+	w := float32(SDL3SurfaceWidth(surf))
+	h := float32(SDL3SurfaceHeight(surf))
+	SDL3DestroySurface(surf)
+	if tex == nil {
+		return texCacheEntry{}
+	}
+	entry := texCacheEntry{tex: tex, w: w, h: h}
+	r.texCache[key] = entry
+	return entry
 }
 
 func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardState) {
 	w := int32(key.Width * float64(r.unit))
 	h := r.unit
-	rect := sdl.Rect{X: x, Y: y, W: w, H: h}
+	rect := FRect{X: float32(x), Y: float32(y), W: float32(w), H: float32(h)}
 	t := r.theme
 
 	flashed := kb.IsFlashed(key)
-	var bg, border sdl.Color
+	var bg, border Color
 	switch {
 	case isCursor || flashed:
 		bg, border = t.HighlightBg, t.HighlightBorder
@@ -183,33 +242,42 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 
 	// Fill
 	setColor(r.renderer, bg)
-	r.renderer.FillRect(&rect)
+	SDL3RenderFillRect(r.renderer, rect)
 	// Border
 	setColor(r.renderer, border)
-	r.renderer.DrawRect(&rect)
+	SDL3RenderRect(r.renderer, rect)
 
 	// Label
 	label := kb.DisplayLabel(key)
 	tc := t.KeyText
 	if isCursor || flashed {
-		tc = sdl.Color{R: 255, G: 255, B: 255, A: 255}
+		tc = Color{R: 255, G: 255, B: 255, A: 255}
 	} else if key.IsModifier && isModActive(key, kb) {
 		tc = t.ModifierActiveText
 	}
-	r.renderText(r.font, label, tc, rect, AlignCenter)
+	// Use Promptfont for labels containing its codepoints (e.g. mouse speed icons)
+	labelFont := r.font
+	if r.fontGlyph != nil && hasPromptfontRune(label) {
+		labelFont = r.fontGlyph
+	}
+	r.renderText(labelFont, label, tc, rect, AlignCenter)
 
 	// Shift hint (top-right)
 	if key.ShiftLabel != "" && !key.IsModifier && !isCursor {
 		if kb.ShiftActive == kb.CapsActive {
-			r.renderText(r.fontSmall, key.ShiftLabel, t.ModifierText,
-				sdl.Rect{X: x, Y: y, W: w - 4, H: h}, AlignTopRight)
+			hintFont := r.fontSmall
+			if r.fontGlyph != nil && hasPromptfontRune(key.ShiftLabel) {
+				hintFont = r.fontGlyph
+			}
+			r.renderText(hintFont, key.ShiftLabel, t.ModifierText,
+				FRect{X: float32(x), Y: float32(y), W: float32(w - 4), H: float32(h)}, AlignTopRight)
 		}
 	}
 
 	// Controller glyph (bottom-right)
 	if glyph, ok := KeyGlyphs[key.Code]; ok && r.fontGlyph != nil {
 		r.renderText(r.fontGlyph, glyph, t.GlyphColor,
-			sdl.Rect{X: x, Y: y, W: w - 3, H: h - 2}, AlignBottomRight)
+			FRect{X: float32(x), Y: float32(y), W: float32(w - 3), H: float32(h - 2)}, AlignBottomRight)
 	}
 }
 
@@ -219,25 +287,25 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	row := kb.Layout[kb.CursorRow]
 
 	xo := r.pad
-	for i := 0; i < kb.CursorCol; i++ {
+	for i := range kb.CursorCol {
 		xo += int32(row[i].Width*float64(r.unit)) + r.pad
 	}
-	ky := r.pad + r.statusH + int32(kb.CursorRow)*(r.unit+r.pad)
+	ky := r.pad + r.statusH + int32(kb.CursorRow)*(r.unit+r.pad) //nolint:gosec // G115: cursor index fits in int32
 	py := ky - r.unit - r.pad
 
-	tw := int32(len(accents))*(r.unit+r.pad) + r.pad
-	pr := sdl.Rect{X: xo, Y: py, W: tw, H: r.unit + r.pad*2}
+	tw := int32(len(accents))*(r.unit+r.pad) + r.pad //nolint:gosec // G115: accent count fits in int32
+	pr := FRect{X: float32(xo), Y: float32(py), W: float32(tw), H: float32(r.unit + r.pad*2)}
 	setColor(r.renderer, r.theme.AccentPopupBg)
-	r.renderer.FillRect(&pr)
+	SDL3RenderFillRect(r.renderer, pr)
 	setColor(r.renderer, r.theme.HighlightBorder)
-	r.renderer.DrawRect(&pr)
+	SDL3RenderRect(r.renderer, pr)
 
 	ax := xo + r.pad
 	for i, accent := range accents {
-		ar := sdl.Rect{X: ax, Y: py + r.pad, W: r.unit, H: r.unit}
+		ar := FRect{X: float32(ax), Y: float32(py + r.pad), W: float32(r.unit), H: float32(r.unit)}
 		if i == sel {
 			setColor(r.renderer, r.theme.AccentHighlightBg)
-			r.renderer.FillRect(&ar)
+			SDL3RenderFillRect(r.renderer, ar)
 		}
 		r.renderText(r.font, accent.Label, r.theme.AccentPopupText, ar, AlignCenter)
 		ax += r.unit + r.pad
@@ -252,71 +320,82 @@ const (
 	AlignBottomRight
 )
 
-func (r *Renderer) renderText(font *ttf.Font, text string, color sdl.Color, rect sdl.Rect, align TextAlign) {
-	if text == "" || font == nil {
+func (r *Renderer) renderText(font *Font, text string, color Color, rect FRect, align TextAlign) {
+	entry := r.cachedText(font, text, color)
+	if entry.tex == nil {
 		return
 	}
-	surf, err := font.RenderUTF8Blended(text, color)
-	if err != nil {
-		return
-	}
-	defer surf.Free()
 
-	tex, err := r.renderer.CreateTextureFromSurface(surf)
-	if err != nil {
-		return
-	}
-	defer tex.Destroy()
-
-	var dst sdl.Rect
+	var dst FRect
 	switch align {
 	case AlignCenter:
-		dst = sdl.Rect{
-			X: rect.X + (rect.W-surf.W)/2,
-			Y: rect.Y + (rect.H-surf.H)/2,
-			W: surf.W, H: surf.H,
+		dst = FRect{
+			X: rect.X + (rect.W-entry.w)/2,
+			Y: rect.Y + (rect.H-entry.h)/2,
+			W: entry.w, H: entry.h,
 		}
 	case AlignTopRight:
-		dst = sdl.Rect{
-			X: rect.X + rect.W - surf.W,
+		dst = FRect{
+			X: rect.X + rect.W - entry.w,
 			Y: rect.Y + 2,
-			W: surf.W, H: surf.H,
+			W: entry.w, H: entry.h,
 		}
 	case AlignBottomRight:
-		dst = sdl.Rect{
-			X: rect.X + rect.W - surf.W,
-			Y: rect.Y + rect.H - surf.H,
-			W: surf.W, H: surf.H,
+		dst = FRect{
+			X: rect.X + rect.W - entry.w,
+			Y: rect.Y + rect.H - entry.h,
+			W: entry.w, H: entry.h,
 		}
 	}
-	r.renderer.Copy(tex, nil, &dst)
+	SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
 }
 
 func (r *Renderer) SetTheme(t Theme) {
 	r.theme = t
+	r.flushTexCache()
 	r.Flash(t.Name)
+}
+
+func (r *Renderer) flushTexCache() {
+	for k, entry := range r.texCache {
+		if entry.tex != nil {
+			SDL3DestroyTexture(entry.tex)
+		}
+		delete(r.texCache, k)
+	}
 }
 
 func (r *Renderer) Flash(text string) {
 	r.flashText = text
+	r.flashGlyphText = ""
 	r.flashEnd = time.Now().Add(2 * time.Second)
+	r.MarkDirty()
+}
+
+// FlashGlyph renders a Promptfont glyph followed by text in the normal font.
+func (r *Renderer) FlashGlyph(glyph string, text string) {
+	r.flashGlyphText = glyph
+	r.flashText = text
+	r.flashEnd = time.Now().Add(2 * time.Second)
+	r.MarkDirty()
 }
 
 func (r *Renderer) Destroy() {
+	r.flushTexCache()
 	if r.font != nil {
-		r.font.Close()
+		TTF3CloseFont(r.font)
 	}
 	if r.fontSmall != nil {
-		r.fontSmall.Close()
+		TTF3CloseFont(r.fontSmall)
 	}
 	if r.fontGlyph != nil {
-		r.fontGlyph.Close()
+		TTF3CloseFont(r.fontGlyph)
 	}
 }
 
 func CalcUnitSize(layout [][]KeyDef, screenWidth int32, cfg Config) int32 {
 	if cfg.Keys.UnitSize > 0 {
-		return int32(cfg.Keys.UnitSize)
+		return int32(cfg.Keys.UnitSize) //nolint:gosec // G115: unit size fits in int32
 	}
 	var maxUnits float64
 	var maxKeys int
@@ -354,12 +433,12 @@ func CalcWindowSize(layout [][]KeyDef, unit, pad, statusH int32) (int32, int32) 
 			maxW = rw
 		}
 	}
-	h := pad + statusH + int32(len(layout))*(unit+pad)
+	h := pad + statusH + int32(len(layout))*(unit+pad) //nolint:gosec // G115: layout row count fits in int32
 	return maxW, h
 }
 
-func setColor(r *sdl.Renderer, c sdl.Color) {
-	r.SetDrawColor(c.R, c.G, c.B, c.A)
+func setColor(r *SDLRenderer, c Color) {
+	SDL3SetRenderDrawColor(r, c)
 }
 
 func isModActive(key KeyDef, kb *KeyboardState) bool {
@@ -406,6 +485,17 @@ func findFont(names ...string) string {
 		}
 	}
 	return ""
+}
+
+// hasPromptfontRune returns true if the string contains codepoints from
+// Promptfont's mapped range (U+2600-U+27FF).
+func hasPromptfontRune(s string) bool {
+	for _, r := range s {
+		if r >= 0x2600 && r <= 0x27FF {
+			return true
+		}
+	}
+	return false
 }
 
 func max32(a, b int32) int32 {

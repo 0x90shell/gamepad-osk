@@ -10,23 +10,23 @@ import (
 	"time"
 )
 
-// evdev constants
+//nolint:revive // Match Linux evdev naming
 const (
 	evdevEV_KEY = 0x01
 	evdevEV_ABS = 0x03
 	evdevEV_SYN = 0x00
 
 	// Standard evdev button codes
-	BTN_SOUTH  = 0x130 // 304 — Xbox A, PS Cross
-	BTN_EAST   = 0x131 // 305 — Xbox B, PS Circle
-	BTN_NORTH  = 0x133 // 307 — Xbox Y/X (varies!)
-	BTN_WEST   = 0x134 // 308 — Xbox X/Y (varies!)
-	BTN_TL     = 0x136 // 310 — LB/L1
-	BTN_TR     = 0x137 // 311 — RB/R1
-	BTN_TL2    = 0x138 // 312 — LT/L2 (digital, Switch Pro)
-	BTN_TR2    = 0x139 // 313 — RT/R2 (digital, Switch Pro)
-	BTN_THUMBL = 0x13d // 317 — L3
-	BTN_THUMBR = 0x13e // 318 — R3
+	BTN_SOUTH  = 0x130 // 304 - Xbox A, PS Cross
+	BTN_EAST   = 0x131 // 305 - Xbox B, PS Circle
+	BTN_NORTH  = 0x133 // 307 - Xbox Y/X (varies!)
+	BTN_WEST   = 0x134 // 308 - Xbox X/Y (varies!)
+	BTN_TL     = 0x136 // 310 - LB/L1
+	BTN_TR     = 0x137 // 311 - RB/R1
+	BTN_TL2    = 0x138 // 312 - LT/L2 (digital, Switch Pro)
+	BTN_TR2    = 0x139 // 313 - RT/R2 (digital, Switch Pro)
+	BTN_THUMBL = 0x13d // 317 - L3
+	BTN_THUMBR = 0x13e // 318 - R3
 
 	ABS_X     = 0x00
 	ABS_Y     = 0x01
@@ -64,6 +64,7 @@ const (
 	ActionBackspaceRelease
 	ActionSpaceRelease
 	ActionEnterRelease
+	ActionToggle
 )
 
 type Action struct {
@@ -94,6 +95,8 @@ type GamepadReader struct {
 	grabbed   bool
 	navX      NavAxis
 	navY      NavAxis
+	dpadX     NavAxis
+	dpadY     NavAxis
 	mouseX    float64
 	mouseY    float64
 	ltActive  bool
@@ -108,14 +111,24 @@ type GamepadReader struct {
 	navAxisY   uint16
 	mouseAxisX uint16
 	mouseAxisY uint16
-	deviceName string
+	deviceName string // currently unused; stored for future logging/diagnostics
+
+	// Toggle combo state
+	comboButtons    []ComboButton     // parsed from config at startup (nil = disabled)
+	comboPeriodMs   int               // timing window
+	btnHeld         map[uint16]bool   // current button press state
+	axisState       map[uint16]int32  // current axis values (for d-pad and triggers)
+	comboFirstPress time.Time         // when the first combo button was pressed
+	comboFired      bool              // edge-trigger flag (prevents repeat while held)
 }
 
 func NewGamepadReader(config Config) *GamepadReader {
 	gp := &GamepadReader{
-		config:  config,
-		axisMax: 32767,
-		trigMax: 255,
+		config:    config,
+		axisMax:   32767,
+		trigMax:   255,
+		btnHeld:   make(map[uint16]bool),
+		axisState: make(map[uint16]int32),
 	}
 
 	// Configure stick assignments (mouse_stick sets mouse, other stick = nav)
@@ -126,6 +139,21 @@ func NewGamepadReader(config Config) *GamepadReader {
 	} else {
 		gp.mouseAxisX, gp.mouseAxisY = ABS_RX, ABS_RY
 		gp.navAxisX, gp.navAxisY = ABS_X, ABS_Y
+	}
+
+	// Parse toggle combo
+	if config.Gamepad.ToggleCombo != "" {
+		buttons, err := parseComboString(config.Gamepad.ToggleCombo)
+		if err != nil {
+			log.Printf("Warning: invalid toggle_combo: %v", err)
+		} else {
+			gp.comboButtons = buttons
+			gp.comboPeriodMs = config.Gamepad.ComboPeriodMs
+			if gp.comboPeriodMs <= 0 {
+				gp.comboPeriodMs = 200
+			}
+			log.Printf("Toggle combo: %s (%dms window)", config.Gamepad.ToggleCombo, gp.comboPeriodMs)
+		}
 	}
 
 	return gp
@@ -159,14 +187,18 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 		return false
 	}
 
-	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
-		log.Printf("Error opening %s: %v", path, err)
+		if os.IsPermission(err) {
+			log.Print(colorRed("Error: cannot read " + path + " - permission denied"))
+			logPermissionFix()
+		} else {
+			log.Printf("Error opening %s: %v", path, err)
+		}
 		return false
 	}
 	gp.fd = fd
 	gp.readAxisInfo()
-
 	// Auto-detect swap_xy for Xbox 360 pads
 	if gp.config.Gamepad.SwapXY == "auto" || gp.config.Gamepad.SwapXY == "" {
 		name := gp.getDeviceName(path)
@@ -193,7 +225,7 @@ func (gp *GamepadReader) getDeviceName(devPath string) string {
 	// Find the event handler matching our device path
 	eventName := devPath[strings.LastIndex(devPath, "/")+1:]
 	var name string
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, "N: Name=") {
 			name = strings.Trim(line[8:], "\"")
 		} else if strings.HasPrefix(line, "H: Handlers=") && strings.Contains(line, eventName) {
@@ -218,18 +250,19 @@ func (gp *GamepadReader) autoDetect() string {
 	}
 
 	var name, handler string
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "N: Name=") {
+	for line := range strings.SplitSeq(string(data), "\n") {
+		switch {
+		case strings.HasPrefix(line, "N: Name="):
 			name = strings.Trim(line[8:], "\"")
-		} else if strings.HasPrefix(line, "H: Handlers=") {
+		case strings.HasPrefix(line, "H: Handlers="):
 			handler = line[12:]
-		} else if line == "" && name != "" {
+		case line == "" && name != "":
 			// Check if this device has a js* handler (joystick)
 			if strings.Contains(handler, "js") {
-				for _, part := range strings.Fields(handler) {
+				for part := range strings.FieldsSeq(handler) {
 					if strings.HasPrefix(part, "event") {
 						path := "/dev/input/" + part
-						if _, err := os.Stat(path); err == nil {
+						if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: trusted /dev/input path
 							log.Printf("Auto-detected gamepad: %s (%s)", name, path)
 							return path
 						}
@@ -243,18 +276,17 @@ func (gp *GamepadReader) autoDetect() string {
 	return ""
 }
 
-func (gp *GamepadReader) readAxisInfo() {
-	// Try to get axis ranges via EVIOCGABS
-	// For now use defaults — most controllers are 32767 for sticks, 255 or 1023 for triggers
-}
+// readAxisInfo is currently unused; placeholder for reading EVIOCGABS axis ranges.
+// For now the constructor defaults (axisMax=32767, trigMax=255) cover most controllers.
+func (gp *GamepadReader) readAxisInfo() {} // TODO: read EVIOCGABS axis ranges instead of using defaults
 
 func (gp *GamepadReader) Grab() {
 	if gp.fd == nil || gp.grabbed {
 		return
 	}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 1)
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 1) //nolint:gosec // G115: fd fits in int
 	if errno != 0 {
-		log.Printf("Warning: could not grab device: %v", errno)
+		log.Printf("Warning: could not grab device: %v (another instance may hold the grab)", errno)
 	} else {
 		gp.grabbed = true
 	}
@@ -264,7 +296,7 @@ func (gp *GamepadReader) Ungrab() {
 	if gp.fd == nil || !gp.grabbed {
 		return
 	}
-	syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 0)
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 0)
 	gp.grabbed = false
 }
 
@@ -272,7 +304,7 @@ func (gp *GamepadReader) Fd() int {
 	if gp.fd == nil {
 		return -1
 	}
-	return int(gp.fd.Fd())
+	return int(gp.fd.Fd()) //nolint:gosec // G115: fd fits in int
 }
 
 func (gp *GamepadReader) ReadEvents() []Action {
@@ -284,25 +316,45 @@ func (gp *GamepadReader) ReadEvents() []Action {
 	var buf [24]byte
 
 	for {
-		n, err := syscall.Read(int(gp.fd.Fd()), buf[:])
+		n, err := syscall.Read(int(gp.fd.Fd()), buf[:]) //nolint:gosec // G115: fd fits in int
 		if n != 24 || err != nil {
+			if err != nil && err != syscall.EAGAIN && err != syscall.EWOULDBLOCK {
+				log.Printf("Gamepad disconnected: %v", err)
+				gp.Ungrab()
+				_ = gp.fd.Close()
+				gp.fd = nil
+				gp.mouseX, gp.mouseY = 0, 0
+				gp.navX = NavAxis{}
+				gp.navY = NavAxis{}
+				gp.dpadX = NavAxis{}
+				gp.dpadY = NavAxis{}
+				gp.btnHeld = make(map[uint16]bool)
+				gp.axisState = make(map[uint16]int32)
+				gp.ltActive = false
+				gp.rtActive = false
+				gp.comboFirstPress = time.Time{}
+				gp.comboFired = false
+			}
 			break
 		}
 		evType := binary.LittleEndian.Uint16(buf[16:])
 		evCode := binary.LittleEndian.Uint16(buf[18:])
-		evValue := int32(binary.LittleEndian.Uint32(buf[20:]))
+		evValue := int32(binary.LittleEndian.Uint32(buf[20:])) //nolint:gosec // G115: evdev value fits in int32
 
 		if a := gp.handleEvent(evType, evCode, evValue); a.Type != ActionNone {
 			actions = append(actions, a)
 		}
 	}
 
-	// Adaptive repeat
+	// Adaptive repeat (stick + d-pad independently)
 	now := time.Now()
 	for _, pair := range []struct {
 		nav *NavAxis
 		isX bool
-	}{{&gp.navX, true}, {&gp.navY, false}} {
+	}{
+		{&gp.navX, true}, {&gp.navY, false},
+		{&gp.dpadX, true}, {&gp.dpadY, false},
+	} {
 		if pair.nav.Direction != 0 && now.Sub(pair.nav.LastMove) >= pair.nav.RepeatInterval() {
 			pair.nav.LastMove = now
 			if pair.isX {
@@ -339,6 +391,14 @@ func (gp *GamepadReader) handleEvent(evType, evCode uint16, value int32) Action 
 func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 	pressed := value == 1
 
+	// Track button state for combo detection
+	gp.btnHeld[code] = pressed
+
+	// Check combo on every button event
+	if toggle := gp.checkCombo(); toggle.Type != ActionNone {
+		return toggle
+	}
+
 	if code == gp.pressBtn {
 		if pressed {
 			Debugf("Button 0x%x pressed (press btn)", code)
@@ -365,15 +425,25 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 	dz := gp.config.Gamepad.Deadzone
 	norm := float64(value) / gp.axisMax
 
+	// Track axis state for combo detection (d-pad and triggers)
+	gp.axisState[code] = value
+
+	// Check combo on axis events that could be combo-relevant (d-pad, triggers)
+	if code == ABS_HAT0X || code == ABS_HAT0Y || code == ABS_Z || code == ABS_RZ {
+		if toggle := gp.checkCombo(); toggle.Type != ActionNone {
+			return toggle
+		}
+	}
+
 	switch code {
 	case gp.navAxisX: // Nav stick X
 		return gp.updateNav(&gp.navX, applyDeadzone(norm, dz), true)
 	case gp.navAxisY: // Nav stick Y
 		return gp.updateNav(&gp.navY, applyDeadzone(norm, dz), false)
-	case ABS_HAT0X: // D-pad always navigates
-		return gp.updateNav(&gp.navX, int(value), true)
+	case ABS_HAT0X: // D-pad - separate axis to avoid stick jitter interference
+		return gp.updateNav(&gp.dpadX, int(value), true)
 	case ABS_HAT0Y:
-		return gp.updateNav(&gp.navY, int(value), false)
+		return gp.updateNav(&gp.dpadY, int(value), false)
 	case gp.mouseAxisX: // Mouse stick X
 		if math.Abs(norm) < dz {
 			gp.mouseX = 0
@@ -433,12 +503,131 @@ func (gp *GamepadReader) updateNav(nav *NavAxis, direction int, isX bool) Action
 	return Action{Type: ActionNone}
 }
 
+// checkCombo checks if the toggle combo is fully satisfied and returns ActionToggle if so.
+// Implements edge-triggering (fires once per press) and timing window.
+// Timer starts on the first button press, not when all buttons are held.
+// Window expiry only takes effect on the next press cycle (requires button release to reset).
+func (gp *GamepadReader) checkCombo() Action {
+	if len(gp.comboButtons) == 0 {
+		return Action{Type: ActionNone}
+	}
+
+	allHeld := true
+	anyHeld := false
+	for _, cb := range gp.comboButtons {
+		if gp.isComboButtonHeld(cb) {
+			anyHeld = true
+		} else {
+			allHeld = false
+		}
+	}
+
+	if !anyHeld {
+		// Full release - reset everything
+		gp.comboFired = false
+		gp.comboFirstPress = time.Time{}
+		return Action{Type: ActionNone}
+	}
+
+	if !allHeld {
+		// Partial hold - start timer on first press, reset edge trigger
+		gp.comboFired = false
+		if gp.comboFirstPress.IsZero() {
+			gp.comboFirstPress = time.Now()
+		}
+		return Action{Type: ActionNone}
+	}
+
+	// All held
+	if gp.comboFired {
+		return Action{Type: ActionNone}
+	}
+	if gp.comboFirstPress.IsZero() {
+		gp.comboFirstPress = time.Now()
+	}
+	if time.Since(gp.comboFirstPress) <= time.Duration(gp.comboPeriodMs)*time.Millisecond {
+		gp.comboFired = true
+		Debugf("Toggle combo fired: %s", gp.config.Gamepad.ToggleCombo)
+		return Action{Type: ActionToggle}
+	}
+	// Window expired while buttons still held - wait for release before allowing retry
+	return Action{Type: ActionNone}
+}
+
+// isComboButtonHeld checks if a single combo button is currently satisfied.
+// A button is satisfied if any of its BtnCodes are held OR its axis matches.
+// Analog triggers use the same 30% threshold as action detection to avoid noise.
+func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
+	// Check digital button codes
+	for _, code := range cb.BtnCodes {
+		if gp.btnHeld[code] {
+			return true
+		}
+	}
+	// Check axis (d-pad or analog trigger)
+	if cb.AxisCode != 0 {
+		axisVal := gp.axisState[cb.AxisCode]
+		if cb.AxisVal < 0 && axisVal < 0 {
+			return true // d-pad up or left
+		}
+		if cb.AxisVal > 0 {
+			// Triggers (ABS_Z, ABS_RZ): use threshold to avoid noise near zero
+			// D-pad down/right (ABS_HAT0X/Y = 1): any positive value suffices
+			if cb.AxisCode == ABS_Z || cb.AxisCode == ABS_RZ {
+				return axisVal > int32(gp.trigMax*0.3)
+			}
+			return axisVal > 0
+		}
+	}
+	return false
+}
+
+func (gp *GamepadReader) SetSensitivity(value int) {
+	gp.config.Mouse.Sensitivity = value
+}
+
+// NeedsPolling returns true when cached stick state requires continuous polling
+// (mouse movement or nav repeat active).
+func (gp *GamepadReader) NeedsPolling() bool {
+	if gp.fd == nil {
+		return false
+	}
+	if gp.config.Mouse.Enabled && (math.Abs(gp.mouseX) > 0.01 || math.Abs(gp.mouseY) > 0.01) {
+		return true
+	}
+	for _, nav := range []*NavAxis{&gp.navX, &gp.navY, &gp.dpadX, &gp.dpadY} {
+		if nav.Direction != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Reconnect attempts to re-open the gamepad after a disconnect.
+// Tries the configured device path first, then auto-detect.
+func (gp *GamepadReader) Reconnect() bool {
+	if gp.fd != nil {
+		return true
+	}
+	Debugf("Attempting gamepad reconnect...")
+	path := gp.config.Gamepad.Device
+	if path == "" {
+		path = gp.autoDetect()
+	}
+	if path == "" {
+		return false
+	}
+	return gp.Open(path)
+}
+
 func (gp *GamepadReader) Close() {
 	gp.Ungrab()
 	if gp.fd != nil {
-		gp.fd.Close()
+		_ = gp.fd.Close()
 	}
 }
+
+// isUserInGroup and logPermissionFix are in util.go
 
 func applyDeadzone(norm, dz float64) int {
 	if norm > dz {
