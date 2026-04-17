@@ -9,8 +9,6 @@ import (
 func newTestGamepad() *GamepadReader {
 	cfg := DefaultConfig()
 	gp := NewGamepadReader(cfg)
-	gp.axisMax = 32767
-	gp.trigMax = 255
 	gp.initButtonMap()
 	return gp
 }
@@ -114,7 +112,7 @@ func TestHandleAxis_NavStickDeadzone(t *testing.T) {
 	gp := newTestGamepad()
 
 	// Small jitter inside deadzone should not navigate
-	jitter := int32(gp.axisMax * 0.1) // 10% = inside 25% deadzone
+	jitter := int32(3276) // ~10% of Xbox range = inside 25% deadzone
 	a := gp.handleAxis(ABS_X, jitter)
 	if a.Type != ActionNone {
 		t.Errorf("jitter %d = %v, want ActionNone", jitter, a.Type)
@@ -300,8 +298,6 @@ func TestSwappedButtons(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Gamepad.SwapXY = "true"
 	gp := NewGamepadReader(cfg)
-	gp.axisMax = 32767
-	gp.trigMax = 255
 	gp.initButtonMap()
 
 	// With swap_xy, X button (BTN_WEST normally) should be BTN_NORTH
@@ -326,8 +322,6 @@ func newComboGamepad(combo string) *GamepadReader {
 	cfg.Gamepad.ToggleCombo = combo
 	cfg.Gamepad.ComboPeriodMs = 200
 	gp := NewGamepadReader(cfg)
-	gp.axisMax = 32767
-	gp.trigMax = 255
 	gp.initButtonMap()
 	return gp
 }
@@ -392,8 +386,6 @@ func TestComboDetect_TimingWindow(t *testing.T) {
 	cfg.Gamepad.ToggleCombo = "select+start"
 	cfg.Gamepad.ComboPeriodMs = 50 // very short window
 	gp := NewGamepadReader(cfg)
-	gp.axisMax = 32767
-	gp.trigMax = 255
 	gp.initButtonMap()
 
 	// Press select
@@ -601,8 +593,6 @@ func TestMouseStickLeft(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Gamepad.MouseStick = "left"
 	gp := NewGamepadReader(cfg)
-	gp.axisMax = 32767
-	gp.trigMax = 255
 	gp.initButtonMap()
 
 	// Left stick should be mouse now

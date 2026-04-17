@@ -22,7 +22,7 @@ device =                     # empty = auto-detect, or /dev/input/eventX
 grab = true                  # grab device when visible (prevents input bleed to game)
 deadzone = 0.25              # stick deadzone (0.0-1.0)
 long_press_ms = 500          # ms to hold for accent popup (100-5000)
-swap_xy = auto               # auto = detect Xbox 360, true = force swap, false = no swap
+swap_xy = auto               # auto = detect xpad/xpadneo/xone drivers, true = force, false = off
 mouse_stick = right          # left or right - nav uses the other stick
 toggle_combo =               # built-in show/hide combo (empty = disabled, use --toggle/evsieve)
                              # format: button+button (2-4 buttons, + separated)

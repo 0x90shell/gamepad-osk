@@ -5,9 +5,11 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 //nolint:revive // Match Linux evdev naming
@@ -38,7 +40,17 @@ const (
 	ABS_HAT0Y = 0x11
 
 	EVIOCGRAB = 0x40044590
+
+	// EVIOCGABS(axis) = _IOR('E', 0x40 + axis, struct input_absinfo)
+	// input_absinfo is 6 x int32 = 24 bytes, so _IOR size = 24
+	// _IOR('E', 0x40+axis, 24) = 0x80184540 + axis
+	eviocgabsBase = 0x80184540
 )
+
+// axisRange stores min/max for a single evdev axis.
+type axisRange struct {
+	min, max int32
+}
 
 type ActionType int
 
@@ -101,8 +113,7 @@ type GamepadReader struct {
 	mouseY    float64
 	ltActive  bool
 	rtActive  bool
-	axisMax   float64
-	trigMax   float64
+	axisRanges map[uint16]axisRange // per-axis min/max from EVIOCGABS
 	actionMap ActionMap
 	pressBtn  uint16 // "press" button evdev code
 	shiftAxis uint16 // "shift" axis for hold behavior
@@ -124,9 +135,16 @@ type GamepadReader struct {
 
 func NewGamepadReader(config Config) *GamepadReader {
 	gp := &GamepadReader{
-		config:    config,
-		axisMax:   32767,
-		trigMax:   255,
+		config: config,
+		axisRanges: map[uint16]axisRange{
+			// Defaults for Xbox 360/One (overridden by readAxisInfo if available)
+			ABS_X:  {-32768, 32767},
+			ABS_Y:  {-32768, 32767},
+			ABS_RX: {-32768, 32767},
+			ABS_RY: {-32768, 32767},
+			ABS_Z:  {0, 255},
+			ABS_RZ: {0, 255},
+		},
 		btnHeld:   make(map[uint16]bool),
 		axisState: make(map[uint16]int32),
 	}
@@ -199,13 +217,17 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	}
 	gp.fd = fd
 	gp.readAxisInfo()
-	// Auto-detect swap_xy for Xbox 360 pads
+	// Auto-detect swap_xy for Xbox controllers (xpad/xpadneo/xone drivers swap BTN_NORTH/BTN_WEST)
 	if gp.config.Gamepad.SwapXY == "auto" || gp.config.Gamepad.SwapXY == "" {
 		name := gp.getDeviceName(path)
 		gp.deviceName = name
-		if strings.Contains(strings.ToLower(name), "x-box 360") ||
-			strings.Contains(strings.ToLower(name), "xbox 360") {
-			log.Printf("Auto-detected Xbox 360 pad, enabling swap_xy")
+		if gp.isXpadDriver(path) {
+			log.Printf("Auto-detected xpad driver, enabling swap_xy")
+			gp.config.Gamepad.SwapXY = "true"
+		} else if strings.Contains(strings.ToLower(name), "x-box") ||
+			strings.Contains(strings.ToLower(name), "xbox") {
+			// Fallback for Steam virtual gamepads (uinput, no sysfs driver link)
+			log.Printf("Auto-detected Xbox pad by name, enabling swap_xy")
 			gp.config.Gamepad.SwapXY = "true"
 		}
 	}
@@ -215,6 +237,20 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 
 	log.Printf("Opened gamepad: %s", path)
 	return true
+}
+
+// isXpadDriver checks if the evdev device uses xpad, xpadneo, or xone kernel driver.
+// These drivers report BTN_X=BTN_NORTH and BTN_Y=BTN_WEST (swapped vs physical position).
+func (gp *GamepadReader) isXpadDriver(devPath string) bool {
+	// /dev/input/event18 -> event18
+	base := filepath.Base(devPath)
+	// Check /sys/class/input/event18/device/device/driver symlink
+	link, err := os.Readlink(filepath.Join("/sys/class/input", base, "device", "device", "driver"))
+	if err != nil {
+		return false
+	}
+	driver := filepath.Base(link)
+	return driver == "xpad" || driver == "xpadneo" || driver == "xone"
 }
 
 func (gp *GamepadReader) getDeviceName(devPath string) string {
@@ -276,9 +312,30 @@ func (gp *GamepadReader) autoDetect() string {
 	return ""
 }
 
-// readAxisInfo is currently unused; placeholder for reading EVIOCGABS axis ranges.
-// For now the constructor defaults (axisMax=32767, trigMax=255) cover most controllers.
-func (gp *GamepadReader) readAxisInfo() {} // TODO: read EVIOCGABS axis ranges instead of using defaults
+// readAxisInfo queries EVIOCGABS for each axis to get the actual min/max range.
+// This handles controllers with different ranges (DS4/DS5: 0-255, Xbox: -32768 to 32767).
+func (gp *GamepadReader) readAxisInfo() {
+	if gp.fd == nil {
+		return
+	}
+	axes := []uint16{ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ}
+	for _, axis := range axes {
+		// input_absinfo: value, minimum, maximum, fuzz, flat, resolution (6 x int32)
+		var info [6]int32
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
+			gp.fd.Fd(),
+			uintptr(eviocgabsBase+uint32(axis)),                  //nolint:gosec // G115: axis fits in uint32
+			uintptr(unsafe.Pointer(&info[0]))) //nolint:gosec // G103: ioctl requires pointer to kernel struct
+		if errno != 0 {
+			continue
+		}
+		axMin, axMax := info[1], info[2]
+		if axMax > axMin {
+			gp.axisRanges[axis] = axisRange{axMin, axMax}
+			Debugf("Axis 0x%x range: %d to %d", axis, axMin, axMax)
+		}
+	}
+}
 
 func (gp *GamepadReader) Grab() {
 	if gp.fd == nil || gp.grabbed {
@@ -421,9 +478,19 @@ func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 	return Action{Type: ActionNone}
 }
 
+// normalizeAxis maps a raw axis value to -1.0..1.0 using the axis's actual range.
+func (gp *GamepadReader) normalizeAxis(code uint16, value int32) float64 {
+	r, ok := gp.axisRanges[code]
+	if !ok || r.max <= r.min {
+		return 0
+	}
+	// Map [min, max] to [-1.0, 1.0]
+	return (float64(value-r.min)/float64(r.max-r.min))*2.0 - 1.0
+}
+
 func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 	dz := gp.config.Gamepad.Deadzone
-	norm := float64(value) / gp.axisMax
+	norm := gp.normalizeAxis(code, value)
 
 	// Track axis state for combo detection (d-pad and triggers)
 	gp.axisState[code] = value
@@ -459,7 +526,7 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 	default:
 		// Check if this axis is mapped to an action (triggers)
 		if action, ok := gp.actionMap.AxisActions[code]; ok {
-			active := float64(value)/gp.trigMax > 0.3
+			active := gp.normalizeAxis(code, value) > -0.4 // triggers: -1.0 (released) to 1.0 (full), fire at ~30%
 			if code == gp.shiftAxis {
 				// Shift is hold-based: on/off
 				if active != gp.ltActive {
@@ -574,7 +641,7 @@ func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
 			// Triggers (ABS_Z, ABS_RZ): use threshold to avoid noise near zero
 			// D-pad down/right (ABS_HAT0X/Y = 1): any positive value suffices
 			if cb.AxisCode == ABS_Z || cb.AxisCode == ABS_RZ {
-				return axisVal > int32(gp.trigMax*0.3)
+				return gp.normalizeAxis(cb.AxisCode, axisVal) > -0.4
 			}
 			return axisVal > 0
 		}

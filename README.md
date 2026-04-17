@@ -11,7 +11,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
-- Xbox 360 pad auto-detection (swap_xy quirk handled automatically)
+- Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + R3/RB click (hold to drag)
