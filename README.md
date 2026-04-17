@@ -30,7 +30,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 ## Dependencies
 
-**Runtime:** `sdl3` `sdl3_ttf` `ttf-promptfont` (AUR)
+**Runtime:** `sdl3` `sdl3_ttf` `wayland` `libx11` `ttf-promptfont` (AUR)
 
 **Build:** `go` `sdl3` `sdl3_ttf` `libx11` `wayland` `wlr-protocols`
 

@@ -241,7 +241,7 @@ NOTES
   Wayland: panel_avoid controls panel spacing (true = respect panels, false = screen edge).
 
 REQUIREMENTS
-  Runtime: sdl3, sdl3_ttf, ttf-promptfont (AUR)
+  Runtime: sdl3, sdl3_ttf, wayland, libx11, ttf-promptfont (AUR)
   User must be in 'input' group for gamepad and key injection
 `,
 		version,
