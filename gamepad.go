@@ -27,8 +27,12 @@ const (
 	BTN_TR     = 0x137 // 311 - RB/R1
 	BTN_TL2    = 0x138 // 312 - LT/L2 (digital, Switch Pro)
 	BTN_TR2    = 0x139 // 313 - RT/R2 (digital, Switch Pro)
-	BTN_THUMBL = 0x13d // 317 - L3
-	BTN_THUMBR = 0x13e // 318 - R3
+	BTN_THUMBL    = 0x13d // 317 - L3
+	BTN_THUMBR    = 0x13e // 318 - R3
+	BTN_DPAD_UP   = 0x220 // 544 - DS3 D-pad (button, not axis)
+	BTN_DPAD_DOWN = 0x221 // 545
+	BTN_DPAD_LEFT = 0x222 // 546
+	BTN_DPAD_RIGHT = 0x223 // 547
 
 	ABS_X     = 0x00
 	ABS_Y     = 0x01
@@ -462,6 +466,30 @@ func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 			return Action{Type: ActionPressStart}
 		}
 		return Action{Type: ActionPress}
+	}
+
+	// DS3 reports D-pad as buttons instead of HAT axes
+	switch code {
+	case BTN_DPAD_UP:
+		if pressed {
+			return gp.updateNav(&gp.dpadY, -1, false)
+		}
+		return gp.updateNav(&gp.dpadY, 0, false)
+	case BTN_DPAD_DOWN:
+		if pressed {
+			return gp.updateNav(&gp.dpadY, 1, false)
+		}
+		return gp.updateNav(&gp.dpadY, 0, false)
+	case BTN_DPAD_LEFT:
+		if pressed {
+			return gp.updateNav(&gp.dpadX, -1, true)
+		}
+		return gp.updateNav(&gp.dpadX, 0, true)
+	case BTN_DPAD_RIGHT:
+		if pressed {
+			return gp.updateNav(&gp.dpadX, 1, true)
+		}
+		return gp.updateNav(&gp.dpadX, 0, true)
 	}
 
 	if pressed {
