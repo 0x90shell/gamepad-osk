@@ -88,7 +88,15 @@ gamepad-osk --help                   # show all options
 
 **Build dependencies:** Go, SDL3 (dev), SDL3_ttf (dev), libX11 (dev), wayland (dev), wayland-protocols (dev)
 
-Package names vary by distro. See sections below.
+Package names vary by distro. Find yours below:
+
+| Distro | Base | Instructions |
+|--------|------|--------------|
+| Manjaro, EndeavourOS | Arch | [AUR / Arch](#aur-arch-linux) |
+| CachyOS, Garuda, ChimeraOS | Arch | [AUR / Arch](#aur-arch-linux) |
+| Nobara | Fedora | [Fedora](#from-source) |
+| Bazzite, Bluefin | Fedora Atomic | [Immutable Fedora](#bazzite--immutable-fedora) |
+| Pop!_OS, Linux Mint | Ubuntu | [Debian / Ubuntu](#from-source) |
 
 ### AUR (Arch Linux)
 
