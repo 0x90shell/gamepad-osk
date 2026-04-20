@@ -57,7 +57,7 @@ yay --devel --save
 
 ### Pre-built binary (x86_64)
 
-Download the latest binary from the [releases page](https://github.com/0x90shell/gamepad-osk/releases). This is the fastest option for non-Arch distros.
+Download the binary and support files from the [releases page](https://github.com/0x90shell/gamepad-osk/releases). This is the fastest option for non-Arch distros.
 
 Install runtime dependencies for your distro first (see [Promptfont](#promptfont) and the dep commands in [From source](#from-source)), then:
 
