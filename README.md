@@ -6,6 +6,26 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 ![gamepad-osk](assets/matrix-hero.png)
 
+## Table of Contents
+
+- [Features](#features)
+- [Controls](#controls)
+- [Usage](#usage)
+- [Installation](#installation)
+  - [AUR (Arch Linux)](#aur-arch-linux)
+  - [Pre-built binary (x86_64)](#pre-built-binary-x86_64)
+  - [From source](#from-source)
+  - [Bazzite / Immutable Fedora](#bazzite--immutable-fedora)
+  - [Promptfont](#promptfont)
+- [Permissions](#permissions)
+- [Systemd User Service](#systemd-user-service)
+- [Configuration](#configuration)
+- [Themes](#themes)
+- [Show & Hide](#show--hide)
+- [X11](#x11)
+- [Wayland](#wayland)
+- [License](#license)
+
 ## Features
 
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
@@ -28,15 +48,47 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Daemon mode for systemd user service (close button hides instead of exiting)
 - Single static binary, ~5MB
 
-## Dependencies
+## Controls
 
-**Runtime:** SDL3, SDL3_ttf, wayland, libX11, [promptfont](https://codeberg.org/shinmera/promptfont)
+| Input | Action |
+|-------|--------|
+| Left stick / D-pad | Navigate keyboard |
+| Right stick | Move mouse cursor |
+| A | Press highlighted key (hold to repeat) |
+| B | Close keyboard |
+| X | Backspace (hold to repeat) |
+| Y | Space (hold to repeat) |
+| LT (hold) | Shift |
+| RT | Enter (hold to repeat) |
+| RB | Left mouse click (hold to drag) |
+| LB | Right mouse click |
+| Mouse stick click (R3) | Left mouse click |
+| Nav stick click (L3) | Caps Lock |
+| Start | Toggle keyboard top/bottom |
+| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
+| Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
+| Cfg key | Cycle themes (Shift+Cfg = reverse) |
+| Toggle combo (configurable) | Show/hide keyboard |
 
-**Build:** Go, SDL3 (dev), SDL3_ttf (dev), libX11 (dev), wayland (dev), wayland-protocols (dev)
+## Usage
 
-Package names vary by distro. See installation sections below.
+```
+gamepad-osk                          # start (auto-detect gamepad)
+gamepad-osk --device /dev/input/X    # use specific device
+gamepad-osk --theme synthwave        # start with theme
+gamepad-osk --config /path/to/config  # use specific config file
+gamepad-osk --toggle                 # toggle running instance
+gamepad-osk --daemon                 # start hidden, B hides instead of exiting
+gamepad-osk --help                   # show all options
+```
 
 ## Installation
+
+**Runtime dependencies:** SDL3, SDL3_ttf, wayland, libX11, [promptfont](https://codeberg.org/shinmera/promptfont)
+
+**Build dependencies:** Go, SDL3 (dev), SDL3_ttf (dev), libX11 (dev), wayland (dev), wayland-protocols (dev)
+
+Package names vary by distro. See sections below.
 
 ### AUR (Arch Linux)
 
@@ -179,13 +231,6 @@ sudo usermod -aG input $USER
 
 Log out and back in for the group change to take effect. Verify with `groups`.
 
-AUR packages install a udev rule that sets the correct permissions on input devices. If installing from source, copy the rule manually:
-
-```bash
-sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
-sudo udevadm control --reload-rules
-```
-
 If you must use sudo, pass your config explicitly to avoid loading root's config:
 
 ```bash
@@ -205,40 +250,6 @@ Toggle visibility (bind to evsieve or hotkey):
 ```bash
 gamepad-osk --toggle
 ```
-
-## Usage
-
-```
-gamepad-osk                          # start (auto-detect gamepad)
-gamepad-osk --device /dev/input/X    # use specific device
-gamepad-osk --theme synthwave        # start with theme
-gamepad-osk --config /path/to/config  # use specific config file
-gamepad-osk --toggle                 # toggle running instance
-gamepad-osk --daemon                 # start hidden, B hides instead of exiting
-gamepad-osk --help                   # show all options
-```
-
-## Controls
-
-| Input | Action |
-|-------|--------|
-| Left stick / D-pad | Navigate keyboard |
-| Right stick | Move mouse cursor |
-| A | Press highlighted key (hold to repeat) |
-| B | Close keyboard |
-| X | Backspace (hold to repeat) |
-| Y | Space (hold to repeat) |
-| LT (hold) | Shift |
-| RT | Enter (hold to repeat) |
-| RB | Left mouse click (hold to drag) |
-| LB | Right mouse click |
-| Mouse stick click (R3) | Left mouse click |
-| Nav stick click (L3) | Caps Lock |
-| Start | Toggle keyboard top/bottom |
-| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
-| Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
-| Cfg key | Cycle themes (Shift+Cfg = reverse) |
-| Toggle combo (configurable) | Show/hide keyboard |
 
 ## Configuration
 
@@ -282,7 +293,9 @@ See `config.example` for all options including button remapping, toggle combo, m
 | ![tokyo_night](assets/tokyo_night.png)<br><sub>tokyo_night</sub> | ![tokyo_storm](assets/tokyo_storm.png)<br><sub>tokyo_storm</sub> | ![vapor](assets/vapor.png)<br><sub>vapor</sub> |
 | ![virtualboy](assets/virtualboy.png)<br><sub>virtualboy</sub> | ![wine](assets/wine.png)<br><sub>wine</sub> | ![zx_spectrum](assets/zx_spectrum.png)<br><sub>zx_spectrum</sub> |
 
-## Toggle Combo
+## Show & Hide
+
+### Toggle Combo
 
 Set `toggle_combo` in config to show/hide the keyboard with a button combo, no external tools needed:
 
@@ -298,7 +311,7 @@ Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK runni
 
 Leave `toggle_combo` empty to use `--toggle` / evsieve instead (default).
 
-## Evsieve Integration
+### Evsieve Integration
 
 Use evsieve to show the keyboard with a button combo, then use B to hide it:
 
@@ -313,7 +326,7 @@ When the keyboard is hidden, `grab` is inactive and evsieve sees all events norm
 
 For zero-dependency show/hide without evsieve, use the built-in `toggle_combo` instead.
 
-## Device Grab
+### Device Grab
 
 When `grab = true` (default), the gamepad is exclusively grabbed while the keyboard is visible. This prevents controller input from bleeding into the game while you're typing. The grab is released when the keyboard hides.
 
