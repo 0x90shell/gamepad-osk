@@ -30,18 +30,24 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 ## Dependencies
 
-**Runtime:** `sdl3` `sdl3_ttf` `wayland` `libx11` `ttf-promptfont` (AUR)
+**Runtime:** SDL3, SDL3_ttf, wayland, libX11, [promptfont](https://codeberg.org/shinmera/promptfont)
 
-**Build:** `go` `sdl3` `sdl3_ttf` `libx11` `wayland` `wlr-protocols`
+**Build:** Go, SDL3 (dev), SDL3_ttf (dev), libX11 (dev), wayland (dev), wayland-protocols (dev)
+
+Package names vary by distro. See installation sections below.
 
 ## Installation
 
 ### AUR (Arch Linux)
 
+The fastest way to install on Arch:
+
 ```bash
 yay -S gamepad-osk-bin   # pre-built binary from GitHub release
 yay -S gamepad-osk-git   # build from latest source
 ```
+
+AUR packages install all dependencies, the systemd service, udev rules, and promptfont automatically.
 
 To auto-update `-git` packages when upstream changes, enable devel checking:
 
@@ -49,14 +55,24 @@ To auto-update `-git` packages when upstream changes, enable devel checking:
 yay --devel --save
 ```
 
-### From source
+### Pre-built binary (x86_64)
 
-Install build dependencies (Arch):
+Download the latest binary from the [releases page](https://github.com/0x90shell/gamepad-osk/releases). This is the fastest option for non-Arch distros.
+
+Install runtime dependencies for your distro first (see [Promptfont](#promptfont) and the dep commands in [From source](#from-source)), then:
 
 ```bash
-sudo pacman -S go sdl3 sdl3_ttf libx11 wayland wlr-protocols
-yay -S ttf-promptfont
+chmod +x gamepad-osk
+sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
+sudo install -Dm644 config.example /usr/share/gamepad-osk/config
+sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
+sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
+sudo udevadm control --reload-rules
 ```
+
+### From source
+
+Clone and build:
 
 ```bash
 git clone https://github.com/0x90shell/gamepad-osk.git
@@ -65,6 +81,91 @@ go build -o gamepad-osk .
 sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
 sudo install -Dm644 config.example /usr/share/gamepad-osk/config
 sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
+sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
+sudo udevadm control --reload-rules
+```
+
+Install build dependencies for your distro before building:
+
+**Arch:**
+
+```bash
+sudo pacman -S go sdl3 sdl3_ttf libx11 wayland wlr-protocols
+yay -S ttf-promptfont
+```
+
+**Fedora / Nobara:**
+
+```bash
+sudo dnf install golang SDL3-devel SDL3_ttf-devel libX11-devel wayland-devel wayland-protocols-devel
+```
+
+**Debian 13+ / Ubuntu 25.04+:**
+
+```bash
+sudo apt install golang-go libsdl3-dev libsdl3-ttf-dev libx11-dev libwayland-dev wayland-protocols
+```
+
+SDL3 is not available on Ubuntu 24.04 or Debian 12. Use a newer release or build SDL3 from source.
+
+### Bazzite / Immutable Fedora
+
+gamepad-osk needs raw access to `/dev/input` and `/dev/uinput` for gamepad reading and key injection. This rules out Flatpak. On immutable Fedora-based systems (Bazzite, Bluefin, Fedora Atomic), layer the runtime dependencies and reboot:
+
+```bash
+rpm-ostree install SDL3 SDL3_ttf
+systemctl reboot
+```
+
+The udev rule goes in `/etc` which is writable:
+
+```bash
+sudo cp gamepad-osk.udev /etc/udev/rules.d/80-gamepad-osk.rules
+sudo udevadm control --reload-rules
+```
+
+**Option 1: Pre-built binary (recommended).** Download from the [releases page](https://github.com/0x90shell/gamepad-osk/releases) and copy to `~/.local/bin/`:
+
+```bash
+chmod +x gamepad-osk
+mkdir -p ~/.local/bin
+cp gamepad-osk ~/.local/bin/
+```
+
+**Option 2: Build in a distrobox.**
+
+```bash
+distrobox create --name build --image fedora:41
+distrobox enter build
+sudo dnf install golang SDL3-devel SDL3_ttf-devel libX11-devel wayland-devel wayland-protocols-devel
+git clone https://github.com/0x90shell/gamepad-osk.git
+cd gamepad-osk
+go build -o gamepad-osk .
+cp gamepad-osk ~/.local/bin/
+exit
+```
+
+Make sure `~/.local/bin` is in your `$PATH`.
+
+### Promptfont
+
+[Promptfont](https://codeberg.org/shinmera/promptfont) displays controller button glyphs on mapped keys. Without it, those keys show text labels instead.
+
+**Arch:**
+
+```bash
+yay -S ttf-promptfont
+```
+
+**All other distros:**
+
+```bash
+wget https://codeberg.org/shinmera/promptfont/releases/download/v1.14/promptfont.zip
+unzip promptfont.zip promptfont.ttf
+mkdir -p ~/.local/share/fonts
+mv promptfont.ttf ~/.local/share/fonts/
+fc-cache
+rm promptfont.zip
 ```
 
 ## Permissions
