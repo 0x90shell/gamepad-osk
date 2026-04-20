@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-var version = "2.0.0"
+var version = "2.1.0"
 
 // Verbose controls debug logging throughout the app
 var Verbose bool
