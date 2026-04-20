@@ -317,7 +317,7 @@ Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `star
 
 Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK running as a service (B hides instead of exiting).
 
-Leave `toggle_combo` empty to use `--toggle` / evsieve instead (default).
+`--toggle` / evsieve works independently of this setting. Leave `toggle_combo` empty to rely on those methods alone (default).
 
 ### Evsieve Integration
 
