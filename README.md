@@ -64,11 +64,12 @@ Install runtime dependencies for your distro first (see [Promptfont](#promptfont
 ```bash
 chmod +x gamepad-osk
 sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
-sudo install -Dm644 config.example /usr/share/gamepad-osk/config
 sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
 sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
 sudo udevadm control --reload-rules
 ```
+
+A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
 
 ### From source
 
