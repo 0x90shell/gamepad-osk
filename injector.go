@@ -105,6 +105,14 @@ func uinputError(code int) error {
 	return fmt.Errorf("uinput device setup failed (code %d)", code)
 }
 
+// keyHoldDuration is the press-to-release delay. Some native Linux games
+// (notably SDL apps) drop sub-millisecond key events for action keys like
+// Enter, Backspace, and Esc. Letter keys often slip through via the
+// IME/TextInput path, but action keys go through KeyDown/KeyUp only and
+// need a real hold to register. xdotool defaults to 12ms for the same
+// reason.
+const keyHoldDuration = 12 * time.Millisecond
+
 func (inj *Injector) PressKey(code int, modifiers []int) {
 	Debugf("Inject key=%d mods=%v", code, modifiers)
 	for _, m := range modifiers {
@@ -113,6 +121,7 @@ func (inj *Injector) PressKey(code int, modifiers []int) {
 	inj.syn()
 	inj.writeEvent(evKey, uint16(code), 1)
 	inj.syn()
+	time.Sleep(keyHoldDuration)
 	inj.writeEvent(evKey, uint16(code), 0)
 	inj.syn()
 	for _, m := range modifiers {

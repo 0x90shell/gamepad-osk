@@ -321,16 +321,15 @@ Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK runni
 
 ### Evsieve Integration
 
-Use evsieve to show the keyboard with a button combo, then use B to hide it:
+If you already use [evsieve](https://github.com/KarsMulder/evsieve) for gamepad hotkeys, add a single hook to toggle the OSK alongside your existing combos:
 
 ```bash
 evsieve \
-  --input /dev/input/gamepad0 grab \
-  --hook key:btn_mode key:btn_start exec-shell="gamepad-osk --toggle" \
-  --output
+  --input /dev/input/gamepad0 \
+  --hook btn:select btn:start period=200 exec-shell="gamepad-osk --toggle"
 ```
 
-When the keyboard is hidden, `grab` is inactive and evsieve sees all events normally. Once shown, gamepad-osk grabs the device exclusively - controller input no longer reaches the game while you type. Use B to hide; gamepad-osk handles it internally while holding the grab.
+Run `gamepad-osk --daemon` in the background so `--toggle` has something to signal. When the OSK is hidden, both evsieve and the daemon read the device nonexclusively — games still see input. When shown, gamepad-osk takes an exclusive grab so typing doesn't leak into the game; press **B** to hide and release the grab.
 
 For zero-dependency show/hide without evsieve, use the built-in `toggle_combo` instead.
 
