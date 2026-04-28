@@ -698,6 +698,41 @@ func (gp *GamepadReader) NeedsPolling() bool {
 	return false
 }
 
+// AnyButtonHeld reports whether any digital button, d-pad direction, or
+// analog trigger (over the 30% action threshold) is currently held. Used by
+// the deferred-grab logic in app.go: gamepad-osk waits for trigger combos to
+// release before calling EVIOCGRAB, so other readers of the same evdev node
+// (evsieve hooks, gamepad mappers) observe the release events and don't end
+// up with stuck per-button state. Mirrors evsieve's own grab=auto idiom.
+func (gp *GamepadReader) AnyButtonHeld() bool {
+	if gp.fd == nil {
+		return false
+	}
+	for _, held := range gp.btnHeld {
+		if held {
+			return true
+		}
+	}
+	if gp.axisState[ABS_HAT0X] != 0 || gp.axisState[ABS_HAT0Y] != 0 {
+		return true
+	}
+	for _, axis := range []uint16{ABS_Z, ABS_RZ} {
+		r, ok := gp.axisRanges[axis]
+		if !ok {
+			continue
+		}
+		span := float64(r.max - r.min)
+		if span <= 0 {
+			continue
+		}
+		norm := float64(gp.axisState[axis]-r.min) / span
+		if norm > 0.3 {
+			return true
+		}
+	}
+	return false
+}
+
 // Reconnect attempts to re-open the gamepad after a disconnect.
 // Tries the configured device path first, then auto-detect.
 func (gp *GamepadReader) Reconnect() bool {

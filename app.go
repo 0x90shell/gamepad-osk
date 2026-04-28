@@ -44,6 +44,14 @@ type App struct {
 	repeatInitial  bool       // true = still in initial delay phase
 
 	reconnectLast time.Time // cooldown for gamepad reconnection attempts
+
+	// Deferred grab: when the OSK becomes visible we wait for any held
+	// trigger buttons to release before calling EVIOCGRAB, so other readers
+	// of the device (evsieve hooks, gamepad mappers) see the release events
+	// and don't end up with stuck per-button state. Bounded by a 500 ms
+	// fallback so a user who never releases the combo still gets a grab.
+	grabPending      bool
+	grabPendingUntil time.Time
 }
 
 func NewApp(config Config) *App {
@@ -224,7 +232,8 @@ func (app *App) Run() error {
 	}
 	defer gamepad.Close()
 	if cfg.Gamepad.Grab && app.visible {
-		gamepad.Grab()
+		app.grabPending = true
+		app.grabPendingUntil = time.Now().Add(500 * time.Millisecond)
 	}
 
 	// Rebuild glyphs after gamepad open (swap_xy may have been auto-detected)
@@ -306,7 +315,8 @@ func (app *App) Run() error {
 			app.visible = !app.visible
 			if app.visible {
 				if cfg.Gamepad.Grab {
-					gamepad.Grab()
+					app.grabPending = true
+					app.grabPendingUntil = time.Now().Add(500 * time.Millisecond)
 				}
 				if !hasLayerShell() {
 					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
@@ -344,6 +354,8 @@ func (app *App) Run() error {
 					inj.ClickMouse(0x110, false) // BTN_LEFT release
 					inj.ClickMouse(0x111, false) // BTN_RIGHT release
 				}
+				// Cancel any pending grab so it can't fire after hide.
+				app.grabPending = false
 				gamepad.Ungrab()
 				if isWayland {
 					destroyLayerSurface()
@@ -374,6 +386,18 @@ func (app *App) Run() error {
 		}
 		if prevFd >= 0 && gamepad.Fd() < 0 {
 			rend.Flash("Controller lost")
+		}
+
+		// Deferred grab: defer EVIOCGRAB until trigger combo is released so
+		// other readers (evsieve hooks, gamepad mappers) see the release events
+		// and don't end up with stuck per-button state. Mirrors evsieve's
+		// own grab=auto idiom. Falls back to grabbing after grabPendingUntil
+		// so a user holding the combo indefinitely still gets a grab.
+		if app.grabPending {
+			if !gamepad.AnyButtonHeld() || time.Now().After(app.grabPendingUntil) {
+				app.grabPending = false
+				gamepad.Grab()
+			}
 		}
 
 		// Gamepad reconnection (2s cooldown between attempts)

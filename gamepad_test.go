@@ -532,6 +532,84 @@ func TestNeedsPollingNavActive(t *testing.T) {
 	}
 }
 
+func TestAnyButtonHeldNoFd(t *testing.T) {
+	gp := newTestGamepad()
+	gp.fd = nil
+	gp.btnHeld[BTN_SOUTH] = true // should be ignored when fd is nil
+	if gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be false when fd is nil")
+	}
+}
+
+func TestAnyButtonHeldEmpty(t *testing.T) {
+	gp := newTestGamepad()
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+	if gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be false with no buttons held")
+	}
+}
+
+func TestAnyButtonHeldButton(t *testing.T) {
+	gp := newTestGamepad()
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+	gp.btnHeld[BTN_SOUTH] = true
+	if !gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be true when a button is held")
+	}
+	gp.btnHeld[BTN_SOUTH] = false
+	if gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be false after release")
+	}
+}
+
+func TestAnyButtonHeldHat(t *testing.T) {
+	gp := newTestGamepad()
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+	gp.axisState[ABS_HAT0X] = 1
+	if !gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be true when hat0x is non-zero")
+	}
+	gp.axisState[ABS_HAT0X] = 0
+	gp.axisState[ABS_HAT0Y] = -1
+	if !gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be true when hat0y is non-zero (negative)")
+	}
+	gp.axisState[ABS_HAT0Y] = 0
+	if gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be false with both hats zero")
+	}
+}
+
+func TestAnyButtonHeldTrigger(t *testing.T) {
+	gp := newTestGamepad()
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+	// Use the default 0..255 range for ABS_Z. 30% of 255 = ~76.
+	gp.axisState[ABS_Z] = 100
+	if !gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be true when LT is past 30%")
+	}
+	gp.axisState[ABS_Z] = 50 // ~20%
+	if gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be false when LT is below 30%")
+	}
+	gp.axisState[ABS_RZ] = 200 // RT past threshold
+	if !gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should be true when RT is past 30%")
+	}
+}
+
 func TestDisconnectResetsState(t *testing.T) {
 	gp := newTestGamepad()
 	// Set up state that should be cleared on disconnect

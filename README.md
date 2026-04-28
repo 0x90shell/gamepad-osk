@@ -303,7 +303,7 @@ See `config.example` for all options including button remapping, toggle combo, m
 
 ## Show & Hide
 
-### Toggle Combo
+### Toggle Combo (recommended)
 
 Set `toggle_combo` in config to show/hide the keyboard with a button combo, no external tools needed:
 
@@ -315,7 +315,7 @@ combo_period_ms = 200        # timing window (ms)
 
 Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, `guide`, `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right`. Requires 2-4 buttons.
 
-Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK running as a service (B hides instead of exiting).
+Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK running as a service (B hides instead of exiting). The internal combo handler runs in the same process that performs the grab, so there is no event-state race with other readers — prefer this over evsieve hooks when it suffices.
 
 `--toggle` / evsieve works independently of this setting. Leave `toggle_combo` empty to rely on those methods alone (default).
 
@@ -331,11 +331,17 @@ evsieve \
 
 Run `gamepad-osk --daemon` in the background so `--toggle` has something to signal. When the OSK is hidden, both evsieve and the daemon read the device nonexclusively — games still see input. When shown, gamepad-osk takes an exclusive grab so typing doesn't leak into the game; press **B** to hide and release the grab.
 
-For zero-dependency show/hide without evsieve, use the built-in `toggle_combo` instead.
+gamepad-osk defers its grab until any trigger buttons are released (or 500 ms, whichever comes first), so evsieve hook trackers see the release events for the launching combo and don't end up with stuck per-button state. Earlier versions could leave evsieve hotkeys (e.g., select-prefixed combos) misfiring after each OSK toggle; this is no longer the case. The built-in `toggle_combo` is still preferred when you don't already need evsieve, since it has zero dependencies.
+
+### Coexistence with other gamepad readers
+
+When the OSK becomes visible, gamepad-osk waits until no buttons are physically held before calling `EVIOCGRAB`. This means: any other process reading the same evdev node (evsieve, antimicroX, Steam Input, custom scripts) will observe the release events for the buttons that triggered the OSK before gamepad-osk takes over the device. The deferral is bounded at 500 ms — if the user holds the trigger combo longer than that, gamepad-osk grabs anyway. This mirrors evsieve's own `grab=auto` startup discipline.
 
 ### Device Grab
 
 When `grab = true` (default), the gamepad is exclusively grabbed while the keyboard is visible. This prevents controller input from bleeding into the game while you're typing. The grab is released when the keyboard hides.
+
+Note: `EVIOCGRAB` is per-evdev-node. If a consumer of gamepad input (e.g., an emulator, ES-DE, Moonlight) reads from `/dev/input/jsX` (legacy joydev) or from a sibling `event*` node belonging to the same physical controller, it will not be affected by the grab on the primary node. If you observe input bleeding through despite `grab = true`, check what fds the consumer has open (`ls -la /proc/<pid>/fd/ | grep input`) and either disable joydev fallback in that consumer (e.g., `SDL_JOYSTICK_LINUX_CLASSIC=0`) or tighten the device path to a single specific event node.
 
 ## X11
 
