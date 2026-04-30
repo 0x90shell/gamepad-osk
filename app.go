@@ -81,6 +81,14 @@ func (app *App) Run() error {
 		}
 	}
 
+	// Allow the screensaver and sleep timers to fire. SDL_Init's video
+	// subsystem disables the screensaver by default; on X11 that schedules
+	// XResetScreenSaver every ~30s, which resets the idle counter and blocks
+	// screen blank, DPMS, and suspend. The OSK has no use for an always-on
+	// display, so opt out before init. On Wayland this avoids requesting
+	// idle-inhibit.
+	SDL3SetHint("SDL_VIDEO_ALLOW_SCREENSAVER", "1")
+
 	if err := SDL3Init(SDL_INIT_VIDEO); err != nil {
 		return err
 	}

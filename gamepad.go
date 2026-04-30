@@ -135,6 +135,11 @@ type GamepadReader struct {
 	axisState       map[uint16]int32  // current axis values (for d-pad and triggers)
 	comboFirstPress time.Time         // when the first combo button was pressed
 	comboFired      bool              // edge-trigger flag (prevents repeat while held)
+
+	// Last Open() error string. Suppresses repeat log lines while the
+	// reconnect loop retries every 2s with the same error (e.g. no gamepad
+	// plugged in). Cleared on successful open.
+	lastOpenErr string
 }
 
 func NewGamepadReader(config Config) *GamepadReader {
@@ -211,14 +216,21 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 
 	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
-		if os.IsPermission(err) {
-			log.Print(colorRed("Error: cannot read " + path + " - permission denied"))
-			logPermissionFix()
+		errStr := err.Error()
+		if errStr != gp.lastOpenErr {
+			gp.lastOpenErr = errStr
+			if os.IsPermission(err) {
+				log.Print(colorRed("Error: cannot read " + path + " - permission denied"))
+				logPermissionFix()
+			} else {
+				log.Printf("Error opening %s: %v", path, err)
+			}
 		} else {
-			log.Printf("Error opening %s: %v", path, err)
+			Debugf("Error opening %s: %v (repeat suppressed)", path, err)
 		}
 		return false
 	}
+	gp.lastOpenErr = ""
 	gp.fd = fd
 	gp.readAxisInfo()
 	// Auto-detect swap_xy for Xbox controllers (xpad/xpadneo/xone drivers swap BTN_NORTH/BTN_WEST)
