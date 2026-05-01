@@ -233,22 +233,32 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	gp.lastOpenErr = ""
 	gp.fd = fd
 	gp.readAxisInfo()
-	// Auto-detect swap_xy for Xbox controllers (xpad/xpadneo/xone drivers swap BTN_NORTH/BTN_WEST)
+	// Auto-detect swap_xy for Xbox controllers (xpad/xpadneo/xone drivers
+	// emit BTN_X (=0x133, kernel alias for BTN_NORTH) for the physical X
+	// button at the WEST position). SDL2's gamecontrollerdb compensates for
+	// this in userspace; raw evdev readers like us have to do our own swap.
+	//
+	// Resolve symlinks so udev-aliased paths like /dev/input/gamepad0 work:
+	// /sys/class/input/ and /proc/bus/input/devices both index by eventNN.
+	resolvedPath := path
+	if rp, err := filepath.EvalSymlinks(path); err == nil {
+		resolvedPath = rp
+	}
 	if gp.config.Gamepad.SwapXY == "auto" || gp.config.Gamepad.SwapXY == "" {
-		name := gp.getDeviceName(path)
+		name := gp.getDeviceName(resolvedPath)
 		gp.deviceName = name
-		if gp.isXpadDriver(path) {
+		if gp.isXpadDriver(resolvedPath) {
 			log.Printf("Auto-detected xpad driver, enabling swap_xy")
 			gp.config.Gamepad.SwapXY = "true"
 		} else if strings.Contains(strings.ToLower(name), "x-box") ||
 			strings.Contains(strings.ToLower(name), "xbox") {
-			// Fallback for Steam virtual gamepads (uinput, no sysfs driver link)
+			// Fallback for uinput-created virtual gamepads (Steam, Sunshine)
+			// that have no sysfs driver link
 			log.Printf("Auto-detected Xbox pad by name, enabling swap_xy")
 			gp.config.Gamepad.SwapXY = "true"
 		}
 	}
 
-	// Build button map (after swap_xy is resolved)
 	gp.initButtonMap()
 
 	log.Printf("Opened gamepad: %s", path)
@@ -256,11 +266,10 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 }
 
 // isXpadDriver checks if the evdev device uses xpad, xpadneo, or xone kernel driver.
-// These drivers report BTN_X=BTN_NORTH and BTN_Y=BTN_WEST (swapped vs physical position).
+// These drivers emit BTN_X (=BTN_NORTH numerically) for the physical X button at
+// the WEST position (legacy evdev convention).
 func (gp *GamepadReader) isXpadDriver(devPath string) bool {
-	// /dev/input/event18 -> event18
 	base := filepath.Base(devPath)
-	// Check /sys/class/input/event18/device/device/driver symlink
 	link, err := os.Readlink(filepath.Join("/sys/class/input", base, "device", "device", "driver"))
 	if err != nil {
 		return false
