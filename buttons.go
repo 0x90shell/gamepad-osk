@@ -122,6 +122,12 @@ func BuildActionMap(cfg GamepadConfig) ActionMap {
 		}
 	}
 
+	// Shift is hold-based: digital trigger/button release must end it
+	// (analog triggers are handled via the shift axis threshold instead).
+	if info, ok := table[b.Shift]; ok && info.EvdevBtn != 0 {
+		release[info.EvdevBtn] = ActionShiftOff
+	}
+
 	// Mouse clicks: need both press and release for hold/drag
 	if info, ok := table[b.LeftClick]; ok && !info.IsAxis {
 		press[info.EvdevBtn] = ActionLeftClick

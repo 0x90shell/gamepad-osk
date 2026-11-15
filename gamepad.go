@@ -128,6 +128,11 @@ type GamepadReader struct {
 	mouseAxisY uint16
 	deviceName string // currently unused; stored for future logging/diagnostics
 
+	// DInput/HID-generic layout (e.g. 8BitDo over Bluetooth): right stick on
+	// ABS_Z/ABS_RZ, no ABS_RX/ABS_RY, triggers digital (BTN_TL2/BTN_TR2).
+	hasAxis      map[uint16]bool
+	dinputLayout bool
+
 	// Toggle combo state
 	comboButtons    []ComboButton     // parsed from config at startup (nil = disabled)
 	comboPeriodMs   int               // timing window
@@ -156,17 +161,10 @@ func NewGamepadReader(config Config) *GamepadReader {
 		},
 		btnHeld:   make(map[uint16]bool),
 		axisState: make(map[uint16]int32),
+		hasAxis:   make(map[uint16]bool),
 	}
 
-	// Configure stick assignments (mouse_stick sets mouse, other stick = nav)
-	mouse := config.Gamepad.MouseStick
-	if mouse == "left" {
-		gp.mouseAxisX, gp.mouseAxisY = ABS_X, ABS_Y
-		gp.navAxisX, gp.navAxisY = ABS_RX, ABS_RY
-	} else {
-		gp.mouseAxisX, gp.mouseAxisY = ABS_RX, ABS_RY
-		gp.navAxisX, gp.navAxisY = ABS_X, ABS_Y
-	}
+	gp.setStickAxes()
 
 	// Parse toggle combo
 	if config.Gamepad.ToggleCombo != "" {
@@ -186,6 +184,33 @@ func NewGamepadReader(config Config) *GamepadReader {
 	return gp
 }
 
+// setStickAxes configures stick assignments (mouse_stick sets mouse, other
+// stick = nav). On DInput-layout pads the right stick lives on ABS_Z/ABS_RZ.
+func (gp *GamepadReader) setStickAxes() {
+	rx, ry := uint16(ABS_RX), uint16(ABS_RY)
+	if gp.dinputLayout {
+		rx, ry = ABS_Z, ABS_RZ
+	}
+	if gp.config.Gamepad.MouseStick == "left" {
+		gp.mouseAxisX, gp.mouseAxisY = ABS_X, ABS_Y
+		gp.navAxisX, gp.navAxisY = rx, ry
+	} else {
+		gp.mouseAxisX, gp.mouseAxisY = rx, ry
+		gp.navAxisX, gp.navAxisY = ABS_X, ABS_Y
+	}
+}
+
+// detectLayout checks for a DInput/HID-generic axis layout: ABS_Z/ABS_RZ
+// present but no ABS_RX/ABS_RY means Z/RZ are the right stick, not triggers.
+func (gp *GamepadReader) detectLayout() {
+	gp.dinputLayout = !gp.hasAxis[ABS_RX] && !gp.hasAxis[ABS_RY] &&
+		gp.hasAxis[ABS_Z] && gp.hasAxis[ABS_RZ]
+	if gp.dinputLayout {
+		log.Printf("Detected DInput axis layout: right stick on ABS_Z/ABS_RZ, digital triggers")
+	}
+	gp.setStickAxes()
+}
+
 // initButtonMap builds the action map and finds special button codes.
 // Called after device open so swap_xy auto-detect can take effect.
 func (gp *GamepadReader) initButtonMap() {
@@ -199,6 +224,15 @@ func (gp *GamepadReader) initButtonMap() {
 	gp.shiftAxis = ABS_Z
 	if info, ok := table[gp.config.Gamepad.Buttons.Shift]; ok && info.IsAxis {
 		gp.shiftAxis = info.EvdevAxis
+	}
+	if gp.dinputLayout {
+		// Z/RZ are the right stick here: drop trigger-axis actions, the
+		// digital BTN_TL2/BTN_TR2 mappings (dual-mapped) remain active.
+		for _, ax := range []uint16{ABS_Z, ABS_RZ} {
+			delete(gp.actionMap.AxisActions, ax)
+			delete(gp.actionMap.AxisRelease, ax)
+		}
+		gp.shiftAxis = 0xffff
 	}
 }
 
@@ -233,6 +267,7 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	gp.lastOpenErr = ""
 	gp.fd = fd
 	gp.readAxisInfo()
+	gp.detectLayout()
 	// Auto-detect swap_xy for Xbox controllers (xpad/xpadneo/xone drivers
 	// emit BTN_X (=0x133, kernel alias for BTN_NORTH) for the physical X
 	// button at the WEST position). SDL2's gamecontrollerdb compensates for
@@ -344,6 +379,7 @@ func (gp *GamepadReader) readAxisInfo() {
 		return
 	}
 	axes := []uint16{ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ}
+	gp.hasAxis = make(map[uint16]bool)
 	for _, axis := range axes {
 		// input_absinfo: value, minimum, maximum, fuzz, flat, resolution (6 x int32)
 		var info [6]int32
@@ -355,7 +391,9 @@ func (gp *GamepadReader) readAxisInfo() {
 			continue
 		}
 		axMin, axMax := info[1], info[2]
+		// EVIOCGABS succeeds with a zeroed range for axes the device lacks
 		if axMax > axMin {
+			gp.hasAxis[axis] = true
 			gp.axisRanges[axis] = axisRange{axMin, axMax}
 			Debugf("Axis 0x%x range: %d to %d", axis, axMin, axMax)
 		}
@@ -681,6 +719,9 @@ func (gp *GamepadReader) isComboButtonHeld(cb ComboButton) bool {
 		}
 	}
 	// Check axis (d-pad or analog trigger)
+	if gp.dinputLayout && (cb.AxisCode == ABS_Z || cb.AxisCode == ABS_RZ) {
+		return false // Z/RZ are the right stick on DInput pads
+	}
 	if cb.AxisCode != 0 {
 		axisVal := gp.axisState[cb.AxisCode]
 		if cb.AxisVal < 0 && axisVal < 0 {
