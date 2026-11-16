@@ -46,6 +46,7 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	if fontPath == "" {
 		return nil, errors.New("no suitable font found")
 	}
+	Debugf("Label font: %s", fontPath)
 
 	font, err := TTF3OpenFont(fontPath, float32(fontSize))
 	if err != nil {
@@ -58,7 +59,10 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 
 	var fontGlyph *Font
 	if p := findPromptFont(); p != "" {
+		Debugf("Promptfont: %s", p)
 		fontGlyph, _ = TTF3OpenFont(p, float32(glyphSize))
+	} else {
+		Debugf("Promptfont not found, using text labels")
 	}
 	if fontGlyph == nil {
 		fontGlyph, _ = TTF3OpenFont(fontPath, float32(max32(10, fontSize-6)))
