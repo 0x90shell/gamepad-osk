@@ -692,3 +692,195 @@ func TestMouseStickLeft(t *testing.T) {
 		t.Errorf("R3 with mouse_stick=left = %v, want ActionCapsToggle", a.Type)
 	}
 }
+
+// simulateOpen mimics Open() after readAxisInfo: set the axes the device
+// reports, then run layout detection and build the action map.
+func simulateOpen(gp *GamepadReader, axes ...uint16) {
+	gp.hasAxis = make(map[uint16]bool)
+	for _, ax := range axes {
+		gp.hasAxis[ax] = true
+	}
+	gp.detectLayout()
+	gp.initButtonMap()
+}
+
+func newDInputGamepad(cfg Config) *GamepadReader {
+	gp := NewGamepadReader(cfg)
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_Z, ABS_RZ)
+	return gp
+}
+
+func TestDetectLayout(t *testing.T) {
+	tests := []struct {
+		name string
+		axes []uint16
+		want bool
+	}{
+		{"xinput", []uint16{ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ}, false},
+		{"dinput", []uint16{ABS_X, ABS_Y, ABS_Z, ABS_RZ}, true},
+		{"rx/ry without triggers", []uint16{ABS_X, ABS_Y, ABS_RX, ABS_RY}, false},
+		{"only one of rx/ry", []uint16{ABS_X, ABS_Y, ABS_RX, ABS_Z, ABS_RZ}, false},
+		{"only z", []uint16{ABS_X, ABS_Y, ABS_Z}, false},
+		{"no axes", nil, false},
+	}
+	for _, tt := range tests {
+		gp := NewGamepadReader(DefaultConfig())
+		simulateOpen(gp, tt.axes...)
+		if gp.dinputLayout != tt.want {
+			t.Errorf("%s: dinputLayout = %v, want %v", tt.name, gp.dinputLayout, tt.want)
+		}
+	}
+}
+
+func TestDInput_StickAxes(t *testing.T) {
+	gp := newDInputGamepad(DefaultConfig())
+	if gp.mouseAxisX != ABS_Z || gp.mouseAxisY != ABS_RZ {
+		t.Errorf("mouse axes = (%d,%d), want ABS_Z/ABS_RZ", gp.mouseAxisX, gp.mouseAxisY)
+	}
+	if gp.navAxisX != ABS_X || gp.navAxisY != ABS_Y {
+		t.Errorf("nav axes = (%d,%d), want ABS_X/ABS_Y", gp.navAxisX, gp.navAxisY)
+	}
+
+	cfg := DefaultConfig()
+	cfg.Gamepad.MouseStick = "left"
+	gp = newDInputGamepad(cfg)
+	if gp.navAxisX != ABS_Z || gp.navAxisY != ABS_RZ {
+		t.Errorf("mouse_stick=left: nav axes = (%d,%d), want ABS_Z/ABS_RZ", gp.navAxisX, gp.navAxisY)
+	}
+}
+
+func TestDInput_RightStickIsNotTriggers(t *testing.T) {
+	gp := newDInputGamepad(DefaultConfig())
+
+	// Full deflection on Z/RZ moves the mouse, never fires shift or enter
+	if a := gp.handleAxis(ABS_Z, 255); a.Type == ActionShiftOn {
+		t.Error("ABS_Z on DInput pad fired ActionShiftOn")
+	}
+	if a := gp.handleAxis(ABS_RZ, 255); a.Type == ActionEnter {
+		t.Error("ABS_RZ on DInput pad fired ActionEnter")
+	}
+	if gp.mouseX == 0 || gp.mouseY == 0 {
+		t.Errorf("mouse = (%v,%v), want nonzero after right stick input", gp.mouseX, gp.mouseY)
+	}
+}
+
+func TestDInput_DigitalTriggers(t *testing.T) {
+	gp := newDInputGamepad(DefaultConfig())
+
+	steps := []struct {
+		code  uint16
+		value int32
+		want  ActionType
+	}{
+		{BTN_TL2, 1, ActionShiftOn},
+		{BTN_TL2, 0, ActionShiftOff},
+		{BTN_TR2, 1, ActionEnter},
+		{BTN_TR2, 0, ActionEnterRelease},
+	}
+	for _, s := range steps {
+		if a := gp.handleButton(s.code, s.value); a.Type != s.want {
+			t.Errorf("button 0x%x value %d = %v, want %v", s.code, s.value, a.Type, s.want)
+		}
+	}
+}
+
+func TestDInput_RelayoutOnReconnect(t *testing.T) {
+	gp := newDInputGamepad(DefaultConfig())
+
+	// A different controller (XInput layout) is opened on reconnect
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ)
+	if gp.dinputLayout {
+		t.Fatal("dinputLayout should reset when an XInput pad is opened")
+	}
+	if gp.mouseAxisX != ABS_RX || gp.mouseAxisY != ABS_RY {
+		t.Errorf("mouse axes = (%d,%d), want ABS_RX/ABS_RY", gp.mouseAxisX, gp.mouseAxisY)
+	}
+	if a := gp.handleAxis(ABS_Z, 200); a.Type != ActionShiftOn {
+		t.Errorf("LT axis after relayout = %v, want ActionShiftOn", a.Type)
+	}
+}
+
+func TestDInput_AnyButtonHeldIgnoresRightStick(t *testing.T) {
+	gp := newDInputGamepad(DefaultConfig())
+	f, _ := os.CreateTemp("", "gamepad-test")
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	gp.fd = f
+
+	// Right stick at rest sits mid-range, which reads as a held trigger
+	// on an XInput pad. It must not block the deferred grab.
+	gp.axisState[ABS_Z] = 128
+	gp.axisState[ABS_RZ] = 128
+	if gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should ignore Z/RZ on a DInput pad")
+	}
+	gp.btnHeld[BTN_TL2] = true
+	if !gp.AnyButtonHeld() {
+		t.Error("AnyButtonHeld should report a held digital trigger")
+	}
+}
+
+func TestDInput_ComboIgnoresRightStick(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "lt+a"
+	cfg.Gamepad.ComboPeriodMs = 200
+	gp := newDInputGamepad(cfg)
+
+	gp.handleAxis(ABS_Z, 255)
+	if a := gp.handleButton(BTN_SOUTH, 1); a.Type == ActionToggle {
+		t.Error("right stick on ABS_Z should not count as lt for the combo")
+	}
+	gp.handleButton(BTN_SOUTH, 0)
+
+	gp.handleButton(BTN_TL2, 1)
+	if a := gp.handleButton(BTN_SOUTH, 1); a.Type != ActionToggle {
+		t.Errorf("digital lt+a = %v, want ActionToggle", a.Type)
+	}
+}
+
+func TestShiftButtonRelease(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.Buttons.Shift = "lb"
+	cfg.Gamepad.Buttons.RightClick = "rb"
+	cfg.Gamepad.Buttons.LeftClick = "r3"
+	gp := NewGamepadReader(cfg)
+	gp.initButtonMap()
+
+	if a := gp.handleButton(BTN_TL, 1); a.Type != ActionShiftOn {
+		t.Errorf("lb press = %v, want ActionShiftOn", a.Type)
+	}
+	if a := gp.handleButton(BTN_TL, 0); a.Type != ActionShiftOff {
+		t.Errorf("lb release = %v, want ActionShiftOff", a.Type)
+	}
+}
+
+func TestShiftDigitalTriggerRelease(t *testing.T) {
+	// Switch Pro: lt arrives as BTN_TL2 only, no ABS_Z
+	gp := newTestGamepad()
+	if a := gp.handleButton(BTN_TL2, 1); a.Type != ActionShiftOn {
+		t.Errorf("BTN_TL2 press = %v, want ActionShiftOn", a.Type)
+	}
+	if a := gp.handleButton(BTN_TL2, 0); a.Type != ActionShiftOff {
+		t.Errorf("BTN_TL2 release = %v, want ActionShiftOff", a.Type)
+	}
+}
+
+func TestShiftOnButtonLeavesLTAxisAlone(t *testing.T) {
+	// shift on a button and backspace on lt: the LT axis must act as
+	// backspace, not be swallowed by the shift hold logic.
+	cfg := DefaultConfig()
+	cfg.Gamepad.Buttons.Shift = "x"
+	cfg.Gamepad.Buttons.Backspace = "lt"
+	gp := NewGamepadReader(cfg)
+	gp.initButtonMap()
+
+	if gp.shiftAxis != absNone {
+		t.Errorf("shiftAxis = 0x%x, want absNone for a button-mapped shift", gp.shiftAxis)
+	}
+	if a := gp.handleAxis(ABS_Z, 200); a.Type != ActionBackspace {
+		t.Errorf("LT axis = %v, want ActionBackspace", a.Type)
+	}
+	if a := gp.handleAxis(ABS_Z, 0); a.Type != ActionBackspaceRelease {
+		t.Errorf("LT axis release = %v, want ActionBackspaceRelease", a.Type)
+	}
+}

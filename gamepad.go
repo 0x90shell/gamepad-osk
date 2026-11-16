@@ -43,6 +43,8 @@ const (
 	ABS_HAT0X = 0x10
 	ABS_HAT0Y = 0x11
 
+	absNone = 0xffff // no axis: never matches an evdev ABS code (max 0x3f)
+
 	EVIOCGRAB = 0x40044590
 
 	// EVIOCGABS(axis) = _IOR('E', 0x40 + axis, struct input_absinfo)
@@ -221,7 +223,9 @@ func (gp *GamepadReader) initButtonMap() {
 	if info, ok := table[gp.config.Gamepad.Buttons.Press]; ok && !info.IsAxis {
 		gp.pressBtn = info.EvdevBtn
 	}
-	gp.shiftAxis = ABS_Z
+	// Only an axis-mapped shift gets hold-on-axis handling. A button-mapped
+	// shift is released through BtnRelease (see BuildActionMap).
+	gp.shiftAxis = absNone
 	if info, ok := table[gp.config.Gamepad.Buttons.Shift]; ok && info.IsAxis {
 		gp.shiftAxis = info.EvdevAxis
 	}
@@ -232,7 +236,7 @@ func (gp *GamepadReader) initButtonMap() {
 			delete(gp.actionMap.AxisActions, ax)
 			delete(gp.actionMap.AxisRelease, ax)
 		}
-		gp.shiftAxis = 0xffff
+		gp.shiftAxis = absNone
 	}
 }
 
@@ -777,6 +781,11 @@ func (gp *GamepadReader) AnyButtonHeld() bool {
 	}
 	if gp.axisState[ABS_HAT0X] != 0 || gp.axisState[ABS_HAT0Y] != 0 {
 		return true
+	}
+	// On DInput pads Z/RZ are the right stick (resting mid-range) and the
+	// digital triggers are already covered by btnHeld above.
+	if gp.dinputLayout {
+		return false
 	}
 	for _, axis := range []uint16{ABS_Z, ABS_RZ} {
 		r, ok := gp.axisRanges[axis]
