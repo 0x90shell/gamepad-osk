@@ -229,6 +229,8 @@ fc-cache
 rm promptfont.zip
 ```
 
+gamepad-osk looks for `promptfont.ttf` (or `.otf`) under `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.local/share/fonts` and `~/.fonts`, including subfolders, then asks fontconfig. The key label font (DejaVu Sans, Liberation Sans or FreeSans) is found the same way, so distro-specific layouts such as Fedora's `/usr/share/fonts/<package>/` work without changes.
+
 ## Permissions
 
 gamepad-osk reads directly from `/dev/input` for gamepad input and `/dev/uinput` for key injection. Your user must be in the `input` group:
