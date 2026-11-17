@@ -294,3 +294,21 @@ func TestRasterSquareShape(t *testing.T) {
 		}
 	}
 }
+
+func TestRasterThickBorder(t *testing.T) {
+	// A square shape with BorderW 3 has a 3 px outline on every edge.
+	bg, border := c(15, 15, 15), c(255, 85, 255)
+	s := shapeSpec{W: 40, H: 30, Bg: bg, Border: border, BorderW: 3, Bordered: true}
+	px := rasterShape(s)
+	for y := range int32(30) {
+		for x := range int32(40) {
+			want := bg
+			if x < 3 || y < 3 || x >= 37 || y >= 27 {
+				want = border
+			}
+			if got := pixelAt(px, s.W, x, y); got != want {
+				t.Fatalf("pixel (%d,%d) = %v, want %v", x, y, got, want)
+			}
+		}
+	}
+}

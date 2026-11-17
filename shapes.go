@@ -113,7 +113,8 @@ type shapeSpec struct {
 	W, H      int32
 	Radius    float32
 	Bg        Color
-	Border    Color // drawn as the outer shape, Bg 1 px inside it
+	Border    Color // drawn as the outer shape, Bg BorderW px inside it
+	BorderW   int32 // border width; Bordered shapes use at least 1
 	Bordered  bool
 	Shadow    Color // drawn ShadowOff px below the shape
 	ShadowOff int32 // 0 = no shadow
@@ -138,9 +139,10 @@ func rasterShape(s shapeSpec) []byte {
 		layer(shapeMask(s.W, s.H, s.Radius), 0, s.ShadowOff, s.W, s.Shadow)
 	}
 	if s.Bordered {
+		bw := max(1, s.BorderW)
 		layer(shapeMask(s.W, s.H, s.Radius), 0, 0, s.W, s.Border)
-		if s.W > 2 && s.H > 2 {
-			layer(shapeMask(s.W-2, s.H-2, s.Radius-1), 1, 1, s.W-2, s.Bg)
+		if s.W > 2*bw && s.H > 2*bw {
+			layer(shapeMask(s.W-2*bw, s.H-2*bw, s.Radius-float32(bw)), bw, bw, s.W-2*bw, s.Bg)
 		}
 	} else {
 		layer(shapeMask(s.W, s.H, s.Radius), 0, 0, s.W, s.Bg)
@@ -191,7 +193,7 @@ func (r *Renderer) drawShape(x, y float32, s shapeSpec) {
 }
 
 // drawShapeFallback draws s square with SDL fills: shadow strip, fill, then
-// a 1 px outline. Rounded corners are lost.
+// a BorderW px outline. Rounded corners are lost.
 func (r *Renderer) drawShapeFallback(x, y float32, s shapeSpec) {
 	rect := FRect{X: x, Y: y, W: float32(s.W), H: float32(s.H)}
 	if s.ShadowOff > 0 {
@@ -202,7 +204,10 @@ func (r *Renderer) drawShapeFallback(x, y float32, s shapeSpec) {
 	SDL3RenderFillRect(r.renderer, rect)
 	if s.Bordered {
 		setColor(r.renderer, s.Border)
-		SDL3RenderRect(r.renderer, rect)
+		for i := range max(1, s.BorderW) {
+			f := float32(i)
+			SDL3RenderRect(r.renderer, FRect{X: x + f, Y: y + f, W: rect.W - 2*f, H: rect.H - 2*f})
+		}
 	}
 }
 
@@ -233,11 +238,11 @@ func (r *Renderer) fillShape(rect FRect, radius float32, col Color) {
 }
 
 // fillBorderedShape draws a key-like shape: optional shadow, then bg with a
-// 1 px border. The border is the outer shape and bg the same shape 1 px
-// inside it, so on square shapes it matches a 1 px outline.
-func (r *Renderer) fillBorderedShape(rect FRect, radius float32, bg, border Color, shadow bool) {
+// bw px border. The border is the outer shape and bg the same shape bw px
+// inside it, so on square shapes it matches a bw px outline.
+func (r *Renderer) fillBorderedShape(rect FRect, radius float32, bg, border Color, bw int32, shadow bool) {
 	s := r.shapeFor(rect, radius, bg, shadow)
-	s.Border, s.Bordered = border, true
+	s.Border, s.BorderW, s.Bordered = border, bw, true
 	r.drawShape(rect.X, rect.Y, s)
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 	"unsafe"
@@ -35,6 +36,63 @@ type Renderer struct {
 	keyShadow      bool                   // draw a drop shadow under keys and the accent popup
 	roundKeys      bool                   // key_style = rounded
 	shapeTex       map[shapeSpec]*Texture // rasterized key, pill and popup shapes
+	cursorText     Color                  // label on HighlightBg; see readableText
+	accentSelText  Color                  // selected accent on AccentHighlightBg
+	popupBorder    Color                  // accent popup border; see setTextColors
+}
+
+// minTextContrast is the WCAG contrast floor for large text. Key labels
+// count as large text.
+const minTextContrast = 3.0
+
+// relLuminance is the WCAG relative luminance of c, 0 (black) to 1 (white).
+func relLuminance(c Color) float64 {
+	ch := func(v uint8) float64 {
+		s := float64(v) / 255
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	return 0.2126*ch(c.R) + 0.7152*ch(c.G) + 0.0722*ch(c.B)
+}
+
+// contrastRatio is the WCAG contrast ratio of a and b, 1 to 21.
+func contrastRatio(a, b Color) float64 {
+	la, lb := relLuminance(a), relLuminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+// readableText returns want if it reaches minTextContrast on bg. Otherwise
+// it returns black or white, whichever contrasts more with bg.
+func readableText(want, bg Color) Color {
+	if contrastRatio(want, bg) >= minTextContrast {
+		return want
+	}
+	black, white := c(0, 0, 0), c(255, 255, 255)
+	if contrastRatio(black, bg) >= contrastRatio(white, bg) {
+		return black
+	}
+	return white
+}
+
+// setTextColors picks the highlight text colors for the current theme. The
+// cursor label and the selected accent follow the same rule, white unless it
+// is unreadable, so the two match. The popup border uses whichever highlight
+// color stands out more from the popup background (the gap color). It runs
+// once per theme change, so drawing reads stored colors.
+func (r *Renderer) setTextColors() {
+	t := r.theme
+	white := c(255, 255, 255)
+	r.cursorText = readableText(white, t.HighlightBg)
+	r.accentSelText = readableText(white, t.AccentHighlightBg)
+	r.popupBorder = t.HighlightBg
+	if contrastRatio(t.HighlightBorder, t.Bg) > contrastRatio(t.HighlightBg, t.Bg) {
+		r.popupBorder = t.HighlightBorder
+	}
 }
 
 // shadowColor returns the theme's key shadow color, or one derived from Bg
@@ -90,7 +148,7 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 		fontGlyph, _ = TTF3OpenFont(fontPath, float32(max32(10, fontSize-6)))
 	}
 
-	return &Renderer{
+	rend := &Renderer{
 		renderer:    r,
 		theme:       theme,
 		unit:        unitSize,
@@ -102,7 +160,9 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 		texCache:    make(map[texCacheKey]texCacheEntry),
 		shapeTex:    make(map[shapeSpec]*Texture),
 		dirtyFrames: 3, // force initial draw
-	}, nil
+	}
+	rend.setTextColors()
+	return rend, nil
 }
 
 func (r *Renderer) Draw(kb *KeyboardState) {
@@ -268,13 +328,13 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 
 	// Fill, border and shadow (no shadow under the highlighted or flashed key)
 	shadow := r.keyShadow && !isCursor && !flashed
-	r.fillBorderedShape(rect, keyRadius(h), bg, border, shadow)
+	r.fillBorderedShape(rect, keyRadius(h), bg, border, 1, shadow)
 
 	// Label
 	label := kb.DisplayLabel(key)
 	tc := t.KeyText
 	if isCursor || flashed {
-		tc = Color{R: 255, G: 255, B: 255, A: 255}
+		tc = r.cursorText
 	} else if key.IsModifier && isModActive(key, kb) {
 		tc = t.ModifierActiveText
 	}
@@ -304,6 +364,10 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 	}
 }
 
+// popupDim is the alpha of the Bg layer drawn over the keyboard while the
+// accent popup is open.
+const popupDim = 140
+
 func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	accents := kb.AccentPopup.Accents
 	sel := kb.AccentPopup.Selected
@@ -320,15 +384,33 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	pr := FRect{X: float32(xo), Y: float32(py), W: float32(tw), H: float32(r.unit + r.pad*2)}
 	keyR := keyRadius(r.unit)
 	popupR := keyR + float32(r.pad)
-	r.fillBorderedShape(pr, popupR, r.theme.AccentPopupBg, r.theme.HighlightBorder, r.keyShadow)
+
+	// Dim the keyboard so the popup reads as a menu over it, then draw the
+	// popup with a thick border in a highlight color
+	ow, oh := SDL3GetRenderOutputSize(r.renderer)
+	dim := r.theme.Bg
+	dim.A = popupDim
+	setColor(r.renderer, dim)
+	SDL3RenderFillRect(r.renderer, FRect{W: float32(ow), H: float32(oh)})
+	bw := max(1, min(max(2, r.unit/24), r.pad))
+	// Draw the cells like keys on the keyboard: key color with a key border,
+	// separated by the gap color. AccentPopupBg is the key color on almost
+	// every theme, so cells on it would not show.
+	r.fillBorderedShape(pr, popupR, r.theme.Bg, r.popupBorder, bw, r.keyShadow)
 
 	ax := xo + r.pad
 	for i, accent := range accents {
 		ar := FRect{X: float32(ax), Y: float32(py + r.pad), W: float32(r.unit), H: float32(r.unit)}
 		if i == sel {
 			r.fillShape(ar, keyR, r.theme.AccentHighlightBg)
+		} else {
+			r.fillBorderedShape(ar, keyR, r.theme.KeyBg, r.theme.KeyBorder, 1, false)
 		}
-		r.renderText(r.font, accent.Label, r.theme.AccentPopupText, ar, AlignCenter)
+		tc := r.theme.AccentPopupText
+		if i == sel {
+			tc = r.accentSelText
+		}
+		r.renderText(r.font, accent.Label, tc, ar, AlignCenter)
 		ax += r.unit + r.pad
 	}
 }
@@ -373,6 +455,7 @@ func (r *Renderer) renderText(font *Font, text string, color Color, rect FRect, 
 
 func (r *Renderer) SetTheme(t Theme) {
 	r.theme = t
+	r.setTextColors()
 	r.flushTexCache()
 	r.Flash(t.Name)
 }

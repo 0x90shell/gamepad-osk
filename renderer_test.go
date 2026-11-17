@@ -77,3 +77,71 @@ func TestGlowThemesSetShadow(t *testing.T) {
 		}
 	}
 }
+
+func TestContrastRatio(t *testing.T) {
+	black, white := c(0, 0, 0), c(255, 255, 255)
+	if got := contrastRatio(black, white); got < 20.99 || got > 21.01 {
+		t.Errorf("black on white = %.3f, want 21", got)
+	}
+	if got := contrastRatio(white, black); got < 20.99 || got > 21.01 {
+		t.Errorf("white on black = %.3f, want 21 (order must not matter)", got)
+	}
+	if got := contrastRatio(white, white); got != 1 {
+		t.Errorf("white on white = %.3f, want 1", got)
+	}
+}
+
+func TestReadableText(t *testing.T) {
+	black, white := c(0, 0, 0), c(255, 255, 255)
+	if got := readableText(white, c(38, 139, 210)); got != white {
+		t.Errorf("white on dark blue = %v, want white kept", got)
+	}
+	if got := readableText(white, c(255, 255, 0)); got != black {
+		t.Errorf("white on yellow = %v, want black", got)
+	}
+	if got := readableText(c(60, 60, 60), c(20, 20, 20)); got != white {
+		t.Errorf("dark grey on near-black = %v, want white", got)
+	}
+}
+
+func TestHighlightTextReadable(t *testing.T) {
+	// Every theme's cursor label and selected accent must reach 3:1, keep
+	// white where white passes, and match each other.
+	for name, theme := range Themes {
+		r := &Renderer{theme: theme}
+		r.setTextColors()
+		if got := contrastRatio(r.cursorText, theme.HighlightBg); got < minTextContrast {
+			t.Errorf("theme %q: cursor text %.2f:1", name, got)
+		}
+		if got := contrastRatio(r.accentSelText, theme.AccentHighlightBg); got < minTextContrast {
+			t.Errorf("theme %q: selected accent text %.2f:1", name, got)
+		}
+		white := c(255, 255, 255)
+		if contrastRatio(white, theme.HighlightBg) >= minTextContrast && r.cursorText != white {
+			t.Errorf("theme %q: cursor text changed from white though white passes", name)
+		}
+		if contrastRatio(white, theme.AccentHighlightBg) >= minTextContrast && r.accentSelText != white {
+			t.Errorf("theme %q: selected accent text changed from white though white passes", name)
+		}
+		// The selected accent sits right above the cursor key, so their
+		// text must match when their backgrounds do.
+		if theme.HighlightBg == theme.AccentHighlightBg && r.cursorText != r.accentSelText {
+			t.Errorf("theme %q: cursor text %v differs from selected accent text %v", name, r.cursorText, r.accentSelText)
+		}
+	}
+}
+
+func TestPopupBorderPicksStrongerHighlight(t *testing.T) {
+	// The popup border is whichever highlight color contrasts more with the
+	// popup background, which is the gap color.
+	for name, theme := range Themes {
+		r := &Renderer{theme: theme}
+		r.setTextColors()
+		got := contrastRatio(r.popupBorder, theme.Bg)
+		for _, alt := range []Color{theme.HighlightBg, theme.HighlightBorder} {
+			if contrastRatio(alt, theme.Bg) > got {
+				t.Errorf("theme %q: popup border %v, but %v contrasts more", name, r.popupBorder, alt)
+			}
+		}
+	}
+}
