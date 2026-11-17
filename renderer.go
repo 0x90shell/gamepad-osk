@@ -43,7 +43,8 @@ func shadowColor(t Theme) Color {
 	if t.KeyShadow != (Color{}) {
 		return t.KeyShadow
 	}
-	return Color{R: t.Bg.R * 7 / 10, G: t.Bg.G * 7 / 10, B: t.Bg.B * 7 / 10, A: 255}
+	dim := func(v uint8) uint8 { return uint8(int(v) * 7 / 10) } //nolint:gosec // G115: result <= v
+	return Color{R: dim(t.Bg.R), G: dim(t.Bg.G), B: dim(t.Bg.B), A: 255}
 }
 
 // shadowOffset returns how far below a key its shadow reaches, in pixels.

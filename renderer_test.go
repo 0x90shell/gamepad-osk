@@ -16,6 +16,10 @@ func TestShadowColorDerived(t *testing.T) {
 		}
 		bg := theme.Bg
 		got := shadowColor(theme)
+		want := Color{R: uint8(int(bg.R) * 7 / 10), G: uint8(int(bg.G) * 7 / 10), B: uint8(int(bg.B) * 7 / 10), A: 255} //nolint:gosec // G115: result <= channel
+		if got != want {
+			t.Errorf("theme %q: derived shadow %v, want 70%% of bg %v = %v", name, got, bg, want)
+		}
 		if got.A != 255 {
 			t.Errorf("theme %q: derived shadow alpha = %d, want 255", name, got.A)
 		}
