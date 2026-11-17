@@ -161,9 +161,11 @@ func blendOver(dst []byte, col Color, a float64) {
 	dst[3] = byte(oa*255 + 0.5)
 }
 
-// maxShapeTex bounds the shape cache. A layout and theme need far fewer;
-// the cache is cleared and rebuilt if it ever fills.
-const maxShapeTex = 512
+// maxShapeTex bounds the shape cache. A layout and theme need about 13. On
+// amdgpu, VRAM grows far faster than the pixel data past a few dozen
+// textures (about 100 MB at 500), so the cache is cleared and rebuilt
+// instead of growing past this.
+const maxShapeTex = 64
 
 // drawRoundShape draws a rounded shape at (x, y) from the shape cache,
 // rasterizing it on first use. One draw call per shape.
