@@ -32,7 +32,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
-- 62 color themes (cycle live with Cfg key, or set via config/flag)
+- 62 color themes (cycle live with the Theme key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + R3/RB click (hold to drag)
 - Live mouse sensitivity adjustment (Shift + arrow keys, saved to config)
@@ -67,7 +67,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Start | Toggle keyboard top/bottom |
 | Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
 | Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
-| Cfg key | Cycle themes (Shift+Cfg = reverse) |
+| Theme key | Cycle themes (Shift+Theme = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
 
 ## Usage
@@ -276,7 +276,7 @@ See `config.example` for all options including button remapping, toggle combo, m
 
 ## Themes
 
-62 built-in themes. Cycle live with the Cfg key on the keyboard.
+62 built-in themes. Cycle live with the Theme key on the keyboard (Shift+Theme = reverse).
 
 `ayu_dark` `candy` `catppuccin` `catppuccin_frappe` `cga` `chalk` `cobalt` `copper` `coral` `cyberpunk` `dark` `dracula` `ember` `everforest` `fjord` `forest` `gameboy` `gold` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `lavender` `light` `material` `matrix` `mellow` `midnight` `monokai` `moss` `navy` `neon` `night` `nightfox` `nord` `ocean` `olive` `onedark` `oxocarbon` `palenight` `paper` `plum` `retro` `rose_pine` `sakura` `sand` `slate` `solarized` `solarized_light` `steam_green` `sunset` `synthwave` `teal` `terminal` `tokyo_night` `tokyo_storm` `vapor` `virtualboy` `wine` `zx_spectrum`
 
