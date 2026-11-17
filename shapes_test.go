@@ -183,3 +183,92 @@ func TestCircleMask(t *testing.T) {
 		}
 	}
 }
+
+func TestShapeMaskMatchesPieces(t *testing.T) {
+	for _, tc := range []struct {
+		w, h   int32
+		radius float32
+	}{{80, 80, 12.8}, {140, 61, 9.76}, {20, 20, 10}, {50, 30, 0.5}} {
+		mask := shapeMask(tc.w, tc.h, tc.radius)
+		alpha := paintRoundRect(t, roundRectPieces(FRect{W: float32(tc.w), H: float32(tc.h)}, tc.radius))
+		for y := range tc.h {
+			for x := range tc.w {
+				want := uint8(math.Round(alpha[[2]int{int(x), int(y)}] * 255))
+				if got := mask[y*tc.w+x]; got != want {
+					t.Fatalf("%dx%d r=%v: mask(%d,%d) = %d, want %d", tc.w, tc.h, tc.radius, x, y, got, want)
+				}
+			}
+		}
+	}
+}
+
+func pixelAt(px []byte, w, x, y int32) Color {
+	i := (y*w + x) * 4
+	return Color{R: px[i], G: px[i+1], B: px[i+2], A: px[i+3]}
+}
+
+func TestRasterShape(t *testing.T) {
+	bg, border, shadow := c(255, 255, 255), c(10, 132, 255), c(136, 139, 145)
+	s := shapeSpec{W: 80, H: 80, Radius: 12.8, Bg: bg, Border: border, Bordered: true,
+		Shadow: shadow, ShadowOff: 2}
+	px := rasterShape(s)
+	if len(px) != 80*82*4 {
+		t.Fatalf("raster size %d, want %d", len(px), 80*82*4)
+	}
+	checks := []struct {
+		name string
+		x, y int32
+		want Color
+	}{
+		{"outer corner transparent", 0, 0, Color{}},
+		{"centre is bg", 40, 40, bg},
+		{"top edge is border", 40, 0, border},
+		{"left edge is border", 0, 40, border},
+		{"inside the border is bg", 40, 1, bg},
+		{"bottom edge is border", 40, 79, border},
+		{"strip below is shadow", 40, 81, shadow},
+		{"shadow corner transparent", 0, 81, Color{}},
+	}
+	for _, ck := range checks {
+		if got := pixelAt(px, s.W, ck.x, ck.y); got != ck.want {
+			t.Errorf("%s: pixel (%d,%d) = %v, want %v", ck.name, ck.x, ck.y, got, ck.want)
+		}
+	}
+
+	// Without border and shadow: plain fill, no extra rows
+	plain := rasterShape(shapeSpec{W: 30, H: 20, Radius: 10, Bg: bg})
+	if len(plain) != 30*20*4 {
+		t.Fatalf("plain raster size %d, want %d", len(plain), 30*20*4)
+	}
+	if got := pixelAt(plain, 30, 15, 10); got != bg {
+		t.Errorf("plain centre = %v, want %v", got, bg)
+	}
+}
+
+func TestBlendOver(t *testing.T) {
+	px := []byte{0, 0, 0, 0}
+	blendOver(px, c(200, 100, 50), 1)
+	if (Color{R: px[0], G: px[1], B: px[2], A: px[3]}) != c(200, 100, 50) {
+		t.Errorf("opaque over transparent = %v", px)
+	}
+	// Half coverage over an opaque pixel mixes the colors, stays opaque
+	px = []byte{0, 0, 0, 255}
+	blendOver(px, c(200, 100, 50), 0.5)
+	if px[0] != 100 || px[1] != 50 || px[2] != 25 || px[3] != 255 {
+		t.Errorf("half over opaque black = %v, want [100 50 25 255]", px)
+	}
+	// Half coverage over transparent keeps the color, halves alpha
+	px = []byte{0, 0, 0, 0}
+	blendOver(px, c(200, 100, 50), 0.5)
+	if px[0] != 200 || px[3] != 128 {
+		t.Errorf("half over transparent = %v, want color kept, alpha 128", px)
+	}
+}
+
+func BenchmarkRasterKeyShape(b *testing.B) {
+	s := shapeSpec{W: 80, H: 80, Radius: 12.8, Bg: c(255, 255, 255), Border: c(255, 255, 255),
+		Bordered: true, Shadow: c(136, 139, 145), ShadowOff: 2}
+	for b.Loop() {
+		rasterShape(s)
+	}
+}

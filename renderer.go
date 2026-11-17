@@ -31,10 +31,10 @@ type Renderer struct {
 	flashGlyphText string // rendered with Promptfont, placed before flashText
 	flashEnd       time.Time
 	texCache       map[texCacheKey]texCacheEntry
-	dirtyFrames    int                // redraw counter for double/triple buffering
-	keyShadow      bool               // draw a drop shadow under keys and the accent popup
-	roundKeys      bool               // key_style = rounded
-	cornerTex      map[int32]*Texture // circle textures for rounded corners, by radius
+	dirtyFrames    int                    // redraw counter for double/triple buffering
+	keyShadow      bool                   // draw a drop shadow under keys and the accent popup
+	roundKeys      bool                   // key_style = rounded
+	shapeTex       map[shapeSpec]*Texture // rasterized rounded shapes
 }
 
 // shadowColor returns the theme's key shadow color, or one derived from Bg
@@ -99,7 +99,7 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 		fontSmall:   fontSmall,
 		fontGlyph:   fontGlyph,
 		texCache:    make(map[texCacheKey]texCacheEntry),
-		cornerTex:   make(map[int32]*Texture),
+		shapeTex:    make(map[shapeSpec]*Texture),
 		dirtyFrames: 3, // force initial draw
 	}, nil
 }
@@ -262,14 +262,9 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 		bg, border = t.KeyBg, t.KeyBorder
 	}
 
-	// Shadow (not under the highlighted or flashed key)
-	radius := keyRadius(h)
-	if r.keyShadow && !isCursor && !flashed {
-		r.drawShadow(rect, radius)
-	}
-
-	// Fill and border
-	r.fillBorderedShape(rect, radius, bg, border)
+	// Fill, border and shadow (no shadow under the highlighted or flashed key)
+	shadow := r.keyShadow && !isCursor && !flashed
+	r.fillBorderedShape(rect, keyRadius(h), bg, border, shadow)
 
 	// Label
 	label := kb.DisplayLabel(key)
@@ -321,10 +316,7 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	pr := FRect{X: float32(xo), Y: float32(py), W: float32(tw), H: float32(r.unit + r.pad*2)}
 	keyR := keyRadius(r.unit)
 	popupR := keyR + float32(r.pad)
-	if r.keyShadow {
-		r.drawShadow(pr, popupR)
-	}
-	r.fillBorderedShape(pr, popupR, r.theme.AccentPopupBg, r.theme.HighlightBorder)
+	r.fillBorderedShape(pr, popupR, r.theme.AccentPopupBg, r.theme.HighlightBorder, r.keyShadow)
 
 	ax := xo + r.pad
 	for i, accent := range accents {
@@ -337,15 +329,17 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	}
 }
 
-// drawShadow fills the shape shifted down by the shadow offset. Drawn before
-// the shape itself, so only the strip below the shape stays visible.
-func (r *Renderer) drawShadow(rect FRect, radius float32) {
+// drawShadow fills rect shifted down by the shadow offset. Drawn before the
+// square shape itself, so only the strip below the shape stays visible.
+// Rounded shapes carry their shadow in the cached texture.
+func (r *Renderer) drawShadow(rect FRect) {
 	off := shadowOffset(r.unit, r.pad)
 	if off == 0 {
 		return
 	}
+	setColor(r.renderer, shadowColor(r.theme))
 	rect.Y += float32(off)
-	r.fillShape(rect, radius, shadowColor(r.theme))
+	SDL3RenderFillRect(r.renderer, rect)
 }
 
 type TextAlign int
@@ -399,6 +393,7 @@ func (r *Renderer) flushTexCache() {
 		}
 		delete(r.texCache, k)
 	}
+	r.flushShapeCache()
 }
 
 func (r *Renderer) Flash(text string) {
@@ -418,9 +413,6 @@ func (r *Renderer) FlashGlyph(glyph string, text string) {
 
 func (r *Renderer) Destroy() {
 	r.flushTexCache()
-	for _, tex := range r.cornerTex {
-		SDL3DestroyTexture(tex)
-	}
 	if r.font != nil {
 		TTF3CloseFont(r.font)
 	}

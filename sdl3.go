@@ -240,12 +240,6 @@ func SDL3CreateTextureRGBA(r *SDLRenderer, w, h int32, pixels []byte) *Texture {
 	return &Texture{ptr: unsafe.Pointer(tex)}
 }
 
-// SDL3SetTextureColorAlphaMod tints a texture: each texel is multiplied by c.
-func SDL3SetTextureColorAlphaMod(t *Texture, c Color) {
-	C.SDL_SetTextureColorMod((*C.SDL_Texture)(t.ptr), C.Uint8(c.R), C.Uint8(c.G), C.Uint8(c.B))
-	C.SDL_SetTextureAlphaMod((*C.SDL_Texture)(t.ptr), C.Uint8(c.A))
-}
-
 func SDL3DestroyTexture(t *Texture) {
 	if t != nil && t.ptr != nil {
 		C.SDL_DestroyTexture((*C.SDL_Texture)(t.ptr))
