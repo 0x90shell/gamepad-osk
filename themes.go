@@ -410,11 +410,11 @@ var Themes = map[string]Theme{
 		FnKeyBg: c(85, 54, 85), AccentPopupBg: c(96, 64, 96),
 		AccentPopupText: c(220, 195, 230), AccentHighlightBg: c(210, 110, 160), GlyphColor: c(140, 105, 140)},
 	"moss": {Name: "moss", Bg: c(90, 100, 60), KeyBg: c(108, 118, 78), KeyBgPressed: c(128, 138, 98),
-		KeyBorder: c(118, 128, 88), KeyText: c(30, 50, 20), HighlightBg: c(170, 195, 70),
+		KeyBorder: c(118, 128, 88), KeyText: c(9, 15, 6), HighlightBg: c(170, 195, 70),
 		HighlightBorder: c(150, 175, 50), ModifierBg: c(98, 108, 68),
-		ModifierActiveBg: c(155, 180, 55), ModifierActiveText: d, ModifierText: c(50, 70, 30),
+		ModifierActiveBg: c(155, 180, 55), ModifierActiveText: d, ModifierText: c(18, 25, 11),
 		FnKeyBg: c(94, 104, 64), AccentPopupBg: c(105, 115, 75),
-		AccentPopupText: c(30, 50, 20), AccentHighlightBg: c(170, 195, 70), GlyphColor: c(65, 78, 42)},
+		AccentPopupText: c(9, 15, 6), AccentHighlightBg: c(170, 195, 70), GlyphColor: c(20, 25, 13)},
 
 	// --- Phone-style themes (colors from TechnikWeber's fork) ---
 	"light": {Name: "light", Bg: c(209, 212, 219), KeyBg: c(255, 255, 255), KeyBgPressed: c(225, 228, 233),
