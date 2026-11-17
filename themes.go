@@ -19,6 +19,7 @@ type Theme struct {
 	AccentHighlightBg  Color
 	GlyphColor         Color
 	KeyShadow          Color // key drop shadow; zero means derive from Bg
+	Borderless         bool  // keys show no border: each key is outlined in its own fill
 }
 
 func c(r, g, b uint8) Color { return Color{R: r, G: g, B: b, A: 255} }
@@ -414,14 +415,14 @@ var Themes = map[string]Theme{
 		ModifierActiveBg: c(255, 255, 255), ModifierActiveText: c(16, 16, 18), ModifierText: c(104, 108, 116),
 		FnKeyBg: c(171, 177, 188), AccentPopupBg: c(255, 255, 255),
 		AccentPopupText: c(16, 16, 18), AccentHighlightBg: c(10, 132, 255), GlyphColor: c(120, 124, 132),
-		KeyShadow: c(136, 139, 145)},
+		KeyShadow: c(136, 139, 145), Borderless: true},
 	"night": {Name: "night", Bg: c(38, 38, 42), KeyBg: c(102, 102, 108), KeyBgPressed: c(125, 125, 132),
 		KeyBorder: c(102, 102, 108), KeyText: c(250, 250, 252), HighlightBg: c(10, 132, 255),
 		HighlightBorder: c(10, 132, 255), ModifierBg: c(66, 66, 72),
 		ModifierActiveBg: c(250, 250, 252), ModifierActiveText: c(16, 16, 18), ModifierText: c(170, 170, 178),
 		FnKeyBg: c(66, 66, 72), AccentPopupBg: c(102, 102, 108),
 		AccentPopupText: c(250, 250, 252), AccentHighlightBg: c(10, 132, 255), GlyphColor: c(160, 160, 168),
-		KeyShadow: c(20, 20, 22)},
+		KeyShadow: c(20, 20, 22), Borderless: true},
 }
 
 func GetTheme(name string) Theme {

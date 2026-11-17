@@ -967,3 +967,14 @@ func TestTriggerDualMap(t *testing.T) {
 		t.Errorf("BTN_TL2 button = %v, want ActionShiftOn (Switch Pro compat)", am.BtnPress[BTN_TL2])
 	}
 }
+
+func TestBorderlessThemes(t *testing.T) {
+	// Only the phone-style themes are designed without key borders; other
+	// themes rely on the border where keys are close to the background.
+	for name, theme := range Themes {
+		want := name == "light" || name == "night"
+		if theme.Borderless != want {
+			t.Errorf("theme %q: Borderless = %v, want %v", name, theme.Borderless, want)
+		}
+	}
+}

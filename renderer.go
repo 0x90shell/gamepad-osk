@@ -262,6 +262,9 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 	default:
 		bg, border = t.KeyBg, t.KeyBorder
 	}
+	if t.Borderless {
+		border = bg
+	}
 
 	// Fill, border and shadow (no shadow under the highlighted or flashed key)
 	shadow := r.keyShadow && !isCursor && !flashed
