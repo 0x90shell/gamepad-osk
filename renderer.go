@@ -2,13 +2,10 @@ package main
 
 import (
 	"errors"
-	"os"
 	"strings"
 	"time"
 	"unsafe"
 )
-
-const promptFontPath = "/usr/share/fonts/TTF/promptfont.ttf"
 
 type texCacheKey struct {
 	text string
@@ -45,9 +42,9 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 		return nil, err
 	}
 
-	fontPath := findFont("DejaVu Sans", "Liberation Sans", "FreeSans")
+	fontPath := findUIFont()
 	if fontPath == "" {
-		return nil, errors.New("no suitable font found")
+		return nil, errors.New("no suitable font found (install e.g. DejaVu Sans or Liberation Sans)")
 	}
 
 	font, err := TTF3OpenFont(fontPath, float32(fontSize))
@@ -60,8 +57,8 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	}
 
 	var fontGlyph *Font
-	if _, err := os.Stat(promptFontPath); err == nil {
-		fontGlyph, _ = TTF3OpenFont(promptFontPath, float32(glyphSize))
+	if glyphPath := findPromptFont(); glyphPath != "" {
+		fontGlyph, _ = TTF3OpenFont(glyphPath, float32(glyphSize))
 	}
 	if fontGlyph == nil {
 		fontGlyph, _ = TTF3OpenFont(fontPath, float32(max32(10, fontSize-6)))
@@ -455,36 +452,6 @@ func isModActive(key KeyDef, kb *KeyboardState) bool {
 		return kb.MetaActive
 	}
 	return false
-}
-
-func findFont(names ...string) string {
-	// Common font directories on Linux
-	dirs := []string{
-		"/usr/share/fonts/TTF",
-		"/usr/share/fonts/truetype/dejavu",
-		"/usr/share/fonts/truetype/liberation",
-		"/usr/share/fonts/truetype/freefont",
-		"/usr/share/fonts/truetype",
-		"/usr/share/fonts",
-	}
-	filePatterns := map[string][]string{
-		"DejaVu Sans":    {"DejaVuSans.ttf"},
-		"Liberation Sans": {"LiberationSans-Regular.ttf"},
-		"FreeSans":        {"FreeSans.ttf"},
-	}
-
-	for _, name := range names {
-		patterns := filePatterns[name]
-		for _, dir := range dirs {
-			for _, pat := range patterns {
-				path := dir + "/" + pat
-				if _, err := os.Stat(path); err == nil {
-					return path
-				}
-			}
-		}
-	}
-	return ""
 }
 
 // hasPromptfontRune returns true if the string contains codepoints from
