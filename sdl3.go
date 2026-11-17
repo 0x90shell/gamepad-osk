@@ -265,6 +265,7 @@ func SDL3SurfaceHeight(s *Surface) int32 {
 // --- Events ---
 
 // SDL3PollEvent returns the event type and true if an event was available.
+//
 //nolint:gocritic // dupSubExpr: false positive from cgo generated code
 func SDL3PollEvent() (uint32, bool) {
 	var event C.SDL_Event

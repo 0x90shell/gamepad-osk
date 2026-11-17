@@ -8,8 +8,8 @@ import (
 )
 
 type texCacheKey struct {
-	text string
-	font uintptr // font pointer as identity
+	text  string
+	font  uintptr // font pointer as identity
 	color Color
 }
 

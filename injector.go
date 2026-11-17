@@ -217,4 +217,3 @@ func (inj *Injector) writeEvent(evType uint16, code uint16, value int32) {
 func (inj *Injector) syn() {
 	inj.writeEvent(evSyn, synReport, 0)
 }
-

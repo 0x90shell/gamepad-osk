@@ -71,10 +71,10 @@ func TestParseKeyStyleAndShadow(t *testing.T) {
 
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
-		name     string
-		modify   func(*Config)
-		checkFn  func(*Config) bool
-		desc     string
+		name    string
+		modify  func(*Config)
+		checkFn func(*Config) bool
+		desc    string
 	}{
 		{"deadzone too high", func(c *Config) { c.Gamepad.Deadzone = 2.0 },
 			func(c *Config) bool { return c.Gamepad.Deadzone == 0.25 }, "should reset to 0.25"},

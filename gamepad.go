@@ -19,19 +19,19 @@ const (
 	evdevEV_SYN = 0x00
 
 	// Standard evdev button codes
-	BTN_SOUTH  = 0x130 // 304 - Xbox A, PS Cross
-	BTN_EAST   = 0x131 // 305 - Xbox B, PS Circle
-	BTN_NORTH  = 0x133 // 307 - Xbox Y/X (varies!)
-	BTN_WEST   = 0x134 // 308 - Xbox X/Y (varies!)
-	BTN_TL     = 0x136 // 310 - LB/L1
-	BTN_TR     = 0x137 // 311 - RB/R1
-	BTN_TL2    = 0x138 // 312 - LT/L2 (digital, Switch Pro)
-	BTN_TR2    = 0x139 // 313 - RT/R2 (digital, Switch Pro)
-	BTN_THUMBL    = 0x13d // 317 - L3
-	BTN_THUMBR    = 0x13e // 318 - R3
-	BTN_DPAD_UP   = 0x220 // 544 - DS3 D-pad (button, not axis)
-	BTN_DPAD_DOWN = 0x221 // 545
-	BTN_DPAD_LEFT = 0x222 // 546
+	BTN_SOUTH      = 0x130 // 304 - Xbox A, PS Cross
+	BTN_EAST       = 0x131 // 305 - Xbox B, PS Circle
+	BTN_NORTH      = 0x133 // 307 - Xbox Y/X (varies!)
+	BTN_WEST       = 0x134 // 308 - Xbox X/Y (varies!)
+	BTN_TL         = 0x136 // 310 - LB/L1
+	BTN_TR         = 0x137 // 311 - RB/R1
+	BTN_TL2        = 0x138 // 312 - LT/L2 (digital, Switch Pro)
+	BTN_TR2        = 0x139 // 313 - RT/R2 (digital, Switch Pro)
+	BTN_THUMBL     = 0x13d // 317 - L3
+	BTN_THUMBR     = 0x13e // 318 - R3
+	BTN_DPAD_UP    = 0x220 // 544 - DS3 D-pad (button, not axis)
+	BTN_DPAD_DOWN  = 0x221 // 545
+	BTN_DPAD_LEFT  = 0x222 // 546
 	BTN_DPAD_RIGHT = 0x223 // 547
 
 	ABS_X     = 0x00
@@ -108,21 +108,21 @@ func (n *NavAxis) RepeatInterval() time.Duration {
 }
 
 type GamepadReader struct {
-	config    Config
-	fd        *os.File
-	grabbed   bool
-	navX      NavAxis
-	navY      NavAxis
-	dpadX     NavAxis
-	dpadY     NavAxis
-	mouseX    float64
-	mouseY    float64
-	ltActive  bool
-	rtActive  bool
+	config     Config
+	fd         *os.File
+	grabbed    bool
+	navX       NavAxis
+	navY       NavAxis
+	dpadX      NavAxis
+	dpadY      NavAxis
+	mouseX     float64
+	mouseY     float64
+	ltActive   bool
+	rtActive   bool
 	axisRanges map[uint16]axisRange // per-axis min/max from EVIOCGABS
-	actionMap ActionMap
-	pressBtn  uint16 // "press" button evdev code
-	shiftAxis uint16 // "shift" axis for hold behavior
+	actionMap  ActionMap
+	pressBtn   uint16 // "press" button evdev code
+	shiftAxis  uint16 // "shift" axis for hold behavior
 	// Configurable stick axis codes
 	navAxisX   uint16
 	navAxisY   uint16
@@ -136,12 +136,12 @@ type GamepadReader struct {
 	dinputLayout bool
 
 	// Toggle combo state
-	comboButtons    []ComboButton     // parsed from config at startup (nil = disabled)
-	comboPeriodMs   int               // timing window
-	btnHeld         map[uint16]bool   // current button press state
-	axisState       map[uint16]int32  // current axis values (for d-pad and triggers)
-	comboFirstPress time.Time         // when the first combo button was pressed
-	comboFired      bool              // edge-trigger flag (prevents repeat while held)
+	comboButtons    []ComboButton    // parsed from config at startup (nil = disabled)
+	comboPeriodMs   int              // timing window
+	btnHeld         map[uint16]bool  // current button press state
+	axisState       map[uint16]int32 // current axis values (for d-pad and triggers)
+	comboFirstPress time.Time        // when the first combo button was pressed
+	comboFired      bool             // edge-trigger flag (prevents repeat while held)
 
 	// Last Open() error string. Suppresses repeat log lines while the
 	// reconnect loop retries every 2s with the same error (e.g. no gamepad
@@ -389,8 +389,8 @@ func (gp *GamepadReader) readAxisInfo() {
 		var info [6]int32
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
 			gp.fd.Fd(),
-			uintptr(eviocgabsBase+uint32(axis)),                  //nolint:gosec // G115: axis fits in uint32
-			uintptr(unsafe.Pointer(&info[0]))) //nolint:gosec // G103: ioctl requires pointer to kernel struct
+			uintptr(eviocgabsBase+uint32(axis)), //nolint:gosec // G115: axis fits in uint32
+			uintptr(unsafe.Pointer(&info[0])))   //nolint:gosec // G103: ioctl requires pointer to kernel struct
 		if errno != 0 {
 			continue
 		}
@@ -838,4 +838,3 @@ func applyDeadzone(norm, dz float64) int {
 	}
 	return 0
 }
-

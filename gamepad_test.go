@@ -134,9 +134,9 @@ func TestDpadAndStickIndependent(t *testing.T) {
 	}
 
 	// Stick jitter on the same axis (ABS_X) - should NOT affect d-pad
-	gp.handleAxis(ABS_X, 100)  // small positive jitter
-	gp.handleAxis(ABS_X, -50)  // small negative jitter
-	gp.handleAxis(ABS_X, 0)    // back to center
+	gp.handleAxis(ABS_X, 100) // small positive jitter
+	gp.handleAxis(ABS_X, -50) // small negative jitter
+	gp.handleAxis(ABS_X, 0)   // back to center
 
 	// D-pad should still be held right
 	if gp.dpadX.Direction != 1 {
@@ -330,7 +330,7 @@ func TestComboDetect_TwoButtons(t *testing.T) {
 	gp := newComboGamepad("select+start")
 
 	// Press select, then start
-	gp.handleButton(0x13a, 1) // select press - combo not yet complete
+	gp.handleButton(0x13a, 1)      // select press - combo not yet complete
 	a := gp.handleButton(0x13b, 1) // start press - combo fires
 	if a.Type != ActionToggle {
 		t.Errorf("combo fire = %v, want ActionToggle", a.Type)
@@ -341,7 +341,7 @@ func TestComboDetect_PressOrder(t *testing.T) {
 	gp := newComboGamepad("select+start")
 
 	// Reverse order: start first, then select
-	gp.handleButton(0x13b, 1) // start press
+	gp.handleButton(0x13b, 1)      // start press
 	a := gp.handleButton(0x13a, 1) // select press - combo fires
 	if a.Type != ActionToggle {
 		t.Errorf("reverse order combo = %v, want ActionToggle", a.Type)
@@ -460,8 +460,8 @@ func TestComboDetect_Disabled(t *testing.T) {
 func TestComboDetect_ThreeButtons(t *testing.T) {
 	gp := newComboGamepad("select+start+rb")
 
-	gp.handleButton(0x13a, 1) // select
-	gp.handleButton(0x13b, 1) // start - only 2 of 3, no fire
+	gp.handleButton(0x13a, 1)       // select
+	gp.handleButton(0x13b, 1)       // start - only 2 of 3, no fire
 	a := gp.handleButton(BTN_TR, 1) // rb - all 3 held
 	if a.Type != ActionToggle {
 		t.Errorf("3-button combo = %v, want ActionToggle", a.Type)
@@ -471,9 +471,9 @@ func TestComboDetect_ThreeButtons(t *testing.T) {
 func TestComboDetect_FourButtons(t *testing.T) {
 	gp := newComboGamepad("select+start+lb+rb")
 
-	gp.handleButton(0x13a, 1) // select
-	gp.handleButton(0x13b, 1) // start
-	gp.handleButton(BTN_TL, 1) // lb - only 3 of 4
+	gp.handleButton(0x13a, 1)       // select
+	gp.handleButton(0x13b, 1)       // start
+	gp.handleButton(BTN_TL, 1)      // lb - only 3 of 4
 	a := gp.handleButton(BTN_TR, 1) // rb - all 4
 	if a.Type != ActionToggle {
 		t.Errorf("4-button combo = %v, want ActionToggle", a.Type)
@@ -483,7 +483,7 @@ func TestComboDetect_FourButtons(t *testing.T) {
 func TestComboDetect_PartialPress(t *testing.T) {
 	gp := newComboGamepad("select+start+rb")
 
-	gp.handleButton(0x13a, 1) // select
+	gp.handleButton(0x13a, 1)      // select
 	a := gp.handleButton(0x13b, 1) // start - only 2 of 3
 	if a.Type == ActionToggle {
 		t.Error("partial press (2 of 3) should not fire combo")

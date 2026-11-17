@@ -36,16 +36,16 @@ func buttonTable(swapXY bool) map[string]ButtonInfo {
 		xBtn, yBtn = yBtn, xBtn
 	}
 	return map[string]ButtonInfo{
-		"a":      {EvdevBtn: BTN_SOUTH, Glyph: "\u21a7"},  // face bottom
-		"b":      {EvdevBtn: BTN_EAST, Glyph: "\u21a6"},   // face right
-		"x":      {EvdevBtn: xBtn, Glyph: "\u21a4"},       // face left
-		"y":      {EvdevBtn: yBtn, Glyph: "\u21a5"},       // face top
-		"lb":     {EvdevBtn: BTN_TL, Glyph: "\u2198"},     // left shoulder
-		"rb":     {EvdevBtn: BTN_TR, Glyph: "\u2199"},     // right shoulder
-		"l3":     {EvdevBtn: BTN_THUMBL, Glyph: "\u21ba"}, // left stick click
-		"r3":     {EvdevBtn: BTN_THUMBR, Glyph: "\u21bb"}, // right stick click
-		"start":  {EvdevBtn: 0x13b, Glyph: "\u21f8"},      // BTN_START
-		"select": {EvdevBtn: 0x13a, Glyph: "\u21f7"},      // BTN_SELECT
+		"a":      {EvdevBtn: BTN_SOUTH, Glyph: "\u21a7"},                                // face bottom
+		"b":      {EvdevBtn: BTN_EAST, Glyph: "\u21a6"},                                 // face right
+		"x":      {EvdevBtn: xBtn, Glyph: "\u21a4"},                                     // face left
+		"y":      {EvdevBtn: yBtn, Glyph: "\u21a5"},                                     // face top
+		"lb":     {EvdevBtn: BTN_TL, Glyph: "\u2198"},                                   // left shoulder
+		"rb":     {EvdevBtn: BTN_TR, Glyph: "\u2199"},                                   // right shoulder
+		"l3":     {EvdevBtn: BTN_THUMBL, Glyph: "\u21ba"},                               // left stick click
+		"r3":     {EvdevBtn: BTN_THUMBR, Glyph: "\u21bb"},                               // right stick click
+		"start":  {EvdevBtn: 0x13b, Glyph: "\u21f8"},                                    // BTN_START
+		"select": {EvdevBtn: 0x13a, Glyph: "\u21f7"},                                    // BTN_SELECT
 		"lt":     {EvdevBtn: BTN_TL2, EvdevAxis: ABS_Z, IsAxis: true, Glyph: "\u2196"},  // left trigger (axis on Xbox/DS, button on Switch)
 		"rt":     {EvdevBtn: BTN_TR2, EvdevAxis: ABS_RZ, IsAxis: true, Glyph: "\u2197"}, // right trigger (axis on Xbox/DS, button on Switch)
 	}
@@ -53,10 +53,10 @@ func buttonTable(swapXY bool) map[string]ButtonInfo {
 
 // ActionMap maps evdev codes to actions, built from config at startup.
 type ActionMap struct {
-	BtnPress     map[uint16]ActionType // EV_KEY press actions
-	BtnRelease   map[uint16]ActionType // EV_KEY release actions (for hold buttons like mouse)
-	AxisActions  map[uint16]ActionType // ABS axis actions (triggers)
-	AxisRelease  map[uint16]ActionType // ABS axis release actions (for repeat stop)
+	BtnPress    map[uint16]ActionType // EV_KEY press actions
+	BtnRelease  map[uint16]ActionType // EV_KEY release actions (for hold buttons like mouse)
+	AxisActions map[uint16]ActionType // ABS axis actions (triggers)
+	AxisRelease map[uint16]ActionType // ABS axis release actions (for repeat stop)
 }
 
 func BuildActionMap(cfg GamepadConfig) ActionMap {
@@ -84,7 +84,7 @@ func BuildActionMap(cfg GamepadConfig) ActionMap {
 	}
 
 	b := cfg.Buttons
-	setBtn(b.Press, ActionPress)    // special: handled as press_start/press
+	setBtn(b.Press, ActionPress) // special: handled as press_start/press
 	setBtn(b.Close, ActionClose)
 	setBtn(b.Backspace, ActionBackspace)
 	setBtn(b.Space, ActionSpace)
@@ -104,7 +104,10 @@ func BuildActionMap(cfg GamepadConfig) ActionMap {
 	}
 
 	// Repeatable keys: need release to stop key repeat (buttons and axes)
-	for _, pair := range []struct{ name string; action ActionType }{
+	for _, pair := range []struct {
+		name   string
+		action ActionType
+	}{
 		{b.Backspace, ActionBackspaceRelease},
 		{b.Space, ActionSpaceRelease},
 		{b.Enter, ActionEnterRelease},
@@ -157,7 +160,12 @@ func BuildKeyGlyphs(cfg GamepadConfig) map[int]string {
 		{KEY_ENTER, b.Enter},
 		{KEY_LEFTSHIFT, b.Shift},
 		{KEY_RIGHTSHIFT, b.Shift},
-		{KEY_CAPSLOCK, func() string { if cfg.MouseStick == "left" { return "r3" }; return "l3" }()},
+		{KEY_CAPSLOCK, func() string {
+			if cfg.MouseStick == "left" {
+				return "r3"
+			}
+			return "l3"
+		}()},
 	}
 
 	for _, m := range mappings {
@@ -190,10 +198,10 @@ func comboButtonTable() map[string]ComboButton {
 		"guide":      {Name: "guide", BtnCodes: []uint16{0x13c}},  // BTN_MODE
 		"lt":         {Name: "lt", BtnCodes: []uint16{BTN_TL2}, AxisCode: ABS_Z, AxisVal: 1},
 		"rt":         {Name: "rt", BtnCodes: []uint16{BTN_TR2}, AxisCode: ABS_RZ, AxisVal: 1},
-		"dpad_up":    {Name: "dpad_up", BtnCodes: []uint16{0x220}, AxisCode: ABS_HAT0Y, AxisVal: -1},    // BTN_DPAD_UP
-		"dpad_down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},   // BTN_DPAD_DOWN
-		"dpad_left":  {Name: "dpad_left", BtnCodes: []uint16{0x222}, AxisCode: ABS_HAT0X, AxisVal: -1},  // BTN_DPAD_LEFT
-		"dpad_right": {Name: "dpad_right", BtnCodes: []uint16{0x223}, AxisCode: ABS_HAT0X, AxisVal: 1},  // BTN_DPAD_RIGHT
+		"dpad_up":    {Name: "dpad_up", BtnCodes: []uint16{0x220}, AxisCode: ABS_HAT0Y, AxisVal: -1},   // BTN_DPAD_UP
+		"dpad_down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},  // BTN_DPAD_DOWN
+		"dpad_left":  {Name: "dpad_left", BtnCodes: []uint16{0x222}, AxisCode: ABS_HAT0X, AxisVal: -1}, // BTN_DPAD_LEFT
+		"dpad_right": {Name: "dpad_right", BtnCodes: []uint16{0x223}, AxisCode: ABS_HAT0X, AxisVal: 1}, // BTN_DPAD_RIGHT
 		// Shorthand aliases
 		"up":    {Name: "dpad_up", BtnCodes: []uint16{0x220}, AxisCode: ABS_HAT0Y, AxisVal: -1},
 		"down":  {Name: "dpad_down", BtnCodes: []uint16{0x221}, AxisCode: ABS_HAT0Y, AxisVal: 1},
