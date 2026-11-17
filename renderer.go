@@ -140,10 +140,14 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 
 	var fontGlyph *Font
 	if p := findPromptFont(); p != "" {
-		Debugf("Promptfont: %s", p)
-		fontGlyph, _ = TTF3OpenFont(p, float32(glyphSize))
+		var err error
+		if fontGlyph, err = TTF3OpenFont(p, float32(glyphSize)); err != nil {
+			Debugf("Promptfont %s failed to load (%v), showing button names", p, err)
+		} else {
+			Debugf("Promptfont: %s", p)
+		}
 	} else {
-		Debugf("Promptfont not found, using text labels")
+		Debugf("Promptfont not found, showing button names")
 	}
 	hasPromptfont := fontGlyph != nil
 	if fontGlyph == nil {
