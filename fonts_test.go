@@ -8,10 +8,10 @@ import (
 
 func touchFont(t *testing.T, path string) string {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: test dir
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
+	if err := os.WriteFile(path, nil, 0o644); err != nil { //nolint:gosec // G306: test file
 		t.Fatal(err)
 	}
 	return path
@@ -80,10 +80,10 @@ func TestFindFont_CaseInsensitive(t *testing.T) {
 
 func TestFindFont_SymlinkedRoot(t *testing.T) {
 	dir := t.TempDir()
-	real := filepath.Join(dir, "dotfiles", "fonts")
-	touchFont(t, filepath.Join(real, "FreeSans.ttf"))
+	target := filepath.Join(dir, "dotfiles", "fonts")
+	touchFont(t, filepath.Join(target, "FreeSans.ttf"))
 	link := filepath.Join(dir, "fonts")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
 	stubFcMatch(t, "")

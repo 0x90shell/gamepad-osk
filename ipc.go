@@ -141,10 +141,8 @@ func canRemoveSocket(path string) bool {
 }
 
 func isAddrInUse(err error) bool {
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		var sysErr *os.SyscallError
-		if errors.As(opErr.Err, &sysErr) {
+	if opErr, ok := errors.AsType[*net.OpError](err); ok {
+		if sysErr, ok := errors.AsType[*os.SyscallError](opErr.Err); ok {
 			return errors.Is(sysErr.Err, syscall.EADDRINUSE)
 		}
 	}
