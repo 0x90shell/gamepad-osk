@@ -21,6 +21,8 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - [Systemd User Service](#systemd-user-service)
 - [Configuration](#configuration)
 - [Themes](#themes)
+  - [Key style](#key-style)
+  - [Gallery](#gallery)
 - [Show & Hide](#show--hide)
 - [X11](#x11)
 - [Wayland](#wayland)
@@ -33,6 +35,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Evdev gamepad input (works with any controller)
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
 - 62 color themes (cycle live with the Theme key, or set via config/flag)
+- Square or rounded keys, with an optional shadow
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + R3/RB click (hold to drag)
 - Live mouse sensitivity adjustment (Shift + arrow keys, saved to config)
@@ -55,7 +58,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Left stick / D-pad | Navigate keyboard |
 | Right stick | Move mouse cursor |
 | A | Press highlighted key (hold to repeat) |
-| B | Close keyboard |
+| B | Close keyboard (in the accent popup: cancel) |
 | X | Backspace (hold to repeat) |
 | Y | Space (hold to repeat) |
 | LT (hold) | Shift |
@@ -65,7 +68,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Mouse stick click (R3) | Left mouse click |
 | Nav stick click (L3) | Caps Lock |
 | Start | Toggle keyboard top/bottom |
-| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.) |
+| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.): left/right to choose, release A to type |
 | Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
 | Theme key | Cycle themes (Shift+Theme = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
@@ -280,7 +283,19 @@ See `config.example` for all options including button remapping, toggle combo, m
 
 `ayu_dark` `candy` `catppuccin` `catppuccin_frappe` `cga` `chalk` `cobalt` `copper` `coral` `cyberpunk` `dark` `dracula` `ember` `everforest` `fjord` `forest` `gameboy` `gold` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `lavender` `light` `material` `matrix` `mellow` `midnight` `monokai` `moss` `navy` `neon` `night` `nightfox` `nord` `ocean` `olive` `onedark` `oxocarbon` `palenight` `paper` `plum` `retro` `rose_pine` `sakura` `sand` `slate` `solarized` `solarized_light` `steam_green` `sunset` `synthwave` `teal` `terminal` `tokyo_night` `tokyo_storm` `vapor` `virtualboy` `wine` `zx_spectrum`
 
-Each image shows the theme with its default look: square keys with a shadow, Shift held. Click an image to see the theme without a shadow, with rounded keys, and with the accent menu open.
+### Key style
+
+```ini
+[theme]
+key_style = square   # or rounded
+key_shadow = true    # false for flat keys
+```
+
+Themes where a dark shadow would not show use a colored glow instead.
+
+### Gallery
+
+Each image shows the theme with its default look: square keys with a shadow, Shift held. Click an image to see the theme without a shadow, with rounded keys, and with the accent popup open.
 
 | | | |
 |:---:|:---:|:---:|
