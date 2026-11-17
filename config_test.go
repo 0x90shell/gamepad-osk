@@ -278,6 +278,34 @@ func TestBuildKeyGlyphs(t *testing.T) {
 	}
 }
 
+func TestBuildPopupHint(t *testing.T) {
+	table := buttonTable(false)
+	cfg := DefaultConfig()
+	hint := BuildPopupHint(cfg.Gamepad)
+	if len(hint) != 3 || hint[0].Glyph != dpadLeftRight {
+		t.Fatalf("default hint = %+v, want choose, type and cancel", hint)
+	}
+	if hint[1].Glyph != table["a"].Glyph || hint[1].Text != "A" {
+		t.Errorf("type = %+v, want the a button", hint[1])
+	}
+	if hint[2].Glyph != table["b"].Glyph || hint[2].Text != "B" {
+		t.Errorf("cancel = %+v, want the b button", hint[2])
+	}
+
+	// Remapped buttons are followed
+	cfg.Gamepad.Buttons.Press, cfg.Gamepad.Buttons.Close = "x", "y"
+	hint = BuildPopupHint(cfg.Gamepad)
+	if hint[1].Glyph != table["x"].Glyph || hint[2].Glyph != table["y"].Glyph {
+		t.Errorf("remapped hint = %+v, want x and y", hint)
+	}
+
+	// An unmapped close button drops the cancel item
+	cfg.Gamepad.Buttons.Close = ""
+	if hint = BuildPopupHint(cfg.Gamepad); len(hint) != 2 {
+		t.Errorf("hint without close = %+v, want 2 items", hint)
+	}
+}
+
 func TestAllThemesHaveRequiredFields(t *testing.T) {
 	zero := [4]uint8{0, 0, 0, 0}
 	for name, theme := range Themes {

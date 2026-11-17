@@ -180,6 +180,33 @@ func BuildKeyGlyphs(cfg GamepadConfig) map[int]string {
 	return glyphs
 }
 
+// HintItem is one control in a status bar hint, such as "↧ cancel".
+type HintItem struct {
+	Glyph string // Promptfont characters
+	Text  string // shown instead of Glyph without Promptfont
+	Label string // what the control does
+}
+
+// dpadLeftRight is the Promptfont d-pad left and right glyphs.
+const dpadLeftRight = "\u219e\u21a0"
+
+// BuildPopupHint lists the accent popup controls with the buttons they are
+// mapped to. The glyphs are generic face positions, not controller brands.
+func BuildPopupHint(cfg GamepadConfig) []HintItem {
+	table := buttonTable(isSwapXY(cfg))
+	b := cfg.Buttons
+	items := []HintItem{{Glyph: dpadLeftRight, Text: "\u25c0\u25b6", Label: "choose"}}
+	for _, m := range []struct{ button, label string }{
+		{b.Press, "release to type"},
+		{b.Close, "cancel"},
+	} {
+		if info, ok := table[m.button]; ok {
+			items = append(items, HintItem{Glyph: info.Glyph, Text: strings.ToUpper(m.button), Label: m.label})
+		}
+	}
+	return items
+}
+
 // comboButtonTable returns the full set of buttons available for toggle combos.
 // This is separate from buttonTable because combos need d-pad and guide which
 // aren't assignable to OSK actions, and need dual-input info (axis + button codes).

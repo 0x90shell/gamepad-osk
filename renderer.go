@@ -28,6 +28,7 @@ type Renderer struct {
 	font           *Font
 	fontSmall      *Font
 	fontGlyph      *Font
+	hasPromptfont  bool // fontGlyph is Promptfont, not the label font fallback
 	flashText      string
 	flashGlyphText string // rendered with Promptfont, placed before flashText
 	flashEnd       time.Time
@@ -144,22 +145,24 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	} else {
 		Debugf("Promptfont not found, using text labels")
 	}
+	hasPromptfont := fontGlyph != nil
 	if fontGlyph == nil {
 		fontGlyph, _ = TTF3OpenFont(fontPath, float32(max32(10, fontSize-6)))
 	}
 
 	rend := &Renderer{
-		renderer:    r,
-		theme:       theme,
-		unit:        unitSize,
-		pad:         padding,
-		statusH:     max32(20, int32(float64(unitSize)*0.4)),
-		font:        font,
-		fontSmall:   fontSmall,
-		fontGlyph:   fontGlyph,
-		texCache:    make(map[texCacheKey]texCacheEntry),
-		shapeTex:    make(map[shapeSpec]*Texture),
-		dirtyFrames: 3, // force initial draw
+		renderer:      r,
+		theme:         theme,
+		unit:          unitSize,
+		pad:           padding,
+		statusH:       max32(20, int32(float64(unitSize)*0.4)),
+		font:          font,
+		fontSmall:     fontSmall,
+		fontGlyph:     fontGlyph,
+		hasPromptfont: hasPromptfont,
+		texCache:      make(map[texCacheKey]texCacheEntry),
+		shapeTex:      make(map[shapeSpec]*Texture),
+		dirtyFrames:   3, // force initial draw
 	}
 	rend.setTextColors()
 	return rend, nil
@@ -180,7 +183,7 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 	SDL3RenderClear(r.renderer)
 
 	// Draw modifier status bar
-	r.drawModifierBar(kb)
+	pillsEnd := r.drawModifierBar(kb)
 
 	// Draw keyboard rows
 	y := r.pad + r.statusH
@@ -196,7 +199,7 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 
 	// Accent popup
 	if kb.AccentPopup != nil {
-		r.drawAccentPopup(kb)
+		r.drawAccentPopup(kb, pillsEnd)
 	}
 
 	SDL3RenderPresent(r.renderer)
@@ -208,7 +211,9 @@ func (r *Renderer) MarkDirty() {
 	r.dirtyFrames = 3
 }
 
-func (r *Renderer) drawModifierBar(kb *KeyboardState) {
+// drawModifierBar draws the status bar and returns the x where the modifier
+// pills end.
+func (r *Renderer) drawModifierBar(kb *KeyboardState) int32 {
 	// Modifier pills (left-aligned)
 	var labels []string
 	if kb.ShiftActive {
@@ -262,6 +267,7 @@ func (r *Renderer) drawModifierBar(kb *KeyboardState) {
 			}
 		}
 	}
+	return x
 }
 
 func (r *Renderer) drawPill(label string, x, y int32, bg Color, fg Color) {
@@ -368,7 +374,9 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 // accent popup is open.
 const popupDim = 140
 
-func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
+// drawAccentPopup draws the popup, a pointer down to the key it belongs to,
+// and its control hint in the status bar, right of minX.
+func (r *Renderer) drawAccentPopup(kb *KeyboardState, minX int32) {
 	accents := kb.AccentPopup.Accents
 	sel := kb.AccentPopup.Selected
 	row := kb.Layout[kb.CursorRow]
@@ -378,7 +386,9 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 		xo += int32(row[i].Width*float64(r.unit)) + r.pad
 	}
 	ky := r.pad + r.statusH + int32(kb.CursorRow)*(r.unit+r.pad) //nolint:gosec // G115: cursor index fits in int32
-	py := ky - r.unit - r.pad
+	// Raise the popup to make room for the pointer
+	tailH := max(6, r.unit/6)
+	py := ky - r.unit - r.pad - tailH
 
 	tw := int32(len(accents))*(r.unit+r.pad) + r.pad //nolint:gosec // G115: accent count fits in int32
 	pr := FRect{X: float32(xo), Y: float32(py), W: float32(tw), H: float32(r.unit + r.pad*2)}
@@ -398,6 +408,16 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	// every theme, so cells on it would not show.
 	r.fillBorderedShape(pr, popupR, r.theme.Bg, r.popupBorder, bw, r.keyShadow)
 
+	// Pointer: a triangle from the bottom border down to the cursor key
+	cx := float32(xo) + float32(row[kb.CursorCol].Width*float64(r.unit))/2
+	top := pr.Y + pr.H - float32(bw)
+	setColor(r.renderer, r.popupBorder)
+	for j := range tailH + bw {
+		half := float32(tailH + bw - j)
+		SDL3RenderFillRect(r.renderer, FRect{X: cx - half, Y: top + float32(j), W: 2 * half, H: 1})
+	}
+	r.drawHint(PopupHint, minX)
+
 	ax := xo + r.pad
 	for i, accent := range accents {
 		ar := FRect{X: float32(ax), Y: float32(py + r.pad), W: float32(r.unit), H: float32(r.unit)}
@@ -412,6 +432,44 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 		}
 		r.renderText(r.font, accent.Label, tc, ar, AlignCenter)
 		ax += r.unit + r.pad
+	}
+}
+
+// drawHint draws control hints centred in the status bar, kept right of minX
+// so they never cover the modifier pills.
+func (r *Renderer) drawHint(items []HintItem, minX int32) {
+	type part struct {
+		e   texCacheEntry
+		gap float32 // space before this part
+	}
+	tc := r.theme.KeyText
+	space := float32(r.unit) / 10
+	var parts []part
+	for i, it := range items {
+		gap := float32(0)
+		if i > 0 {
+			gap = space * 3
+		}
+		g := r.cachedText(r.fontSmall, it.Text, tc)
+		if r.hasPromptfont {
+			g = r.cachedText(r.fontGlyph, it.Glyph, tc)
+		}
+		parts = append(parts, part{g, gap}, part{r.cachedText(r.fontSmall, it.Label, tc), space})
+	}
+	var w float32
+	for _, p := range parts {
+		w += p.gap + p.e.w
+	}
+	sw, _ := SDL3GetRenderOutputSize(r.renderer)
+	x := max(float32(sw)/2-w/2, float32(minX+r.pad))
+	mid := float32(r.pad) + float32(r.statusH)/2
+	for _, p := range parts {
+		x += p.gap
+		if p.e.tex != nil {
+			dst := FRect{X: x, Y: mid - p.e.h/2, W: p.e.w, H: p.e.h}
+			SDL3RenderTexture(r.renderer, p.e.tex, nil, &dst)
+		}
+		x += p.e.w
 	}
 }
 

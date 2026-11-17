@@ -18,6 +18,7 @@ type KeyboardState struct {
 	LongPressStart  time.Time
 	LongPressActive bool
 	AccentPopup     *AccentPopupState
+	SkipPress       bool // the popup was cancelled; the next press release types nothing
 	targetX         float64
 	targetXSet      bool
 
@@ -295,6 +296,13 @@ func (kb *KeyboardState) CheckLongPress(thresholdMs int) bool {
 func (kb *KeyboardState) CloseAccentPopup() {
 	kb.AccentPopup = nil
 	kb.LongPressActive = false
+}
+
+// CancelAccentPopup closes the popup without typing. The press button is
+// still held, so its release must not type the plain key either.
+func (kb *KeyboardState) CancelAccentPopup() {
+	kb.CloseAccentPopup()
+	kb.SkipPress = true
 }
 
 func (kb *KeyboardState) FlashKey(code int) {

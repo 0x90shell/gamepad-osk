@@ -73,6 +73,7 @@ func (app *App) Run() error {
 
 	// Build dynamic glyph map from button config
 	KeyGlyphs = BuildKeyGlyphs(cfg.Gamepad)
+	PopupHint = BuildPopupHint(cfg.Gamepad)
 
 	// Prefer native Wayland over XWayland when running in a Wayland session
 	if os.Getenv("WAYLAND_DISPLAY") != "" && os.Getenv("SDL_VIDEODRIVER") == "" {
@@ -248,6 +249,7 @@ func (app *App) Run() error {
 
 	// Rebuild glyphs after gamepad open (swap_xy may have been auto-detected)
 	KeyGlyphs = BuildKeyGlyphs(gamepad.config.Gamepad)
+	PopupHint = BuildPopupHint(gamepad.config.Gamepad)
 
 	// Init IPC
 	ipc := NewIPCServer(func(cmd string) {
@@ -519,10 +521,14 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		app.stopRepeat()
 	case ActionPress:
 		// A button released
-		if app.repeatAction != ActionNone {
+		switch {
+		case kb.SkipPress:
+			// Accent popup was cancelled while held - type nothing
+			kb.SkipPress = false
+		case app.repeatAction != ActionNone:
 			// Was repeating - just stop, don't fire again
 			app.stopRepeat()
-		} else {
+		default:
 			// Accent popup select, vowel short-press, or modifier - fire on release
 			kb.PressCurrent(inj)
 		}
@@ -608,6 +614,11 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		}
 		SavePosition(app.posTop)
 	case ActionClose:
+		if kb.AccentPopup != nil {
+			// Close button backs out of the accent popup first
+			kb.CancelAccentPopup()
+			return
+		}
 		if app.daemon {
 			// Daemon mode: close button hides instead of exiting
 			app.lock.Lock()
