@@ -38,6 +38,35 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Gamepad.Buttons.PositionToggle != "start" {
 		t.Errorf("default position_toggle = %q, want start", cfg.Gamepad.Buttons.PositionToggle)
 	}
+	if cfg.Theme.KeyStyle != "square" {
+		t.Errorf("default key_style = %q, want square", cfg.Theme.KeyStyle)
+	}
+	if cfg.Theme.KeyShadow {
+		t.Error("default key_shadow = true, want false")
+	}
+}
+
+func TestParseKeyStyleAndShadow(t *testing.T) {
+	input := "[theme]\nname = light\nkey_style = rounded\nkey_shadow = true\n"
+	cfg := DefaultConfig()
+	if err := parseINI(strings.NewReader(input), &cfg); err != nil {
+		t.Fatalf("parseINI error: %v", err)
+	}
+	if cfg.Theme.KeyStyle != "rounded" {
+		t.Errorf("key_style = %q, want rounded", cfg.Theme.KeyStyle)
+	}
+	if !cfg.Theme.KeyShadow {
+		t.Error("key_shadow = false, want true")
+	}
+
+	// Invalid bool keeps the default
+	cfg = DefaultConfig()
+	if err := parseINI(strings.NewReader("[theme]\nkey_shadow = maybe\n"), &cfg); err != nil {
+		t.Fatalf("parseINI error: %v", err)
+	}
+	if cfg.Theme.KeyShadow {
+		t.Error("key_shadow = true after invalid value, want false")
+	}
 }
 
 func TestValidateConfig(t *testing.T) {
@@ -63,6 +92,10 @@ func TestValidateConfig(t *testing.T) {
 			func(c *Config) bool { return c.Theme.Name == "matrix" }, "should reset to matrix"},
 		{"valid theme", func(c *Config) { c.Theme.Name = "nord" },
 			func(c *Config) bool { return c.Theme.Name == "nord" }, "should keep nord"},
+		{"unknown key_style", func(c *Config) { c.Theme.KeyStyle = "round" },
+			func(c *Config) bool { return c.Theme.KeyStyle == "square" }, "should reset to square"},
+		{"rounded key_style", func(c *Config) { c.Theme.KeyStyle = "rounded" },
+			func(c *Config) bool { return c.Theme.KeyStyle == "rounded" }, "should keep rounded"},
 	}
 
 	for _, tt := range tests {
@@ -523,6 +556,8 @@ swap_xy = "auto"
 func TestWriteINIRoundTrip(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Theme.Name = "cobalt"
+	cfg.Theme.KeyStyle = "rounded"
+	cfg.Theme.KeyShadow = true
 	cfg.Window.Opacity = 0.98
 	cfg.Gamepad.Buttons.Press = "b"
 
@@ -539,6 +574,12 @@ func TestWriteINIRoundTrip(t *testing.T) {
 
 	if cfg2.Theme.Name != "cobalt" {
 		t.Errorf("round-trip theme = %q, want cobalt", cfg2.Theme.Name)
+	}
+	if cfg2.Theme.KeyStyle != "rounded" {
+		t.Errorf("round-trip key_style = %q, want rounded", cfg2.Theme.KeyStyle)
+	}
+	if !cfg2.Theme.KeyShadow {
+		t.Error("round-trip key_shadow = false, want true")
 	}
 	if cfg2.Window.Opacity != 0.98 {
 		t.Errorf("round-trip opacity = %f, want 0.98", cfg2.Window.Opacity)
@@ -840,6 +881,7 @@ func TestCheckConfig(t *testing.T) {
 		want  string
 	}{
 		{"bad theme", func(c *Config) { c.Theme.Name = "nonexistent" }, "unknown theme"},
+		{"bad key_style", func(c *Config) { c.Theme.KeyStyle = "round" }, "key_style"},
 		{"bad scale low", func(c *Config) { c.Keys.Scale = 10 }, "scale"},
 		{"bad scale high", func(c *Config) { c.Keys.Scale = 200 }, "scale"},
 		{"bad deadzone", func(c *Config) { c.Gamepad.Deadzone = 2.0 }, "deadzone"},

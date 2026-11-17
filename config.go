@@ -28,7 +28,9 @@ type Config struct {
 }
 
 type ThemeConfig struct {
-	Name string
+	Name      string
+	KeyStyle  string // "square" or "rounded"
+	KeyShadow bool
 }
 
 type WindowConfig struct {
@@ -79,7 +81,7 @@ type MouseConfig struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Theme:  ThemeConfig{Name: "matrix"},
+		Theme:  ThemeConfig{Name: "matrix", KeyStyle: "square"},
 		Window: WindowConfig{Position: "bottom", Margin: 0, Opacity: 0.95, PanelAvoid: true},
 		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
@@ -157,6 +159,10 @@ func parseINI(r io.Reader, cfg *Config) error {
 			switch key {
 			case "name":
 				cfg.Theme.Name = val
+			case "key_style":
+				cfg.Theme.KeyStyle = val
+			case "key_shadow":
+				cfg.Theme.KeyShadow = parseBool("key_shadow", val, false)
 			default:
 				Debugf("unknown config key: theme.%s", key)
 			}
@@ -290,7 +296,9 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString("# gamepad-osk configuration\n\n")
 
 	b.WriteString("[theme]\n")
-	b.WriteString(line(kv("name", cfg.Theme.Name), "see --help for full list (60 themes)"))
+	b.WriteString(line(kv("name", cfg.Theme.Name), "see --help for full list (62 themes)"))
+	b.WriteString(line(kv("key_style", cfg.Theme.KeyStyle), "square or rounded"))
+	b.WriteString(line(kv("key_shadow", strconv.FormatBool(cfg.Theme.KeyShadow)), "drop shadow under keys"))
 	b.WriteString("\n")
 
 	b.WriteString("[window]\n")
@@ -627,7 +635,7 @@ func checkConfigFile(path string) []string {
 	}
 	defer func() { _ = f.Close() }()
 	var issues []string
-	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true}
+	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true, "key_shadow": true}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -679,6 +687,9 @@ func checkConfig(cfg Config) []string {
 	if _, ok := Themes[cfg.Theme.Name]; !ok {
 		issues = append(issues, fmt.Sprintf("unknown theme %q", cfg.Theme.Name))
 	}
+	if k := cfg.Theme.KeyStyle; k != "square" && k != "rounded" {
+		issues = append(issues, fmt.Sprintf("key_style %q is not valid (use square or rounded)", k))
+	}
 	if cfg.Keys.RepeatDelayMs < 100 || cfg.Keys.RepeatDelayMs > 2000 {
 		issues = append(issues, fmt.Sprintf("repeat_delay_ms %d out of range [100,2000]", cfg.Keys.RepeatDelayMs))
 	}
@@ -728,6 +739,10 @@ func ValidateConfig(cfg *Config) {
 	if _, ok := Themes[cfg.Theme.Name]; !ok {
 		log.Printf("Warning: unknown theme %q, using dark", cfg.Theme.Name)
 		cfg.Theme.Name = "matrix"
+	}
+	if k := cfg.Theme.KeyStyle; k != "square" && k != "rounded" {
+		log.Printf("Warning: key_style %q is not valid, using square", k)
+		cfg.Theme.KeyStyle = "square"
 	}
 	if cfg.Keys.RepeatDelayMs < 100 || cfg.Keys.RepeatDelayMs > 2000 {
 		log.Printf("Warning: repeat_delay_ms %d out of range [100,2000], using 400", cfg.Keys.RepeatDelayMs)

@@ -1,7 +1,9 @@
 # gamepad-osk configuration
 
 [theme]
-name = matrix                # see --help for full list (60 themes)
+name = matrix                # see --help for full list (62 themes)
+key_style = square           # square or rounded
+key_shadow = false           # drop shadow under keys
 
 [window]
 position = bottom            # bottom or top
