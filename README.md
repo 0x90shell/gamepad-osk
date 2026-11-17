@@ -34,6 +34,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
+- DInput pads such as 8BitDo over Bluetooth: right stick on Z/RZ and digital triggers are detected automatically
 - 62 color themes (cycle live with the Theme key, or set via config/flag)
 - Square or rounded keys, with an optional shadow
 - Promptfont controller-agnostic button glyphs on mapped keys
@@ -199,7 +200,7 @@ cp gamepad-osk ~/.local/bin/
 **Option 2: Build in a distrobox.**
 
 ```bash
-distrobox create --name build --image fedora:41
+distrobox create --name build --image fedora:$(rpm -E %fedora)   # same Fedora release as the host
 distrobox enter build
 sudo dnf install golang SDL3-devel SDL3_ttf-devel libX11-devel wayland-devel wayland-protocols-devel
 git clone https://github.com/0x90shell/gamepad-osk.git
@@ -213,7 +214,7 @@ Make sure `~/.local/bin` is in your `$PATH`.
 
 ### Promptfont
 
-[Promptfont](https://codeberg.org/shinmera/promptfont) displays controller button glyphs on mapped keys. Without it, those keys show text labels instead.
+[Promptfont](https://codeberg.org/shinmera/promptfont) displays controller button glyphs on mapped keys. Without it, those keys show plain arrow symbols, and the accent popup hint names the buttons in text.
 
 **Arch:**
 
@@ -232,7 +233,7 @@ fc-cache
 rm promptfont.zip
 ```
 
-gamepad-osk looks for `promptfont.ttf` (or `.otf`) under `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.local/share/fonts` and `~/.fonts`, including subfolders, then asks fontconfig. The key label font (DejaVu Sans, Liberation Sans or FreeSans) is found the same way, so distro-specific layouts such as Fedora's `/usr/share/fonts/<package>/` work without changes.
+gamepad-osk looks for `promptfont.ttf` (or `.otf`) under `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.local/share/fonts` and `~/.fonts`, including subfolders, then asks fontconfig. The key label font (DejaVu Sans, Liberation Sans or FreeSans) is found the same way, so distro-specific layouts such as Fedora's `/usr/share/fonts/<package>/` work without changes. If none of the three is installed, fontconfig's default sans-serif font is used. Run with `-v` to see which font files were loaded.
 
 ## Permissions
 
