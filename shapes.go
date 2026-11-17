@@ -104,8 +104,11 @@ func shapeMask(w, h int32, radius float32) []uint8 {
 	return mask
 }
 
-// shapeSpec describes one rounded shape drawn from a cached texture. It is
-// the cache key, so equal shapes share one texture.
+// shapeSpec describes one shape (key, pill, popup) drawn from a cached
+// texture. It is the cache key, so equal shapes share one texture. Every
+// input that changes how a shape looks must be a field here, or the cache
+// keeps serving the old image. Sizes are window pixels; HiDPI drawing would
+// need them scaled to device pixels.
 type shapeSpec struct {
 	W, H      int32
 	Radius    float32
@@ -167,9 +170,10 @@ func blendOver(dst []byte, col Color, a float64) {
 // instead of growing past this.
 const maxShapeTex = 64
 
-// drawRoundShape draws a rounded shape at (x, y) from the shape cache,
-// rasterizing it on first use. One draw call per shape.
-func (r *Renderer) drawRoundShape(x, y float32, s shapeSpec) {
+// drawShape draws a shape at (x, y) from the shape cache, rasterizing it on
+// first use: one draw call per shape. If the texture cannot be created (GPU
+// out of memory or lost), it falls back to plain SDL fills.
+func (r *Renderer) drawShape(x, y float32, s shapeSpec) {
 	tex, ok := r.shapeTex[s]
 	if !ok {
 		if len(r.shapeTex) >= maxShapeTex {
@@ -179,10 +183,27 @@ func (r *Renderer) drawRoundShape(x, y float32, s shapeSpec) {
 		r.shapeTex[s] = tex // nil is cached too, so a failure is not retried every frame
 	}
 	if tex == nil {
+		r.drawShapeFallback(x, y, s)
 		return
 	}
 	dst := FRect{X: x, Y: y, W: float32(s.W), H: float32(s.H + s.ShadowOff)}
 	SDL3RenderTexture(r.renderer, tex, nil, &dst)
+}
+
+// drawShapeFallback draws s square with SDL fills: shadow strip, fill, then
+// a 1 px outline. Rounded corners are lost.
+func (r *Renderer) drawShapeFallback(x, y float32, s shapeSpec) {
+	rect := FRect{X: x, Y: y, W: float32(s.W), H: float32(s.H)}
+	if s.ShadowOff > 0 {
+		setColor(r.renderer, s.Shadow)
+		SDL3RenderFillRect(r.renderer, FRect{X: x, Y: y + float32(s.ShadowOff), W: rect.W, H: rect.H})
+	}
+	setColor(r.renderer, s.Bg)
+	SDL3RenderFillRect(r.renderer, rect)
+	if s.Bordered {
+		setColor(r.renderer, s.Border)
+		SDL3RenderRect(r.renderer, rect)
+	}
 }
 
 func (r *Renderer) flushShapeCache() {
@@ -192,8 +213,12 @@ func (r *Renderer) flushShapeCache() {
 	}
 }
 
-// roundSpec returns the cache key for a rounded shape of rect's size.
-func (r *Renderer) roundSpec(rect FRect, radius float32, bg Color, shadow bool) shapeSpec {
+// shapeFor returns the cache key for a shape of rect's size. Square keys
+// use radius 0.
+func (r *Renderer) shapeFor(rect FRect, radius float32, bg Color, shadow bool) shapeSpec {
+	if !r.roundKeys {
+		radius = 0
+	}
 	s := shapeSpec{W: int32(rect.W), H: int32(rect.H), Radius: radius, Bg: bg}
 	if shadow {
 		s.ShadowOff = shadowOffset(r.unit, r.pad)
@@ -204,31 +229,16 @@ func (r *Renderer) roundSpec(rect FRect, radius float32, bg Color, shadow bool) 
 
 // fillShape fills rect, with rounded corners when key_style is rounded.
 func (r *Renderer) fillShape(rect FRect, radius float32, col Color) {
-	if r.roundKeys {
-		r.drawRoundShape(rect.X, rect.Y, r.roundSpec(rect, radius, col, false))
-		return
-	}
-	setColor(r.renderer, col)
-	SDL3RenderFillRect(r.renderer, rect)
+	r.drawShape(rect.X, rect.Y, r.shapeFor(rect, radius, col, false))
 }
 
 // fillBorderedShape draws a key-like shape: optional shadow, then bg with a
-// 1 px border. Rounded shapes draw the border as the outer shape and bg 1 px
-// inside it; square shapes draw the outline on top of the fill.
+// 1 px border. The border is the outer shape and bg the same shape 1 px
+// inside it, so on square shapes it matches a 1 px outline.
 func (r *Renderer) fillBorderedShape(rect FRect, radius float32, bg, border Color, shadow bool) {
-	if r.roundKeys {
-		s := r.roundSpec(rect, radius, bg, shadow)
-		s.Border, s.Bordered = border, true
-		r.drawRoundShape(rect.X, rect.Y, s)
-		return
-	}
-	if shadow {
-		r.drawShadow(rect)
-	}
-	setColor(r.renderer, bg)
-	SDL3RenderFillRect(r.renderer, rect)
-	setColor(r.renderer, border)
-	SDL3RenderRect(r.renderer, rect)
+	s := r.shapeFor(rect, radius, bg, shadow)
+	s.Border, s.Bordered = border, true
+	r.drawShape(rect.X, rect.Y, s)
 }
 
 // keyRadius is the corner radius of a key of height h.

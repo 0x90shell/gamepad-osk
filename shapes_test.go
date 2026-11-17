@@ -272,3 +272,25 @@ func BenchmarkRasterKeyShape(b *testing.B) {
 		rasterShape(s)
 	}
 }
+
+func TestRasterSquareShape(t *testing.T) {
+	// Radius 0 must match the old square drawing: fill, 1 px outline on
+	// every edge pixel including corners, shadow strip below.
+	bg, border, shadow := c(55, 55, 65), c(70, 70, 80), c(21, 21, 24)
+	s := shapeSpec{W: 40, H: 30, Bg: bg, Border: border, Bordered: true, Shadow: shadow, ShadowOff: 2}
+	px := rasterShape(s)
+	for y := range int32(32) {
+		for x := range int32(40) {
+			want := bg
+			switch {
+			case y >= 30:
+				want = shadow
+			case x == 0 || y == 0 || x == 39 || y == 29:
+				want = border
+			}
+			if got := pixelAt(px, s.W, x, y); got != want {
+				t.Fatalf("pixel (%d,%d) = %v, want %v", x, y, got, want)
+			}
+		}
+	}
+}

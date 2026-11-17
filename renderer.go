@@ -34,7 +34,7 @@ type Renderer struct {
 	dirtyFrames    int                    // redraw counter for double/triple buffering
 	keyShadow      bool                   // draw a drop shadow under keys and the accent popup
 	roundKeys      bool                   // key_style = rounded
-	shapeTex       map[shapeSpec]*Texture // rasterized rounded shapes
+	shapeTex       map[shapeSpec]*Texture // rasterized key, pill and popup shapes
 }
 
 // shadowColor returns the theme's key shadow color, or one derived from Bg
@@ -327,19 +327,6 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 		r.renderText(r.font, accent.Label, r.theme.AccentPopupText, ar, AlignCenter)
 		ax += r.unit + r.pad
 	}
-}
-
-// drawShadow fills rect shifted down by the shadow offset. Drawn before the
-// square shape itself, so only the strip below the shape stays visible.
-// Rounded shapes carry their shadow in the cached texture.
-func (r *Renderer) drawShadow(rect FRect) {
-	off := shadowOffset(r.unit, r.pad)
-	if off == 0 {
-		return
-	}
-	setColor(r.renderer, shadowColor(r.theme))
-	rect.Y += float32(off)
-	SDL3RenderFillRect(r.renderer, rect)
 }
 
 type TextAlign int
