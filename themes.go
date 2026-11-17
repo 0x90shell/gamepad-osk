@@ -92,7 +92,7 @@ var Themes = map[string]Theme{
 		HighlightBorder: c(42, 161, 152), ModifierBg: c(245, 238, 220),
 		ModifierActiveBg: c(133, 153, 0), ModifierActiveText: w, ModifierText: c(131, 148, 150),
 		FnKeyBg: c(240, 234, 216), AccentPopupBg: c(238, 232, 213),
-		AccentPopupText: c(101, 123, 131), AccentHighlightBg: c(38, 139, 210), GlyphColor: c(180, 173, 155)},
+		AccentPopupText: c(101, 123, 131), AccentHighlightBg: c(38, 139, 210), GlyphColor: c(138, 133, 119)},
 	"monokai": {Name: "monokai", Bg: c(39, 40, 34), KeyBg: c(55, 56, 48), KeyBgPressed: c(75, 76, 66),
 		KeyBorder: c(65, 66, 56), KeyText: c(248, 248, 242), HighlightBg: c(166, 226, 46),
 		HighlightBorder: c(190, 240, 80), ModifierBg: c(45, 46, 38),
