@@ -166,7 +166,7 @@ func BuildKeyGlyphs(cfg GamepadConfig) map[int]string {
 		}
 	}
 
-	// Cfg key always gets the gear icon
+	// Theme key always gets the gear icon
 	glyphs[0] = "\u2699"
 
 	return glyphs

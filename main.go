@@ -227,7 +227,7 @@ TOGGLE COMBO (config: toggle_combo)
 
 THEMES
   %s
-  Cycle live with the Cfg key on the keyboard
+  Cycle live with the Theme key on the keyboard (Shift = reverse)
 
 CONFIG (first found)
   1. --config flag

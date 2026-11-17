@@ -29,7 +29,7 @@ type KeyboardState struct {
 	FlashCode  int
 	FlashUntil time.Time
 
-	// Callbacks for Cfg key
+	// Callbacks for the Theme key
 	OnThemeCycle        func()
 	OnThemeCycleReverse func()
 
@@ -148,8 +148,8 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	// Cfg button - cycle theme (shift = reverse)
-	if key.Label == "Cfg" {
+	// Theme key - cycle theme (shift = reverse)
+	if key.Label == themeKeyLabel {
 		shiftOn := kb.ShiftActive != kb.CapsActive
 		if shiftOn {
 			if kb.OnThemeCycleReverse != nil {

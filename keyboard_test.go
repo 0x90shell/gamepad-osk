@@ -343,3 +343,40 @@ func TestSensitivityClamp(t *testing.T) {
 		t.Errorf("clamp down at min: got %d, want 1", sensitivity)
 	}
 }
+
+func TestThemeKeyCyclesThemes(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	found := false
+	for ri, row := range kb.Layout {
+		for ci, key := range row {
+			if key.Label == themeKeyLabel {
+				kb.CursorRow, kb.CursorCol = ri, ci
+				found = true
+			}
+			if key.Label == "Cfg" {
+				t.Errorf("layout still has a Cfg key at row %d", ri)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("layout has no %q key", themeKeyLabel)
+	}
+
+	fwd, rev := 0, 0
+	kb.OnThemeCycle = func() { fwd++ }
+	kb.OnThemeCycleReverse = func() { rev++ }
+
+	kb.PressCurrent(nil)
+	if fwd != 1 || rev != 0 {
+		t.Errorf("press: forward=%d reverse=%d, want 1 and 0", fwd, rev)
+	}
+
+	kb.ShiftActive = true
+	kb.PressCurrent(nil)
+	if fwd != 1 || rev != 1 {
+		t.Errorf("shift+press: forward=%d reverse=%d, want 1 and 1", fwd, rev)
+	}
+	if kb.ShiftActive {
+		t.Error("one-shot shift still active after shift+press")
+	}
+}

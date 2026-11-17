@@ -532,13 +532,13 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		if len(key.Accents) > 0 && kb.ShiftActive {
 			// Shift(LT)+hold on vowel - accent popup
 			kb.StartLongPress()
-		} else if !key.IsModifier && key.Label != "Cfg" && key.Label != "Paste" &&
+		} else if !key.IsModifier && key.Label != themeKeyLabel && key.Label != "Paste" &&
 			len(key.Combo) == 0 && key.ShiftCode == 0 && key.Label != "Esc" {
 			// Repeatable key - fire immediately and start repeat
 			kb.PressCurrent(inj)
 			app.startRepeat(ActionPressRepeat)
 		}
-		// Non-repeatable keys (shortcuts, Esc, Cfg, Paste, modifiers) fire on release via ActionPress
+		// Non-repeatable keys (shortcuts, Esc, Theme, Paste, modifiers) fire on release via ActionPress
 	case ActionPressRepeat:
 		kb.PressCurrent(inj)
 	case ActionBackspace:
