@@ -18,6 +18,7 @@ type Theme struct {
 	AccentPopupText    Color
 	AccentHighlightBg  Color
 	GlyphColor         Color
+	KeyShadow          Color // key drop shadow; zero means derive from Bg
 }
 
 func c(r, g, b uint8) Color { return Color{R: r, G: g, B: b, A: 255} }
@@ -405,6 +406,22 @@ var Themes = map[string]Theme{
 		ModifierActiveBg: c(155, 180, 55), ModifierActiveText: d, ModifierText: c(50, 70, 30),
 		FnKeyBg: c(94, 104, 64), AccentPopupBg: c(105, 115, 75),
 		AccentPopupText: c(30, 50, 20), AccentHighlightBg: c(170, 195, 70), GlyphColor: c(65, 78, 42)},
+
+	// --- Phone-style themes (colors from TechnikWeber's fork) ---
+	"light": {Name: "light", Bg: c(209, 212, 219), KeyBg: c(255, 255, 255), KeyBgPressed: c(225, 228, 233),
+		KeyBorder: c(255, 255, 255), KeyText: c(16, 16, 18), HighlightBg: c(10, 132, 255),
+		HighlightBorder: c(10, 132, 255), ModifierBg: c(171, 177, 188),
+		ModifierActiveBg: c(255, 255, 255), ModifierActiveText: c(16, 16, 18), ModifierText: c(104, 108, 116),
+		FnKeyBg: c(171, 177, 188), AccentPopupBg: c(255, 255, 255),
+		AccentPopupText: c(16, 16, 18), AccentHighlightBg: c(10, 132, 255), GlyphColor: c(120, 124, 132),
+		KeyShadow: c(136, 139, 145)},
+	"night": {Name: "night", Bg: c(38, 38, 42), KeyBg: c(102, 102, 108), KeyBgPressed: c(125, 125, 132),
+		KeyBorder: c(102, 102, 108), KeyText: c(250, 250, 252), HighlightBg: c(10, 132, 255),
+		HighlightBorder: c(10, 132, 255), ModifierBg: c(66, 66, 72),
+		ModifierActiveBg: c(250, 250, 252), ModifierActiveText: c(16, 16, 18), ModifierText: c(170, 170, 178),
+		FnKeyBg: c(66, 66, 72), AccentPopupBg: c(102, 102, 108),
+		AccentPopupText: c(250, 250, 252), AccentHighlightBg: c(10, 132, 255), GlyphColor: c(160, 160, 168),
+		KeyShadow: c(20, 20, 22)},
 }
 
 func GetTheme(name string) Theme {

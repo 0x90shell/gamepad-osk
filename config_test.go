@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -289,13 +291,27 @@ func TestGetTheme(t *testing.T) {
 }
 
 func TestThemeCount(t *testing.T) {
-	if len(Themes) != 60 {
-		t.Errorf("theme count = %d, want 60", len(Themes))
+	if len(Themes) != 62 {
+		t.Errorf("theme count = %d, want 62", len(Themes))
 	}
-	// Spot-check new mid-range themes
-	for _, name := range []string{"chalk", "fjord", "sand", "plum", "moss"} {
+	// Spot-check mid-range and phone-style themes
+	for _, name := range []string{"chalk", "fjord", "sand", "plum", "moss", "light", "night"} {
 		if _, ok := Themes[name]; !ok {
 			t.Errorf("missing theme %q", name)
+		}
+	}
+}
+
+func TestThemeOrder(t *testing.T) {
+	if !sort.StringsAreSorted(themeOrder) {
+		t.Error("themeOrder is not sorted")
+	}
+	if len(themeOrder) != len(Themes) {
+		t.Errorf("themeOrder has %d names, want %d", len(themeOrder), len(Themes))
+	}
+	for _, name := range []string{"light", "night"} {
+		if !slices.Contains(themeOrder, name) {
+			t.Errorf("themeOrder missing %q", name)
 		}
 	}
 }
