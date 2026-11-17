@@ -214,7 +214,7 @@ var Themes = map[string]Theme{
 		HighlightBorder: c(70, 150, 55), ModifierBg: c(15, 26, 14),
 		ModifierActiveBg: c(80, 160, 60), ModifierActiveText: d, ModifierText: c(140, 175, 130),
 		FnKeyBg: c(12, 22, 12), AccentPopupBg: c(20, 35, 18),
-		AccentPopupText: c(180, 210, 170), AccentHighlightBg: c(50, 120, 40), GlyphColor: c(40, 70, 35)},
+		AccentPopupText: c(180, 210, 170), AccentHighlightBg: c(50, 120, 40), GlyphColor: c(67, 117, 58)},
 	"slate": {Name: "slate", Bg: c(30, 34, 38), KeyBg: c(48, 53, 58), KeyBgPressed: c(68, 74, 80),
 		KeyBorder: c(58, 63, 69), KeyText: c(200, 205, 210), HighlightBg: c(90, 100, 115),
 		HighlightBorder: c(120, 130, 145), ModifierBg: c(38, 42, 47),
@@ -296,7 +296,7 @@ var Themes = map[string]Theme{
 		HighlightBorder: c(110, 128, 60), ModifierBg: c(28, 32, 20),
 		ModifierActiveBg: c(120, 140, 60), ModifierActiveText: d, ModifierText: c(155, 162, 138),
 		FnKeyBg: c(24, 27, 17), AccentPopupBg: c(38, 42, 28),
-		AccentPopupText: c(195, 200, 175), AccentHighlightBg: c(85, 100, 45), GlyphColor: c(62, 70, 42)},
+		AccentPopupText: c(195, 200, 175), AccentHighlightBg: c(85, 100, 45), GlyphColor: c(105, 119, 71)},
 
 	// --- Gaming/pop culture ---
 	"cyberpunk": {Name: "cyberpunk", Bg: c(10, 8, 15), KeyBg: c(22, 18, 32), KeyBgPressed: c(38, 30, 55),
@@ -328,9 +328,9 @@ var Themes = map[string]Theme{
 	"virtualboy": {Name: "virtualboy", Bg: c(0, 0, 0), KeyBg: c(30, 0, 0), KeyBgPressed: c(60, 0, 0),
 		KeyBorder: c(50, 0, 0), KeyText: c(255, 0, 0), HighlightBg: c(120, 0, 0),
 		HighlightBorder: c(180, 0, 0), ModifierBg: c(20, 0, 0),
-		ModifierActiveBg: c(200, 0, 0), ModifierActiveText: w, ModifierText: c(160, 0, 0),
+		ModifierActiveBg: c(200, 0, 0), ModifierActiveText: w, ModifierText: c(190, 0, 0),
 		FnKeyBg: c(15, 0, 0), AccentPopupBg: c(30, 0, 0),
-		AccentPopupText: c(255, 0, 0), AccentHighlightBg: c(120, 0, 0), GlyphColor: c(80, 0, 0)},
+		AccentPopupText: c(255, 0, 0), AccentHighlightBg: c(120, 0, 0), GlyphColor: c(190, 0, 0)},
 	"cga": {Name: "cga", Bg: c(0, 0, 0), KeyBg: c(12, 12, 12), KeyBgPressed: c(30, 30, 30),
 		KeyBorder: c(85, 255, 255), KeyText: c(255, 255, 255), HighlightBg: c(255, 85, 255),
 		HighlightBorder: c(85, 255, 255), ModifierBg: c(8, 8, 8),
@@ -342,7 +342,7 @@ var Themes = map[string]Theme{
 		HighlightBorder: c(205, 205, 0), ModifierBg: c(10, 10, 10),
 		ModifierActiveBg: c(0, 205, 0), ModifierActiveText: d, ModifierText: c(170, 170, 170),
 		FnKeyBg: c(8, 8, 8), AccentPopupBg: c(15, 15, 15),
-		AccentPopupText: c(255, 255, 255), AccentHighlightBg: c(205, 0, 0), GlyphColor: c(0, 0, 150)},
+		AccentPopupText: c(255, 255, 255), AccentHighlightBg: c(205, 0, 0), GlyphColor: c(61, 61, 255)},
 
 	// --- Gaming aesthetics ---
 	"sakura": {Name: "sakura", Bg: c(255, 228, 235), KeyBg: c(248, 210, 220), KeyBgPressed: c(238, 190, 205),
