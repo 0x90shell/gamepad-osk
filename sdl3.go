@@ -224,6 +224,28 @@ func SDL3CreateTextureFromSurface(r *SDLRenderer, s *Surface) *Texture {
 	return &Texture{ptr: unsafe.Pointer(tex)}
 }
 
+// SDL3CreateTextureRGBA creates a static, alpha-blended texture from RGBA
+// bytes, 4 per pixel, row by row.
+func SDL3CreateTextureRGBA(r *SDLRenderer, w, h int32, pixels []byte) *Texture {
+	tex := C.SDL_CreateTexture((*C.SDL_Renderer)(r.ptr), C.SDL_PIXELFORMAT_RGBA32,
+		C.SDL_TEXTUREACCESS_STATIC, C.int(w), C.int(h))
+	if tex == nil {
+		return nil
+	}
+	if !C.SDL_UpdateTexture(tex, nil, unsafe.Pointer(&pixels[0]), C.int(w*4)) {
+		C.SDL_DestroyTexture(tex)
+		return nil
+	}
+	C.SDL_SetTextureBlendMode(tex, C.SDL_BLENDMODE_BLEND)
+	return &Texture{ptr: unsafe.Pointer(tex)}
+}
+
+// SDL3SetTextureColorAlphaMod tints a texture: each texel is multiplied by c.
+func SDL3SetTextureColorAlphaMod(t *Texture, c Color) {
+	C.SDL_SetTextureColorMod((*C.SDL_Texture)(t.ptr), C.Uint8(c.R), C.Uint8(c.G), C.Uint8(c.B))
+	C.SDL_SetTextureAlphaMod((*C.SDL_Texture)(t.ptr), C.Uint8(c.A))
+}
+
 func SDL3DestroyTexture(t *Texture) {
 	if t != nil && t.ptr != nil {
 		C.SDL_DestroyTexture((*C.SDL_Texture)(t.ptr))

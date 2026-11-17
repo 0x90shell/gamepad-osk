@@ -221,6 +221,7 @@ func (app *App) Run() error {
 	}
 	defer rend.Destroy()
 	rend.keyShadow = cfg.Theme.KeyShadow
+	rend.roundKeys = cfg.Theme.KeyStyle == "rounded"
 
 	inj, err := NewInjector()
 	if err != nil {

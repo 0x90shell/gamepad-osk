@@ -2,6 +2,9 @@ package main
 
 import "math"
 
+// keyRadiusFrac is the corner radius of rounded keys as a fraction of key height.
+const keyRadiusFrac = 0.16
+
 // roundRect is a rounded rectangle split into pieces on whole pixels: up to
 // three plain rectangles (Rects) and four Rad x Rad corner squares (Corners:
 // top-left, top-right, bottom-left, bottom-right), each filled with one
@@ -72,4 +75,73 @@ func circleMask(rad int32) []uint8 {
 		}
 	}
 	return mask
+}
+
+// fillRoundRect fills a rounded rectangle: plain fills for the straight
+// parts, and a cached circle texture tinted to col for the four corners.
+func (r *Renderer) fillRoundRect(rect FRect, radius float32, col Color) {
+	p := roundRectPieces(rect, radius)
+	setColor(r.renderer, col)
+	for _, rc := range p.Rects {
+		SDL3RenderFillRect(r.renderer, rc)
+	}
+	if p.Rad == 0 {
+		return
+	}
+	tex := r.cornerTexture(p.Rad)
+	if tex == nil {
+		return
+	}
+	SDL3SetTextureColorAlphaMod(tex, col)
+	rad := float32(p.Rad)
+	for i, dst := range p.Corners {
+		src := FRect{X: float32(i%2) * rad, Y: float32(i/2) * rad, W: rad, H: rad}
+		SDL3RenderTexture(r.renderer, tex, &src, &dst)
+	}
+}
+
+// cornerTexture returns the white circle texture for radius rad, creating it
+// on first use. Its four quadrants are the four corner shapes.
+func (r *Renderer) cornerTexture(rad int32) *Texture {
+	if tex, ok := r.cornerTex[rad]; ok {
+		return tex
+	}
+	mask := circleMask(rad)
+	pixels := make([]byte, 0, len(mask)*4)
+	for _, a := range mask {
+		pixels = append(pixels, 255, 255, 255, a)
+	}
+	size := 2 * rad
+	tex := SDL3CreateTextureRGBA(r.renderer, size, size, pixels)
+	r.cornerTex[rad] = tex // nil is cached too, so a failure is not retried every frame
+	return tex
+}
+
+// fillShape fills rect, with rounded corners when key_style is rounded.
+func (r *Renderer) fillShape(rect FRect, radius float32, col Color) {
+	if r.roundKeys {
+		r.fillRoundRect(rect, radius, col)
+		return
+	}
+	setColor(r.renderer, col)
+	SDL3RenderFillRect(r.renderer, rect)
+}
+
+// fillBorderedShape fills rect in border color, then the inside, 1 px in, in
+// bg. Square shapes keep the 1 px outline drawn on top of the fill.
+func (r *Renderer) fillBorderedShape(rect FRect, radius float32, bg, border Color) {
+	if r.roundKeys {
+		r.fillRoundRect(rect, radius, border)
+		r.fillRoundRect(FRect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}, radius-1, bg)
+		return
+	}
+	setColor(r.renderer, bg)
+	SDL3RenderFillRect(r.renderer, rect)
+	setColor(r.renderer, border)
+	SDL3RenderRect(r.renderer, rect)
+}
+
+// keyRadius is the corner radius of a key of height h.
+func keyRadius(h int32) float32 {
+	return keyRadiusFrac * float32(h)
 }
