@@ -386,11 +386,11 @@ var Themes = map[string]Theme{
 
 	// --- Mid-range brightness ---
 	"chalk": {Name: "chalk", Bg: c(100, 95, 90), KeyBg: c(120, 115, 108), KeyBgPressed: c(140, 134, 126),
-		KeyBorder: c(130, 124, 116), KeyText: c(230, 225, 215), HighlightBg: c(175, 140, 120),
+		KeyBorder: c(130, 124, 116), KeyText: c(251, 250, 248), HighlightBg: c(175, 140, 120),
 		HighlightBorder: c(195, 160, 140), ModifierBg: c(110, 105, 98),
-		ModifierActiveBg: c(160, 180, 170), ModifierActiveText: d, ModifierText: c(195, 190, 180),
+		ModifierActiveBg: c(160, 180, 170), ModifierActiveText: d, ModifierText: c(210, 207, 199),
 		FnKeyBg: c(105, 100, 94), AccentPopupBg: c(115, 110, 104),
-		AccentPopupText: c(230, 225, 215), AccentHighlightBg: c(175, 140, 120), GlyphColor: c(155, 148, 138)},
+		AccentPopupText: c(251, 250, 248), AccentHighlightBg: c(175, 140, 120), GlyphColor: c(210, 206, 202)},
 	"fjord": {Name: "fjord", Bg: c(60, 70, 100), KeyBg: c(78, 88, 120), KeyBgPressed: c(98, 108, 142),
 		KeyBorder: c(88, 98, 132), KeyText: c(190, 210, 240), HighlightBg: c(220, 150, 60),
 		HighlightBorder: c(240, 175, 80), ModifierBg: c(68, 78, 110),
