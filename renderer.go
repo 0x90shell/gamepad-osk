@@ -38,12 +38,12 @@ type Renderer struct {
 }
 
 // shadowColor returns the theme's key shadow color, or one derived from Bg
-// (70% brightness, fully opaque) when the theme does not set it.
+// (50% brightness, fully opaque) when the theme does not set it.
 func shadowColor(t Theme) Color {
 	if t.KeyShadow != (Color{}) {
 		return t.KeyShadow
 	}
-	dim := func(v uint8) uint8 { return uint8(int(v) * 7 / 10) } //nolint:gosec // G115: result <= v
+	dim := func(v uint8) uint8 { return v / 2 }
 	return Color{R: dim(t.Bg.R), G: dim(t.Bg.G), B: dim(t.Bg.B), A: 255}
 }
 
