@@ -51,3 +51,13 @@ func TestShadowOffset(t *testing.T) {
 		}
 	}
 }
+
+func TestBlackThemesSetShadow(t *testing.T) {
+	// A shadow derived from a black background is black and invisible, so
+	// black-background themes set their own glow color.
+	for name, theme := range Themes {
+		if max(theme.Bg.R, theme.Bg.G, theme.Bg.B) <= 5 && theme.KeyShadow == (Color{}) {
+			t.Errorf("theme %q has a black background but no KeyShadow", name)
+		}
+	}
+}
