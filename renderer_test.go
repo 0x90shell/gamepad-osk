@@ -60,6 +60,10 @@ func TestGlowThemesSetShadow(t *testing.T) {
 		"matrix", "retro", "terminal", "virtualboy", // 60% of label color
 		"cyberpunk", "midnight", "sunset", // 60% of label color
 		"ember", "synthwave", // 60% of accent color, raised to 2.75:1
+		// Dark themes whose derived shadow barely shows
+		"ayu_dark", "wine", "gotham", "navy", "teal", "copper", // accent, raised to 2.75:1
+		"oxocarbon", "olive", "forest", "coral", // 60% of label color
+		"gold", "nightfox", "vapor", "ice", // 60% of label color
 	}
 	for _, name := range glow {
 		if Themes[name].KeyShadow == (Color{}) {
