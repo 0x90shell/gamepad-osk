@@ -31,7 +31,26 @@ type Renderer struct {
 	flashGlyphText string // rendered with Promptfont, placed before flashText
 	flashEnd       time.Time
 	texCache       map[texCacheKey]texCacheEntry
-	dirtyFrames    int // redraw counter for double/triple buffering
+	dirtyFrames    int  // redraw counter for double/triple buffering
+	keyShadow      bool // draw a drop shadow under keys and the accent popup
+}
+
+// shadowColor returns the theme's key shadow color, or one derived from Bg
+// (70% brightness, fully opaque) when the theme does not set it.
+func shadowColor(t Theme) Color {
+	if t.KeyShadow != (Color{}) {
+		return t.KeyShadow
+	}
+	return Color{R: t.Bg.R * 7 / 10, G: t.Bg.G * 7 / 10, B: t.Bg.B * 7 / 10, A: 255}
+}
+
+// shadowOffset returns how far below a key its shadow reaches, in pixels.
+// Kept below the key gap so it never touches the next row; 0 means no shadow.
+func shadowOffset(unit, pad int32) int32 {
+	if pad < 2 {
+		return 0
+	}
+	return min(max(1, unit/40), pad-1)
 }
 
 func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Renderer, error) {
@@ -241,6 +260,11 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 		bg, border = t.KeyBg, t.KeyBorder
 	}
 
+	// Shadow (not under the highlighted or flashed key)
+	if r.keyShadow && !isCursor && !flashed {
+		r.drawShadow(rect)
+	}
+
 	// Fill
 	setColor(r.renderer, bg)
 	SDL3RenderFillRect(r.renderer, rect)
@@ -296,6 +320,9 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 
 	tw := int32(len(accents))*(r.unit+r.pad) + r.pad //nolint:gosec // G115: accent count fits in int32
 	pr := FRect{X: float32(xo), Y: float32(py), W: float32(tw), H: float32(r.unit + r.pad*2)}
+	if r.keyShadow {
+		r.drawShadow(pr)
+	}
 	setColor(r.renderer, r.theme.AccentPopupBg)
 	SDL3RenderFillRect(r.renderer, pr)
 	setColor(r.renderer, r.theme.HighlightBorder)
@@ -311,6 +338,18 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 		r.renderText(r.font, accent.Label, r.theme.AccentPopupText, ar, AlignCenter)
 		ax += r.unit + r.pad
 	}
+}
+
+// drawShadow fills rect shifted down by the shadow offset. Drawn before the
+// shape itself, so only the strip below the shape stays visible.
+func (r *Renderer) drawShadow(rect FRect) {
+	off := shadowOffset(r.unit, r.pad)
+	if off == 0 {
+		return
+	}
+	setColor(r.renderer, shadowColor(r.theme))
+	rect.Y += float32(off)
+	SDL3RenderFillRect(r.renderer, rect)
 }
 
 type TextAlign int

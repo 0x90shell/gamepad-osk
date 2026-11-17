@@ -220,6 +220,7 @@ func (app *App) Run() error {
 		return err
 	}
 	defer rend.Destroy()
+	rend.keyShadow = cfg.Theme.KeyShadow
 
 	inj, err := NewInjector()
 	if err != nil {
