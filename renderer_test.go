@@ -52,9 +52,21 @@ func TestShadowOffset(t *testing.T) {
 	}
 }
 
-func TestBlackThemesSetShadow(t *testing.T) {
-	// A shadow derived from a black background is black and invisible, so
-	// black-background themes set their own glow color.
+func TestGlowThemesSetShadow(t *testing.T) {
+	// A shadow derived from a black or near-black background is invisible,
+	// so these themes set their own glow color.
+	glow := []string{
+		"neon", "cga", "zx_spectrum", "high_contrast", // border color
+		"matrix", "retro", "terminal", "virtualboy", // 60% of label color
+		"cyberpunk", "midnight", "sunset", // 60% of label color
+		"ember", "synthwave", // 60% of accent color, raised to 2.75:1
+	}
+	for _, name := range glow {
+		if Themes[name].KeyShadow == (Color{}) {
+			t.Errorf("theme %q: KeyShadow not set", name)
+		}
+	}
+	// Any pure black background needs one too.
 	for name, theme := range Themes {
 		if max(theme.Bg.R, theme.Bg.G, theme.Bg.B) <= 5 && theme.KeyShadow == (Color{}) {
 			t.Errorf("theme %q has a black background but no KeyShadow", name)
