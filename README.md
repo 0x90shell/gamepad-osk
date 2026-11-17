@@ -280,28 +280,31 @@ See `config.example` for all options including button remapping, toggle combo, m
 
 `ayu_dark` `candy` `catppuccin` `catppuccin_frappe` `cga` `chalk` `cobalt` `copper` `coral` `cyberpunk` `dark` `dracula` `ember` `everforest` `fjord` `forest` `gameboy` `gold` `gotham` `gruvbox` `high_contrast` `horizon` `ice` `kanagawa` `lavender` `light` `material` `matrix` `mellow` `midnight` `monokai` `moss` `navy` `neon` `night` `nightfox` `nord` `ocean` `olive` `onedark` `oxocarbon` `palenight` `paper` `plum` `retro` `rose_pine` `sakura` `sand` `slate` `solarized` `solarized_light` `steam_green` `sunset` `synthwave` `teal` `terminal` `tokyo_night` `tokyo_storm` `vapor` `virtualboy` `wine` `zx_spectrum`
 
+Each image shows the theme with its default look: square keys with a shadow, Shift held. Click an image to see the theme without a shadow, with rounded keys, and with the accent menu open.
+
 | | | |
 |:---:|:---:|:---:|
-| ![ayu_dark](assets/ayu_dark.png)<br><sub>ayu_dark</sub> | ![candy](assets/candy.png)<br><sub>candy</sub> | ![catppuccin](assets/catppuccin.png)<br><sub>catppuccin</sub> |
-| ![catppuccin_frappe](assets/catppuccin_frappe.png)<br><sub>catppuccin_frappe</sub> | ![cga](assets/cga.png)<br><sub>cga</sub> | ![chalk](assets/chalk.png)<br><sub>chalk</sub> |
-| ![cobalt](assets/cobalt.png)<br><sub>cobalt</sub> | ![copper](assets/copper.png)<br><sub>copper</sub> | ![coral](assets/coral.png)<br><sub>coral</sub> |
-| ![cyberpunk](assets/cyberpunk.png)<br><sub>cyberpunk</sub> | ![dark](assets/dark.png)<br><sub>dark</sub> | ![dracula](assets/dracula.png)<br><sub>dracula</sub> |
-| ![ember](assets/ember.png)<br><sub>ember</sub> | ![everforest](assets/everforest.png)<br><sub>everforest</sub> | ![fjord](assets/fjord.png)<br><sub>fjord</sub> |
-| ![forest](assets/forest.png)<br><sub>forest</sub> | ![gameboy](assets/gameboy.png)<br><sub>gameboy</sub> | ![gold](assets/gold.png)<br><sub>gold</sub> |
-| ![gotham](assets/gotham.png)<br><sub>gotham</sub> | ![gruvbox](assets/gruvbox.png)<br><sub>gruvbox</sub> | ![high_contrast](assets/high_contrast.png)<br><sub>high_contrast</sub> |
-| ![horizon](assets/horizon.png)<br><sub>horizon</sub> | ![ice](assets/ice.png)<br><sub>ice</sub> | ![kanagawa](assets/kanagawa.png)<br><sub>kanagawa</sub> |
-| ![lavender](assets/lavender.png)<br><sub>lavender</sub> | ![material](assets/material.png)<br><sub>material</sub> | ![matrix](assets/matrix.png)<br><sub>matrix</sub> |
-| ![mellow](assets/mellow.png)<br><sub>mellow</sub> | ![midnight](assets/midnight.png)<br><sub>midnight</sub> | ![monokai](assets/monokai.png)<br><sub>monokai</sub> |
-| ![moss](assets/moss.png)<br><sub>moss</sub> | ![navy](assets/navy.png)<br><sub>navy</sub> | ![neon](assets/neon.png)<br><sub>neon</sub> |
-| ![nightfox](assets/nightfox.png)<br><sub>nightfox</sub> | ![nord](assets/nord.png)<br><sub>nord</sub> | ![ocean](assets/ocean.png)<br><sub>ocean</sub> |
-| ![olive](assets/olive.png)<br><sub>olive</sub> | ![onedark](assets/onedark.png)<br><sub>onedark</sub> | ![oxocarbon](assets/oxocarbon.png)<br><sub>oxocarbon</sub> |
-| ![palenight](assets/palenight.png)<br><sub>palenight</sub> | ![paper](assets/paper.png)<br><sub>paper</sub> | ![plum](assets/plum.png)<br><sub>plum</sub> |
-| ![retro](assets/retro.png)<br><sub>retro</sub> | ![rose_pine](assets/rose_pine.png)<br><sub>rose_pine</sub> | ![sakura](assets/sakura.png)<br><sub>sakura</sub> |
-| ![sand](assets/sand.png)<br><sub>sand</sub> | ![slate](assets/slate.png)<br><sub>slate</sub> | ![solarized](assets/solarized.png)<br><sub>solarized</sub> |
-| ![solarized_light](assets/solarized_light.png)<br><sub>solarized_light</sub> | ![steam_green](assets/steam_green.png)<br><sub>steam_green</sub> | ![sunset](assets/sunset.png)<br><sub>sunset</sub> |
-| ![synthwave](assets/synthwave.png)<br><sub>synthwave</sub> | ![teal](assets/teal.png)<br><sub>teal</sub> | ![terminal](assets/terminal.png)<br><sub>terminal</sub> |
-| ![tokyo_night](assets/tokyo_night.png)<br><sub>tokyo_night</sub> | ![tokyo_storm](assets/tokyo_storm.png)<br><sub>tokyo_storm</sub> | ![vapor](assets/vapor.png)<br><sub>vapor</sub> |
-| ![virtualboy](assets/virtualboy.png)<br><sub>virtualboy</sub> | ![wine](assets/wine.png)<br><sub>wine</sub> | ![zx_spectrum](assets/zx_spectrum.png)<br><sub>zx_spectrum</sub> |
+| [![ayu_dark](assets/ayu_dark.png)](assets/showcase/ayu_dark.png)<br><sub>ayu_dark</sub> | [![candy](assets/candy.png)](assets/showcase/candy.png)<br><sub>candy</sub> | [![catppuccin](assets/catppuccin.png)](assets/showcase/catppuccin.png)<br><sub>catppuccin</sub> |
+| [![catppuccin_frappe](assets/catppuccin_frappe.png)](assets/showcase/catppuccin_frappe.png)<br><sub>catppuccin_frappe</sub> | [![cga](assets/cga.png)](assets/showcase/cga.png)<br><sub>cga</sub> | [![chalk](assets/chalk.png)](assets/showcase/chalk.png)<br><sub>chalk</sub> |
+| [![cobalt](assets/cobalt.png)](assets/showcase/cobalt.png)<br><sub>cobalt</sub> | [![copper](assets/copper.png)](assets/showcase/copper.png)<br><sub>copper</sub> | [![coral](assets/coral.png)](assets/showcase/coral.png)<br><sub>coral</sub> |
+| [![cyberpunk](assets/cyberpunk.png)](assets/showcase/cyberpunk.png)<br><sub>cyberpunk</sub> | [![dark](assets/dark.png)](assets/showcase/dark.png)<br><sub>dark</sub> | [![dracula](assets/dracula.png)](assets/showcase/dracula.png)<br><sub>dracula</sub> |
+| [![ember](assets/ember.png)](assets/showcase/ember.png)<br><sub>ember</sub> | [![everforest](assets/everforest.png)](assets/showcase/everforest.png)<br><sub>everforest</sub> | [![fjord](assets/fjord.png)](assets/showcase/fjord.png)<br><sub>fjord</sub> |
+| [![forest](assets/forest.png)](assets/showcase/forest.png)<br><sub>forest</sub> | [![gameboy](assets/gameboy.png)](assets/showcase/gameboy.png)<br><sub>gameboy</sub> | [![gold](assets/gold.png)](assets/showcase/gold.png)<br><sub>gold</sub> |
+| [![gotham](assets/gotham.png)](assets/showcase/gotham.png)<br><sub>gotham</sub> | [![gruvbox](assets/gruvbox.png)](assets/showcase/gruvbox.png)<br><sub>gruvbox</sub> | [![high_contrast](assets/high_contrast.png)](assets/showcase/high_contrast.png)<br><sub>high_contrast</sub> |
+| [![horizon](assets/horizon.png)](assets/showcase/horizon.png)<br><sub>horizon</sub> | [![ice](assets/ice.png)](assets/showcase/ice.png)<br><sub>ice</sub> | [![kanagawa](assets/kanagawa.png)](assets/showcase/kanagawa.png)<br><sub>kanagawa</sub> |
+| [![lavender](assets/lavender.png)](assets/showcase/lavender.png)<br><sub>lavender</sub> | [![light](assets/light.png)](assets/showcase/light.png)<br><sub>light</sub> | [![material](assets/material.png)](assets/showcase/material.png)<br><sub>material</sub> |
+| [![matrix](assets/matrix.png)](assets/showcase/matrix.png)<br><sub>matrix</sub> | [![mellow](assets/mellow.png)](assets/showcase/mellow.png)<br><sub>mellow</sub> | [![midnight](assets/midnight.png)](assets/showcase/midnight.png)<br><sub>midnight</sub> |
+| [![monokai](assets/monokai.png)](assets/showcase/monokai.png)<br><sub>monokai</sub> | [![moss](assets/moss.png)](assets/showcase/moss.png)<br><sub>moss</sub> | [![navy](assets/navy.png)](assets/showcase/navy.png)<br><sub>navy</sub> |
+| [![neon](assets/neon.png)](assets/showcase/neon.png)<br><sub>neon</sub> | [![night](assets/night.png)](assets/showcase/night.png)<br><sub>night</sub> | [![nightfox](assets/nightfox.png)](assets/showcase/nightfox.png)<br><sub>nightfox</sub> |
+| [![nord](assets/nord.png)](assets/showcase/nord.png)<br><sub>nord</sub> | [![ocean](assets/ocean.png)](assets/showcase/ocean.png)<br><sub>ocean</sub> | [![olive](assets/olive.png)](assets/showcase/olive.png)<br><sub>olive</sub> |
+| [![onedark](assets/onedark.png)](assets/showcase/onedark.png)<br><sub>onedark</sub> | [![oxocarbon](assets/oxocarbon.png)](assets/showcase/oxocarbon.png)<br><sub>oxocarbon</sub> | [![palenight](assets/palenight.png)](assets/showcase/palenight.png)<br><sub>palenight</sub> |
+| [![paper](assets/paper.png)](assets/showcase/paper.png)<br><sub>paper</sub> | [![plum](assets/plum.png)](assets/showcase/plum.png)<br><sub>plum</sub> | [![retro](assets/retro.png)](assets/showcase/retro.png)<br><sub>retro</sub> |
+| [![rose_pine](assets/rose_pine.png)](assets/showcase/rose_pine.png)<br><sub>rose_pine</sub> | [![sakura](assets/sakura.png)](assets/showcase/sakura.png)<br><sub>sakura</sub> | [![sand](assets/sand.png)](assets/showcase/sand.png)<br><sub>sand</sub> |
+| [![slate](assets/slate.png)](assets/showcase/slate.png)<br><sub>slate</sub> | [![solarized](assets/solarized.png)](assets/showcase/solarized.png)<br><sub>solarized</sub> | [![solarized_light](assets/solarized_light.png)](assets/showcase/solarized_light.png)<br><sub>solarized_light</sub> |
+| [![steam_green](assets/steam_green.png)](assets/showcase/steam_green.png)<br><sub>steam_green</sub> | [![sunset](assets/sunset.png)](assets/showcase/sunset.png)<br><sub>sunset</sub> | [![synthwave](assets/synthwave.png)](assets/showcase/synthwave.png)<br><sub>synthwave</sub> |
+| [![teal](assets/teal.png)](assets/showcase/teal.png)<br><sub>teal</sub> | [![terminal](assets/terminal.png)](assets/showcase/terminal.png)<br><sub>terminal</sub> | [![tokyo_night](assets/tokyo_night.png)](assets/showcase/tokyo_night.png)<br><sub>tokyo_night</sub> |
+| [![tokyo_storm](assets/tokyo_storm.png)](assets/showcase/tokyo_storm.png)<br><sub>tokyo_storm</sub> | [![vapor](assets/vapor.png)](assets/showcase/vapor.png)<br><sub>vapor</sub> | [![virtualboy](assets/virtualboy.png)](assets/showcase/virtualboy.png)<br><sub>virtualboy</sub> |
+| [![wine](assets/wine.png)](assets/showcase/wine.png)<br><sub>wine</sub> | [![zx_spectrum](assets/zx_spectrum.png)](assets/showcase/zx_spectrum.png)<br><sub>zx_spectrum</sub> |  |
 
 ## Show & Hide
 

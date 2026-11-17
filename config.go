@@ -81,7 +81,7 @@ type MouseConfig struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Theme:  ThemeConfig{Name: "matrix", KeyStyle: "square"},
+		Theme:  ThemeConfig{Name: "matrix", KeyStyle: "square", KeyShadow: true},
 		Window: WindowConfig{Position: "bottom", Margin: 0, Opacity: 0.95, PanelAvoid: true},
 		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
@@ -162,7 +162,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 			case "key_style":
 				cfg.Theme.KeyStyle = val
 			case "key_shadow":
-				cfg.Theme.KeyShadow = parseBool("key_shadow", val, false)
+				cfg.Theme.KeyShadow = parseBool("key_shadow", val, cfg.Theme.KeyShadow)
 			default:
 				Debugf("unknown config key: theme.%s", key)
 			}

@@ -3,7 +3,7 @@
 [theme]
 name = matrix                # see --help for full list (62 themes)
 key_style = square           # square or rounded
-key_shadow = false           # drop shadow under keys
+key_shadow = true            # drop shadow under keys
 
 [window]
 position = bottom            # bottom or top
