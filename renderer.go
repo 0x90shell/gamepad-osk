@@ -364,7 +364,12 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 	}
 
 	// Controller glyph (bottom-right)
-	if glyph, ok := KeyGlyphs[key.Code]; ok && r.fontGlyph != nil {
+	if g, ok := KeyGlyphs[key.Code]; ok && r.fontGlyph != nil {
+		// Without Promptfont, fontGlyph is the label font: show the button name
+		glyph := g.Glyph
+		if !r.hasPromptfont {
+			glyph = g.Text
+		}
 		r.renderText(r.fontGlyph, glyph, t.GlyphColor,
 			FRect{X: float32(x), Y: float32(y), W: float32(w - 3), H: float32(h - 2)}, AlignBottomRight)
 	}

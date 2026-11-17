@@ -264,17 +264,32 @@ func TestBuildKeyGlyphs(t *testing.T) {
 	cfg := DefaultConfig()
 	glyphs := BuildKeyGlyphs(cfg.Gamepad)
 
-	if glyphs[KEY_BACKSPACE] == "" {
+	if glyphs[KEY_BACKSPACE].Glyph == "" {
 		t.Error("backspace should have a glyph")
 	}
-	if glyphs[KEY_SPACE] == "" {
+	if glyphs[KEY_SPACE].Glyph == "" {
 		t.Error("space should have a glyph")
 	}
-	if glyphs[KEY_ENTER] == "" {
+	if glyphs[KEY_ENTER].Glyph == "" {
 		t.Error("enter should have a glyph")
 	}
-	if glyphs[0] != "\u2699" {
-		t.Errorf("cfg key glyph = %q, want gear icon", glyphs[0])
+	if glyphs[0].Glyph != "\u2699" {
+		t.Errorf("theme key glyph = %q, want gear icon", glyphs[0].Glyph)
+	}
+
+	// Without Promptfont the keys show the mapped button's name
+	want := map[int]string{KEY_BACKSPACE: "X", KEY_SPACE: "Y", KEY_ENTER: "RT", KEY_LEFTSHIFT: "LT", KEY_CAPSLOCK: "L3"}
+	for code, name := range want {
+		if got := glyphs[code].Text; got != name {
+			t.Errorf("key %d text = %q, want %q", code, got, name)
+		}
+	}
+
+	// Remapping changes the name with the glyph
+	cfg.Gamepad.Buttons.Backspace = "lb"
+	glyphs = BuildKeyGlyphs(cfg.Gamepad)
+	if g := glyphs[KEY_BACKSPACE]; g.Text != "LB" || g.Glyph != buttonTable(false)["lb"].Glyph {
+		t.Errorf("remapped backspace = %+v, want the lb glyph and LB", g)
 	}
 }
 

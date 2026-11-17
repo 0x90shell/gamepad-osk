@@ -218,7 +218,7 @@ var LayoutQWERTY = [][]KeyDef{
 }
 
 // KeyGlyphs is built at runtime from config via BuildKeyGlyphs()
-var KeyGlyphs map[int]string
+var KeyGlyphs map[int]HintItem
 
 // PopupHint is built at runtime from config via BuildPopupHint()
 var PopupHint []HintItem

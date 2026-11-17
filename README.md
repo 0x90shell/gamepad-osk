@@ -214,7 +214,7 @@ Make sure `~/.local/bin` is in your `$PATH`.
 
 ### Promptfont
 
-[Promptfont](https://codeberg.org/shinmera/promptfont) displays controller button glyphs on mapped keys. Without it, those keys show plain arrow symbols, and the accent popup hint names the buttons in text.
+[Promptfont](https://codeberg.org/shinmera/promptfont) displays controller button glyphs on mapped keys. Without it, those keys and the accent popup hint show button names (such as X or LT) instead.
 
 **Arch:**
 

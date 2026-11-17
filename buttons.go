@@ -144,12 +144,13 @@ func BuildActionMap(cfg GamepadConfig) ActionMap {
 	return ActionMap{BtnPress: press, BtnRelease: release, AxisActions: axes, AxisRelease: axesRelease}
 }
 
-// BuildKeyGlyphs maps keyboard evdev codes to Promptfont glyphs
-// based on which controller button triggers that action.
-func BuildKeyGlyphs(cfg GamepadConfig) map[int]string {
+// BuildKeyGlyphs maps keyboard evdev codes to Promptfont glyphs, with the
+// button name as text for when Promptfont is missing, based on which
+// controller button triggers that action.
+func BuildKeyGlyphs(cfg GamepadConfig) map[int]HintItem {
 	table := buttonTable(isSwapXY(cfg))
 	b := cfg.Buttons
-	glyphs := make(map[int]string)
+	glyphs := make(map[int]HintItem)
 
 	mappings := []struct {
 		keyCode    int
@@ -170,12 +171,12 @@ func BuildKeyGlyphs(cfg GamepadConfig) map[int]string {
 
 	for _, m := range mappings {
 		if info, ok := table[m.buttonName]; ok {
-			glyphs[m.keyCode] = info.Glyph
+			glyphs[m.keyCode] = HintItem{Glyph: info.Glyph, Text: strings.ToUpper(m.buttonName)}
 		}
 	}
 
-	// Theme key always gets the gear icon
-	glyphs[0] = "\u2699"
+	// Theme key always gets the gear icon; the label font has it too
+	glyphs[0] = HintItem{Glyph: "\u2699", Text: "\u2699"}
 
 	return glyphs
 }
