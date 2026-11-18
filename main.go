@@ -264,7 +264,7 @@ USAGE
 OPTIONS
   --device, -d PATH    Input device (overrides config, overrides auto-detect)
   --theme, -t NAME     Color theme (overrides config)
-  --config, -c PATH    Config file path (overrides search order)
+  --config, -c PATH    Use only this config file: read, saved to, nothing else created
   --toggle             Toggle visibility of running instance (for evsieve/hotkey)
   --daemon             Start hidden, wait for toggle combo or --toggle to show
                        Close button (B) hides instead of exiting in daemon mode

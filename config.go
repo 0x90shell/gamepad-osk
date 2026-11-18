@@ -394,7 +394,7 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString(line(kvf("grab", cfg.Gamepad.Grab), "grab device when visible (prevents input bleed to game)"))
 	b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f', -1, 64)), "stick deadzone (0.0-1.0)"))
 	b.WriteString(line(kvf("long_press_ms", cfg.Gamepad.LongPressMs), "ms to hold for accent popup (100-5000)"))
-	b.WriteString(line(kv("swap_xy", cfg.Gamepad.SwapXY), "auto = detect xpad/xpadneo/xone drivers (default), true = force swap, false = off"))
+	b.WriteString(line(kv("swap_xy", cfg.Gamepad.SwapXY), "auto = detect xpad/xpadneo/xone for each pad (default), true = force swap, false = off"))
 	b.WriteString(line(kv("controller", cfg.Gamepad.Controller), "auto, xbox, playstation, nintendo, 8bitdo or generic - button names shown"))
 	b.WriteString(line(kv("mouse_stick", cfg.Gamepad.MouseStick), "left or right - nav uses the other stick"))
 	b.WriteString(line(kv("toggle_combo", cfg.Gamepad.ToggleCombo), "built-in show/hide combo (empty = disabled, use --toggle/evsieve)"))

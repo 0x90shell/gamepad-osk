@@ -33,7 +33,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
-- Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
+- Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers, decided again for each pad that connects)
 - DInput pads such as 8BitDo over Bluetooth: right stick on Z/RZ and digital triggers are detected automatically
 - 62 color themes (cycle live with the Theme key, or set via config/flag)
 - Square or rounded keys, with an optional shadow
@@ -268,7 +268,13 @@ Config is loaded from (first found):
 3. `/etc/gamepad-osk/config`
 4. `config` next to binary
 
-A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
+Without `--config`, the first run creates `~/.config/gamepad-osk/config`: a copy of `/etc/gamepad-osk/config` or of the `config` next to the binary if one exists, else the built-in defaults (the same as `config.example`).
+
+With `--config`, that file is the only one read and written. Nothing else is searched or created, and changes made on the keyboard are saved to it. A missing `--config` file is an error. This also makes the binary portable: keep a `config` next to it and run `./gamepad-osk -c config`.
+
+Changes made on the keyboard (Theme key, Shift + up/down, Start) are saved by editing only that one line, so your comments and other lines stay as you wrote them.
+
+Problems are reported, never fixed silently. A value the app cannot read, an unknown key or section, a key set twice, or a button used for two actions prints a warning with its line number at start and in `gamepad-osk --setup`. The app then uses the default for that setting and starts. `gamepad-osk --help` shows which config file is in use.
 
 See `config.example` for all options including button remapping, toggle combo, mouse stick, theme, scale, opacity, and deadzone.
 
@@ -328,7 +334,7 @@ toggle_combo = guide+a       # or l3+r3, select+start, etc.
 combo_period_ms = 200        # timing window (ms)
 ```
 
-Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, `guide`, `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right`. Requires 2-4 buttons.
+Available buttons: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, `guide`, `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right`. Requires 2-4 buttons. `x` and `y` are the buttons printed X and Y on your pad: on Xbox pads the app corrects the driver's swapped codes (`swap_xy`), and combos follow the same correction.
 
 Works in both normal and daemon mode. Pair with `--daemon` to keep the OSK running as a service (B hides instead of exiting). The internal combo handler runs in the same process that performs the grab, so there is no event-state race with other readers. Prefer this over evsieve hooks when it suffices.
 
