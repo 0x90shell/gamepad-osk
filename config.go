@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -500,16 +501,16 @@ func LoadConfig(overridePath string) Config {
 		}
 	}
 
-	// Priority: --config flag > user config > system config > next to binary > cwd
-	var paths []string
-	if overridePath != "" {
-		paths = append(paths, overridePath)
+	// Priority: user config > system config > next to binary > cwd.
+	// --config replaces the search: it is the only file read.
+	paths := []string{overridePath}
+	if overridePath == "" {
+		paths = append([]string{userPath}, configSearchPaths()...)
 	}
-	paths = append(paths, userPath)
-	paths = append(paths, configSearchPaths()...)
 
-	configSource.Path, configSource.FromFlag = "", false
-	for i, p := range paths {
+	// Saves go to the --config file even if reading it fails below.
+	configSource.Path, configSource.FromFlag = overridePath, overridePath != ""
+	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: config paths are trusted
 			f, err := os.Open(p) //nolint:gosec // G304: config paths are trusted
 			if err != nil {
@@ -523,7 +524,6 @@ func LoadConfig(overridePath string) Config {
 			}
 			_ = f.Close()
 			configSource.Path = p
-			configSource.FromFlag = overridePath != "" && i == 0
 			break
 		}
 	}
@@ -537,9 +537,9 @@ func LoadConfig(overridePath string) Config {
 		}
 	}
 
-	// Auto-create user config if it doesn't exist.
+	// Auto-create user config if it doesn't exist (not with --config).
 	// Prefer copying from a system/binary config file; fall back to writing defaults.
-	if _, err := os.Stat(userPath); os.IsNotExist(err) {
+	if _, err := os.Stat(userPath); overridePath == "" && os.IsNotExist(err) {
 		copied := false
 		for _, src := range paths[1:] { // skip user path itself
 			if _, err := os.Stat(src); err == nil { //nolint:gosec // G703: config paths are trusted
@@ -568,9 +568,10 @@ func LoadConfig(overridePath string) Config {
 // saveConfig loads the user config, applies mutator, and writes it back.
 func saveConfig(mutate func(*Config)) {
 	path := UserConfigPath()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
-		log.Printf("Warning: cannot create config dir: %v", err)
+	if configSource.FromFlag {
+		path = configSource.Path
+	} else if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
+		saveFailed(path, err)
 		return
 	}
 
@@ -590,14 +591,56 @@ func saveConfig(mutate func(*Config)) {
 
 	f, err := os.Create(path) //nolint:gosec // G304: user config path
 	if err != nil {
-		log.Printf("Warning: cannot write config: %v", err)
+		saveFailed(path, err)
 		return
 	}
 	defer func() { _ = f.Close() }()
 
 	if err := writeINI(f, cfg); err != nil {
-		log.Printf("Warning: cannot write config: %v", err)
+		saveFailed(path, err)
 	}
+}
+
+// saveWarned is set after the first failed save, so a read-only config
+// warns once, not on every theme change.
+var saveWarned bool
+
+func saveFailed(path string, err error) {
+	if !saveWarned {
+		log.Printf("Warning: cannot save to %s: %v (changes last until exit)", path, err) //nolint:gosec // G706: path from our config search
+		saveWarned = true
+	}
+}
+
+// checkConfigFlag returns the absolute path of a --config file, or an
+// error if it is missing, a directory or unreadable.
+func checkConfigFlag(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("config file %s: %w", path, pathErr(err))
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("config file %s is a directory", path)
+	}
+	f, err := os.Open(abs) //nolint:gosec // G304: path given by the user with --config
+	if err != nil {
+		return "", fmt.Errorf("config file %s: %w", path, pathErr(err))
+	}
+	_ = f.Close()
+	return abs, nil
+}
+
+// pathErr drops the operation and path from an *os.PathError, which the
+// caller already names.
+func pathErr(err error) error {
+	if pe, ok := errors.AsType[*os.PathError](err); ok {
+		return pe.Err
+	}
+	return err
 }
 
 // SaveTheme writes the current theme name to the user config file.

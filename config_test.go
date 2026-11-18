@@ -453,6 +453,7 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 	// Use a temp dir to avoid touching real config
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	resetConfigState(t)
 
 	// Save a theme
 	SaveTheme("nord")
@@ -652,6 +653,7 @@ func TestWriteINIRoundTrip(t *testing.T) {
 func TestMigrateFromTOML(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	resetConfigState(t)
 
 	// Write a TOML config (with quoted strings, like BurntSushi/toml produces)
 	tomlDir := filepath.Join(tmpDir, "gamepad-osk")
@@ -1041,6 +1043,7 @@ func TestBorderlessThemes(t *testing.T) {
 func isolateConfig(t *testing.T) (userPath, searchDir string) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	resetConfigState(t)
 	searchDir = t.TempDir()
 	orig := configSearchPaths
 	configSearchPaths = func() []string {
@@ -1050,6 +1053,18 @@ func isolateConfig(t *testing.T) (userPath, searchDir string) {
 	log.SetOutput(io.Discard)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	return UserConfigPath(), searchDir
+}
+
+// resetConfigState clears what LoadConfig and saves remember, before and
+// after the test, so a --config test cannot redirect a later save.
+func resetConfigState(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		configSource.Path, configSource.FromFlag = "", false
+		saveWarned = false
+	}
+	reset()
+	t.Cleanup(reset)
 }
 
 func writeTestConfig(t *testing.T, path, theme string) {
@@ -1220,6 +1235,114 @@ func TestExampleMatchesDefaults(t *testing.T) {
 		}
 		if issues := checkConfigFile(path); len(issues) != 0 {
 			t.Errorf("%s: checkConfigFile issues %q", src, issues)
+		}
+	}
+}
+
+// Issue #3: --config is the only file read and written.
+func TestConfigFlag(t *testing.T) {
+	t.Run("does not create the user config", func(t *testing.T) {
+		user, dir := isolateConfig(t)
+		flag := filepath.Join(dir, "flag")
+		writeTestConfig(t, flag, "gotham")
+		LoadConfig(flag)
+		if _, err := os.Stat(user); !os.IsNotExist(err) {
+			t.Errorf("user config created at %s (err %v)", user, err)
+		}
+		if _, err := os.Stat(filepath.Dir(user)); !os.IsNotExist(err) {
+			t.Errorf("user config dir created (err %v)", err)
+		}
+	})
+	t.Run("does not fall back when the file goes away", func(t *testing.T) {
+		user, dir := isolateConfig(t)
+		writeTestConfig(t, user, "dracula")
+		writeTestConfig(t, filepath.Join(dir, "system"), "nord")
+		cfg := LoadConfig(filepath.Join(dir, "missing"))
+		if cfg.Theme.Name != DefaultConfig().Theme.Name {
+			t.Errorf("theme = %q, want the default (no other file read)", cfg.Theme.Name)
+		}
+	})
+	t.Run("saves go to the flag file", func(t *testing.T) {
+		user, dir := isolateConfig(t)
+		flag := filepath.Join(dir, "flag")
+		writeTestConfig(t, flag, "gotham")
+		LoadConfig(flag)
+		SaveTheme("nord")
+		SavePosition(true)
+		SaveSensitivity(22)
+		if _, err := os.Stat(user); !os.IsNotExist(err) {
+			t.Errorf("save wrote the user config (err %v)", err)
+		}
+		cfg := DefaultConfig()
+		data, err := os.ReadFile(flag) //nolint:gosec // G304: test path
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := parseINI(strings.NewReader(string(data)), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Theme.Name != "nord" || cfg.Window.Position != "top" || cfg.Mouse.Sensitivity != 22 {
+			t.Errorf("flag file has theme %q, position %q, sensitivity %d; want nord, top, 22",
+				cfg.Theme.Name, cfg.Window.Position, cfg.Mouse.Sensitivity)
+		}
+	})
+	t.Run("read-only flag file warns once and is not replaced", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("root ignores file permissions")
+		}
+		user, dir := isolateConfig(t)
+		flag := filepath.Join(dir, "flag")
+		writeTestConfig(t, flag, "gotham")
+		if err := os.Chmod(flag, 0400); err != nil {
+			t.Fatal(err)
+		}
+		var buf strings.Builder
+		log.SetOutput(&buf)
+		LoadConfig(flag)
+		SaveTheme("nord")
+		SaveTheme("cobalt")
+		SavePosition(true)
+		if n := strings.Count(buf.String(), "cannot save"); n != 1 {
+			t.Errorf("%d save warnings, want 1:\n%s", n, buf.String())
+		}
+		data, _ := os.ReadFile(flag) //nolint:gosec // G304: test path
+		if !strings.Contains(string(data), "gotham") {
+			t.Error("read-only flag file was changed")
+		}
+		if _, err := os.Stat(user); !os.IsNotExist(err) {
+			t.Error("save fell back to the user config")
+		}
+	})
+}
+
+func TestCheckConfigFlag(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "c")
+	writeTestConfig(t, file, "nord")
+
+	if got, err := checkConfigFlag(file); err != nil || got != file {
+		t.Errorf("existing file: %q, %v", got, err)
+	}
+	t.Chdir(dir)
+	if got, err := checkConfigFlag("c"); err != nil || got != file {
+		t.Errorf("relative path: got %q, %v; want %q", got, err, file)
+	}
+	for name, path := range map[string]string{
+		"missing":   filepath.Join(dir, "nope"),
+		"directory": dir,
+	} {
+		if _, err := checkConfigFlag(path); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	if os.Getuid() != 0 {
+		unreadable := filepath.Join(dir, "unreadable")
+		writeTestConfig(t, unreadable, "nord")
+		if err := os.Chmod(unreadable, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := checkConfigFlag(unreadable); err == nil {
+			t.Error("unreadable: no error")
 		}
 	}
 }

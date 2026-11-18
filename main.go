@@ -142,6 +142,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "No running instance, starting new...")
 	}
 	devicePath, themeName, configPath := opts.device, opts.theme, opts.config
+	if configPath != "" {
+		if configPath, err = checkConfigFlag(configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	daemon, setupMode, installMode := opts.daemon, opts.setup, opts.install
 
 	// --install requires --setup
