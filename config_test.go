@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1727,4 +1729,183 @@ func TestSudoCreatesOwnedByUser(t *testing.T) {
 			t.Errorf("chowned %q with no SUDO_UID", *chowned)
 		}
 	})
+}
+
+// L: one rule list. For each key, a bad value gives exactly one --setup
+// issue, one start warning that names the value used, and that value
+// afterwards. A good value gives none and stays. H1: the fallback named
+// in the warning is the one set.
+func TestConfigRules(t *testing.T) {
+	def := DefaultConfig()
+	tests := []struct {
+		key  string
+		bad  func(*Config)
+		good func(*Config)
+		got  func(Config) string // the setting after ValidateConfig
+		want string              // fallback after a bad value
+	}{
+		{"theme", func(c *Config) { c.Theme.Name = "nope" }, func(c *Config) { c.Theme.Name = "nord" },
+			func(c Config) string { return c.Theme.Name }, def.Theme.Name},
+		{"key_style", func(c *Config) { c.Theme.KeyStyle = "round" }, func(c *Config) { c.Theme.KeyStyle = "rounded" },
+			func(c Config) string { return c.Theme.KeyStyle }, def.Theme.KeyStyle},
+		{"position", func(c *Config) { c.Window.Position = "middle" }, func(c *Config) { c.Window.Position = "top" },
+			func(c Config) string { return c.Window.Position }, def.Window.Position},
+		{"margin", func(c *Config) { c.Window.Margin = -5 }, func(c *Config) { c.Window.Margin = 30 },
+			func(c Config) string { return strconv.Itoa(c.Window.Margin) }, "0"},
+		{"opacity", func(c *Config) { c.Window.Opacity = 0.05 }, func(c *Config) { c.Window.Opacity = 0.8 },
+			func(c Config) string { return fmt.Sprint(c.Window.Opacity) }, "0.2"},
+		{"unit_size", func(c *Config) { c.Keys.UnitSize = -1 }, func(c *Config) { c.Keys.UnitSize = 50 },
+			func(c Config) string { return strconv.Itoa(c.Keys.UnitSize) }, "0"},
+		{"padding", func(c *Config) { c.Keys.Padding = -2 }, func(c *Config) { c.Keys.Padding = 6 },
+			func(c Config) string { return strconv.Itoa(c.Keys.Padding) }, "4"},
+		{"scale", func(c *Config) { c.Keys.Scale = 200 }, func(c *Config) { c.Keys.Scale = 70 },
+			func(c Config) string { return strconv.Itoa(c.Keys.Scale) }, "50"},
+		{"repeat_delay_ms", func(c *Config) { c.Keys.RepeatDelayMs = 50 }, func(c *Config) { c.Keys.RepeatDelayMs = 300 },
+			func(c Config) string { return strconv.Itoa(c.Keys.RepeatDelayMs) }, "400"},
+		{"repeat_rate_ms", func(c *Config) { c.Keys.RepeatRateMs = 5 }, func(c *Config) { c.Keys.RepeatRateMs = 60 },
+			func(c Config) string { return strconv.Itoa(c.Keys.RepeatRateMs) }, "80"},
+		{"deadzone", func(c *Config) { c.Gamepad.Deadzone = 2 }, func(c *Config) { c.Gamepad.Deadzone = 0.4 },
+			func(c Config) string { return fmt.Sprint(c.Gamepad.Deadzone) }, "0.25"},
+		{"long_press_ms", func(c *Config) { c.Gamepad.LongPressMs = 10 }, func(c *Config) { c.Gamepad.LongPressMs = 800 },
+			func(c Config) string { return strconv.Itoa(c.Gamepad.LongPressMs) }, "500"},
+		{"swap_xy", func(c *Config) { c.Gamepad.SwapXY = "True" }, func(c *Config) { c.Gamepad.SwapXY = "false" },
+			func(c Config) string { return c.Gamepad.SwapXY }, "auto"},
+		{"controller", func(c *Config) { c.Gamepad.Controller = "sega" }, func(c *Config) { c.Gamepad.Controller = "xbox" },
+			func(c Config) string { return c.Gamepad.Controller }, "auto"},
+		{"mouse_stick", func(c *Config) { c.Gamepad.MouseStick = "both" }, func(c *Config) { c.Gamepad.MouseStick = "left" },
+			func(c Config) string { return c.Gamepad.MouseStick }, "right"},
+		{"toggle_combo", func(c *Config) { c.Gamepad.ToggleCombo = "a+banana" }, func(c *Config) { c.Gamepad.ToggleCombo = "select+start" },
+			func(c Config) string { return c.Gamepad.ToggleCombo }, ""},
+		{"combo_period_ms", func(c *Config) { c.Gamepad.ComboPeriodMs = 5 }, func(c *Config) { c.Gamepad.ComboPeriodMs = 300 },
+			func(c Config) string { return strconv.Itoa(c.Gamepad.ComboPeriodMs) }, "200"},
+		{"press", func(c *Config) { c.Gamepad.Buttons.Press = "z" }, func(c *Config) { c.Gamepad.Buttons.Press = "select" },
+			func(c Config) string { return c.Gamepad.Buttons.Press }, "a"},
+		{"close", func(c *Config) { c.Gamepad.Buttons.Close = "" }, func(c *Config) { c.Gamepad.Buttons.Close = "select" },
+			func(c Config) string { return c.Gamepad.Buttons.Close }, "b"},
+		{"backspace", func(c *Config) { c.Gamepad.Buttons.Backspace = "X" }, nil,
+			func(c Config) string { return c.Gamepad.Buttons.Backspace }, "x"},
+		{"space", func(c *Config) { c.Gamepad.Buttons.Space = "guide" }, nil,
+			func(c Config) string { return c.Gamepad.Buttons.Space }, "y"},
+		{"shift", func(c *Config) { c.Gamepad.Buttons.Shift = "l2" }, nil,
+			func(c Config) string { return c.Gamepad.Buttons.Shift }, "lt"},
+		{"enter", func(c *Config) { c.Gamepad.Buttons.Enter = "r2" }, nil,
+			func(c Config) string { return c.Gamepad.Buttons.Enter }, "rt"},
+		{"left_click", func(c *Config) { c.Gamepad.Buttons.LeftClick = "r1" }, nil,
+			func(c Config) string { return c.Gamepad.Buttons.LeftClick }, "rb"},
+		{"right_click", func(c *Config) { c.Gamepad.Buttons.RightClick = "l1" }, nil,
+			func(c Config) string { return c.Gamepad.Buttons.RightClick }, "lb"},
+		{"position_toggle", func(c *Config) { c.Gamepad.Buttons.PositionToggle = "home" },
+			func(c *Config) { c.Gamepad.Buttons.PositionToggle = "" }, // empty disables it
+			func(c Config) string { return c.Gamepad.Buttons.PositionToggle }, "start"},
+		{"sensitivity", func(c *Config) { c.Mouse.Sensitivity = 0 }, func(c *Config) { c.Mouse.Sensitivity = 30 },
+			func(c Config) string { return strconv.Itoa(c.Mouse.Sensitivity) }, "10"},
+	}
+	run := func(c *Config) (issues []string, logged string) {
+		issues = checkConfig(*c)
+		var buf strings.Builder
+		log.SetOutput(&buf)
+		ValidateConfig(c)
+		log.SetOutput(os.Stderr)
+		return issues, buf.String()
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			c := DefaultConfig()
+			tt.bad(&c)
+			issues, logged := run(&c)
+			if len(issues) != 1 || !strings.Contains(issues[0], tt.key) {
+				t.Errorf("bad value: issues %q, want one naming %s", issues, tt.key)
+			}
+			if strings.Count(logged, "Warning:") != 1 {
+				t.Errorf("bad value: %d warnings, want 1:\n%s", strings.Count(logged, "Warning:"), logged)
+			}
+			if got := tt.got(c); got != tt.want {
+				t.Errorf("after ValidateConfig %s = %q, want %q", tt.key, got, tt.want)
+			}
+			if tt.want != "" && !strings.Contains(logged, "using "+tt.want) {
+				t.Errorf("warning does not name the value set (%s):\n%s", tt.want, logged)
+			}
+			if again := checkConfig(c); len(again) != 0 {
+				t.Errorf("still broken after the fix: %q", again)
+			}
+
+			if tt.good == nil {
+				return
+			}
+			c = DefaultConfig()
+			tt.good(&c)
+			want := tt.got(c)
+			if issues, logged := run(&c); len(issues) != 0 || logged != "" || tt.got(c) != want {
+				t.Errorf("good value: issues %q, log %q, value %q (want %q)", issues, logged, tt.got(c), want)
+			}
+		})
+	}
+}
+
+func TestButtonClashes(t *testing.T) {
+	tests := []struct {
+		name string
+		set  func(*Config)
+		want []string
+	}{
+		{"defaults", func(*Config) {}, nil},
+		{"two actions on one button", func(c *Config) { c.Gamepad.Buttons.Close = "a" },
+			[]string{"press and close are both on a, only one works"}},
+		{"action on the caps stick click", func(c *Config) { c.Gamepad.Buttons.Space = "l3" },
+			[]string{"Caps Lock (stick click) and space are both on l3, only one works"}},
+		{"mouse_stick left swaps the stick clicks", func(c *Config) {
+			c.Gamepad.MouseStick = "left"
+			c.Gamepad.Buttons.Space = "l3"
+		}, []string{"left click (stick click) and space are both on l3, only one works"}},
+		{"position_toggle disabled is no clash", func(c *Config) { c.Gamepad.Buttons.PositionToggle = "" }, nil},
+		{"swapped pair is fine", func(c *Config) {
+			c.Gamepad.Buttons.Backspace, c.Gamepad.Buttons.Space = "y", "x"
+		}, nil},
+	}
+	for _, tt := range tests {
+		c := DefaultConfig()
+		tt.set(&c)
+		if got := buttonClashes(c); !slices.Equal(got, tt.want) {
+			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
+		}
+	}
+	// A clash warns at start but changes nothing (which one the user meant
+	// is unknown).
+	c := DefaultConfig()
+	c.Gamepad.Buttons.Close = "a"
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	ValidateConfig(&c)
+	log.SetOutput(os.Stderr)
+	if !strings.Contains(buf.String(), "press and close are both on a") || c.Gamepad.Buttons.Close != "a" {
+		t.Errorf("clash: log %q, close = %q", buf.String(), c.Gamepad.Buttons.Close)
+	}
+}
+
+// Keys the coverage table found untested by name.
+func TestPanelAvoidAndBottomMargin(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := parseINI(strings.NewReader("[window]\npanel_avoid = false\n"), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Window.PanelAvoid {
+		t.Error("panel_avoid = false not read")
+	}
+	var buf strings.Builder
+	if err := writeINI(&buf, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "panel_avoid = false") {
+		t.Error("panel_avoid = false not written")
+	}
+
+	user, _ := isolateConfig(t)
+	writeRaw(t, user, "[window]\nbottom_margin = 12\n", 0600)
+	if got := LoadConfig("").Window.Margin; got != 12 {
+		t.Errorf("bottom_margin = 12 gives margin %d, want 12", got)
+	}
+	writeRaw(t, user, "[window]\nmargin = 5\nbottom_margin = 12\n", 0600)
+	if got := LoadConfig("").Window.Margin; got != 5 {
+		t.Errorf("margin and bottom_margin: margin %d, want 5 (margin wins)", got)
+	}
 }

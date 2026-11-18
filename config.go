@@ -960,116 +960,205 @@ func checkConfigFile(path string) []string {
 	return issues
 }
 
-func checkConfig(cfg Config) []string {
-	var issues []string
-	if cfg.Gamepad.Deadzone < 0 || cfg.Gamepad.Deadzone > 1 {
-		issues = append(issues, fmt.Sprintf("deadzone %.2f out of range [0,1]", cfg.Gamepad.Deadzone))
-	}
-	if cfg.Mouse.Sensitivity < 1 || cfg.Mouse.Sensitivity > 50 {
-		issues = append(issues, fmt.Sprintf("sensitivity %d out of range [1,50]", cfg.Mouse.Sensitivity))
-	}
-	if cfg.Gamepad.LongPressMs < 100 || cfg.Gamepad.LongPressMs > 5000 {
-		issues = append(issues, fmt.Sprintf("long_press_ms %d out of range [100,5000]", cfg.Gamepad.LongPressMs))
-	}
-	if cfg.Keys.Scale < 30 || cfg.Keys.Scale > 100 {
-		issues = append(issues, fmt.Sprintf("scale %d out of range [30,100]", cfg.Keys.Scale))
-	}
-	if _, ok := Themes[cfg.Theme.Name]; !ok {
-		issues = append(issues, fmt.Sprintf("unknown theme %q", cfg.Theme.Name))
-	}
-	if k := cfg.Theme.KeyStyle; k != "square" && k != "rounded" {
-		issues = append(issues, fmt.Sprintf("key_style %q is not valid (use square or rounded)", k))
-	}
-	if cfg.Keys.RepeatDelayMs < 100 || cfg.Keys.RepeatDelayMs > 2000 {
-		issues = append(issues, fmt.Sprintf("repeat_delay_ms %d out of range [100,2000]", cfg.Keys.RepeatDelayMs))
-	}
-	if cfg.Keys.RepeatRateMs < 20 || cfg.Keys.RepeatRateMs > 500 {
-		issues = append(issues, fmt.Sprintf("repeat_rate_ms %d out of range [20,500]", cfg.Keys.RepeatRateMs))
-	}
-	if cfg.Gamepad.ComboPeriodMs < 50 || cfg.Gamepad.ComboPeriodMs > 2000 {
-		issues = append(issues, fmt.Sprintf("combo_period_ms %d out of range [50,2000]", cfg.Gamepad.ComboPeriodMs))
-	}
-	if p := cfg.Window.Position; p != "bottom" && p != "top" {
-		issues = append(issues, fmt.Sprintf("position %q is not valid (use bottom or top)", p))
-	}
-	if cfg.Window.Opacity < minOpacity || cfg.Window.Opacity > 1 {
-		issues = append(issues, fmt.Sprintf("opacity %.2f out of range [%.1f,1]", cfg.Window.Opacity, minOpacity))
-	}
-	if m := cfg.Gamepad.MouseStick; m != "" && m != "left" && m != "right" {
-		issues = append(issues, fmt.Sprintf("mouse_stick %q is not valid (use left or right)", m))
-	}
-	if s := cfg.Gamepad.SwapXY; s != "" && s != "auto" && s != "true" && s != "false" {
-		issues = append(issues, fmt.Sprintf("swap_xy %q is not valid (use auto, true, or false)", s))
-	}
-	if !validController(cfg.Gamepad.Controller) {
-		issues = append(issues, fmt.Sprintf("controller %q is not valid (use auto, xbox, playstation, nintendo, 8bitdo or generic)", cfg.Gamepad.Controller))
-	}
-	if cfg.Gamepad.ToggleCombo != "" {
-		if _, err := parseComboString(cfg.Gamepad.ToggleCombo); err != nil {
-			issues = append(issues, fmt.Sprintf("invalid toggle_combo %q: %v", cfg.Gamepad.ToggleCombo, err))
-		}
-	}
-	return issues
+// configRule is one check on a loaded config. checkConfig (--setup) lists
+// every failing rule; ValidateConfig (start) logs it and, if the rule has
+// a fix, applies it. Both use this one list, so they always agree.
+type configRule struct {
+	bad func(c Config) bool
+	msg func(c Config) string
+	fix func(c *Config, def Config) string // sets the fallback, returns it as text; nil: warn only
 }
 
 // minOpacity keeps the keyboard visible: at opacity 0 it would be invisible
 // but still take the controller.
 const minOpacity = 0.2
 
-func ValidateConfig(cfg *Config) {
-	if cfg.Window.Opacity < minOpacity {
-		log.Printf("Warning: opacity %.2f below %.1f, using %.1f", cfg.Window.Opacity, minOpacity, minOpacity)
-		cfg.Window.Opacity = minOpacity
+func outside[T int | float64](v, lo, hi T) bool { return v < lo || v > hi }
+
+// rangeRule checks an int setting against [lo, hi]; the fix is the default.
+func rangeRule(name string, lo, hi int, get func(*Config) *int) configRule {
+	return configRule{
+		bad: func(c Config) bool { return outside(*get(&c), lo, hi) },
+		msg: func(c Config) string { return fmt.Sprintf("%s %d out of range [%d,%d]", name, *get(&c), lo, hi) },
+		fix: func(c *Config, def Config) string { *get(c) = *get(&def); return strconv.Itoa(*get(c)) },
 	}
-	if cfg.Window.Opacity > 1 {
-		log.Printf("Warning: opacity %.2f above 1, using 1", cfg.Window.Opacity)
-		cfg.Window.Opacity = 1
+}
+
+// buttonRule checks a [gamepad.buttons] name. Empty is allowed only where
+// it means "disabled".
+func buttonRule(name string, emptyOK bool, get func(*Config) *string) configRule {
+	return configRule{
+		bad: func(c Config) bool {
+			v := *get(&c)
+			if v == "" {
+				return !emptyOK
+			}
+			_, ok := buttonTable(false)[v]
+			return !ok
+		},
+		msg: func(c Config) string {
+			return fmt.Sprintf("%s = %q is not a button (use a, b, x, y, lb, rb, lt, rt, l3, r3, start, select)", name, *get(&c))
+		},
+		fix: func(c *Config, def Config) string { *get(c) = *get(&def); return *get(c) },
 	}
-	if cfg.Gamepad.Deadzone < 0 || cfg.Gamepad.Deadzone > 1 {
-		log.Printf("Warning: deadzone %.2f out of range [0,1], using 0.25", cfg.Gamepad.Deadzone)
-		cfg.Gamepad.Deadzone = 0.25
+}
+
+var configRules = []configRule{
+	{
+		bad: func(c Config) bool { _, ok := Themes[c.Theme.Name]; return !ok },
+		msg: func(c Config) string { return fmt.Sprintf("unknown theme %q", c.Theme.Name) },
+		fix: func(c *Config, def Config) string { c.Theme.Name = def.Theme.Name; return c.Theme.Name },
+	},
+	{
+		bad: func(c Config) bool { return c.Theme.KeyStyle != "square" && c.Theme.KeyStyle != "rounded" },
+		msg: func(c Config) string {
+			return fmt.Sprintf("key_style %q is not valid (use square or rounded)", c.Theme.KeyStyle)
+		},
+		fix: func(c *Config, def Config) string { c.Theme.KeyStyle = def.Theme.KeyStyle; return c.Theme.KeyStyle },
+	},
+	{
+		bad: func(c Config) bool { return c.Window.Position != "bottom" && c.Window.Position != "top" },
+		msg: func(c Config) string {
+			return fmt.Sprintf("position %q is not valid (use bottom or top)", c.Window.Position)
+		},
+		fix: func(c *Config, def Config) string { c.Window.Position = def.Window.Position; return c.Window.Position },
+	},
+	rangeRule("margin", 0, 10000, func(c *Config) *int { return &c.Window.Margin }),
+	{
+		bad: func(c Config) bool { return outside(c.Window.Opacity, minOpacity, 1) },
+		msg: func(c Config) string {
+			return fmt.Sprintf("opacity %.2f out of range [%.1f,1]", c.Window.Opacity, minOpacity)
+		},
+		// Clamp rather than reset: 0.05 means "as clear as allowed".
+		fix: func(c *Config, _ Config) string {
+			c.Window.Opacity = min(max(c.Window.Opacity, minOpacity), 1)
+			return strconv.FormatFloat(c.Window.Opacity, 'f', -1, 64)
+		},
+	},
+	rangeRule("unit_size", 0, 1000, func(c *Config) *int { return &c.Keys.UnitSize }),
+	rangeRule("padding", 0, 100, func(c *Config) *int { return &c.Keys.Padding }),
+	rangeRule("scale", 30, 100, func(c *Config) *int { return &c.Keys.Scale }),
+	rangeRule("repeat_delay_ms", 100, 2000, func(c *Config) *int { return &c.Keys.RepeatDelayMs }),
+	rangeRule("repeat_rate_ms", 20, 500, func(c *Config) *int { return &c.Keys.RepeatRateMs }),
+	{
+		bad: func(c Config) bool { return outside(c.Gamepad.Deadzone, 0, 1) },
+		msg: func(c Config) string { return fmt.Sprintf("deadzone %.2f out of range [0,1]", c.Gamepad.Deadzone) },
+		fix: func(c *Config, def Config) string {
+			c.Gamepad.Deadzone = def.Gamepad.Deadzone
+			return strconv.FormatFloat(c.Gamepad.Deadzone, 'f', -1, 64)
+		},
+	},
+	rangeRule("long_press_ms", 100, 5000, func(c *Config) *int { return &c.Gamepad.LongPressMs }),
+	{
+		bad: func(c Config) bool {
+			s := c.Gamepad.SwapXY
+			return s != "" && s != "auto" && s != "true" && s != "false"
+		},
+		msg: func(c Config) string {
+			return fmt.Sprintf("swap_xy %q is not valid (use auto, true, or false)", c.Gamepad.SwapXY)
+		},
+		fix: func(c *Config, def Config) string { c.Gamepad.SwapXY = def.Gamepad.SwapXY; return c.Gamepad.SwapXY },
+	},
+	{
+		bad: func(c Config) bool { return !validController(c.Gamepad.Controller) },
+		msg: func(c Config) string {
+			return fmt.Sprintf("controller %q is not valid (use auto, xbox, playstation, nintendo, 8bitdo or generic)", c.Gamepad.Controller)
+		},
+		fix: func(c *Config, def Config) string {
+			c.Gamepad.Controller = def.Gamepad.Controller
+			return c.Gamepad.Controller
+		},
+	},
+	{
+		bad: func(c Config) bool { m := c.Gamepad.MouseStick; return m != "" && m != "left" && m != "right" },
+		msg: func(c Config) string {
+			return fmt.Sprintf("mouse_stick %q is not valid (use left or right)", c.Gamepad.MouseStick)
+		},
+		fix: func(c *Config, def Config) string {
+			c.Gamepad.MouseStick = def.Gamepad.MouseStick
+			return c.Gamepad.MouseStick
+		},
+	},
+	{
+		bad: func(c Config) bool {
+			_, err := parseComboString(c.Gamepad.ToggleCombo)
+			return err != nil
+		},
+		msg: func(c Config) string {
+			_, err := parseComboString(c.Gamepad.ToggleCombo)
+			return fmt.Sprintf("invalid toggle_combo %q: %v", c.Gamepad.ToggleCombo, err)
+		},
+		fix: func(c *Config, _ Config) string { c.Gamepad.ToggleCombo = ""; return "no combo (disabled)" },
+	},
+	rangeRule("combo_period_ms", 50, 2000, func(c *Config) *int { return &c.Gamepad.ComboPeriodMs }),
+	buttonRule("press", false, func(c *Config) *string { return &c.Gamepad.Buttons.Press }),
+	buttonRule("close", false, func(c *Config) *string { return &c.Gamepad.Buttons.Close }),
+	buttonRule("backspace", false, func(c *Config) *string { return &c.Gamepad.Buttons.Backspace }),
+	buttonRule("space", false, func(c *Config) *string { return &c.Gamepad.Buttons.Space }),
+	buttonRule("shift", false, func(c *Config) *string { return &c.Gamepad.Buttons.Shift }),
+	buttonRule("enter", false, func(c *Config) *string { return &c.Gamepad.Buttons.Enter }),
+	buttonRule("left_click", false, func(c *Config) *string { return &c.Gamepad.Buttons.LeftClick }),
+	buttonRule("right_click", false, func(c *Config) *string { return &c.Gamepad.Buttons.RightClick }),
+	buttonRule("position_toggle", true, func(c *Config) *string { return &c.Gamepad.Buttons.PositionToggle }),
+	{
+		bad: func(c Config) bool { return len(buttonClashes(c)) > 0 },
+		msg: func(c Config) string { return strings.Join(buttonClashes(c), "; ") },
+	},
+	rangeRule("sensitivity", 1, 50, func(c *Config) *int { return &c.Mouse.Sensitivity }),
+}
+
+// buttonClashes lists buttons given to two actions. Stick clicks are taken
+// by Caps Lock and left click (by mouse_stick), so an action on l3 or r3
+// never fires.
+func buttonClashes(c Config) []string {
+	b := c.Gamepad.Buttons
+	owner := map[string]string{"l3": "Caps Lock (stick click)", "r3": "left click (stick click)"}
+	if c.Gamepad.MouseStick == "left" {
+		owner = map[string]string{"l3": "left click (stick click)", "r3": "Caps Lock (stick click)"}
 	}
-	if cfg.Mouse.Sensitivity < 1 || cfg.Mouse.Sensitivity > 50 {
-		log.Printf("Warning: sensitivity %d out of range [1,50], using 10", cfg.Mouse.Sensitivity)
-		cfg.Mouse.Sensitivity = 10
+	var out []string
+	for _, a := range []struct{ name, button string }{
+		{"press", b.Press}, {"close", b.Close}, {"backspace", b.Backspace}, {"space", b.Space},
+		{"shift", b.Shift}, {"enter", b.Enter}, {"left_click", b.LeftClick},
+		{"right_click", b.RightClick}, {"position_toggle", b.PositionToggle},
+	} {
+		if a.button == "" {
+			continue
+		}
+		if prev, ok := owner[a.button]; ok {
+			out = append(out, fmt.Sprintf("%s and %s are both on %s, only one works", prev, a.name, a.button))
+			continue
+		}
+		owner[a.button] = a.name
 	}
-	if cfg.Gamepad.LongPressMs < 100 || cfg.Gamepad.LongPressMs > 5000 {
-		log.Printf("Warning: long_press_ms %d out of range [100,5000], using 500", cfg.Gamepad.LongPressMs)
-		cfg.Gamepad.LongPressMs = 500
-	}
-	if cfg.Keys.Scale < 30 || cfg.Keys.Scale > 100 {
-		log.Printf("Warning: scale %d out of range [30,100], using 70", cfg.Keys.Scale)
-		cfg.Keys.Scale = 50
-	}
-	if _, ok := Themes[cfg.Theme.Name]; !ok {
-		log.Printf("Warning: unknown theme %q, using dark", cfg.Theme.Name)
-		cfg.Theme.Name = "matrix"
-	}
-	if k := cfg.Theme.KeyStyle; k != "square" && k != "rounded" {
-		log.Printf("Warning: key_style %q is not valid, using square", k)
-		cfg.Theme.KeyStyle = "square"
-	}
-	if cfg.Keys.RepeatDelayMs < 100 || cfg.Keys.RepeatDelayMs > 2000 {
-		log.Printf("Warning: repeat_delay_ms %d out of range [100,2000], using 400", cfg.Keys.RepeatDelayMs)
-		cfg.Keys.RepeatDelayMs = 400
-	}
-	if cfg.Keys.RepeatRateMs < 20 || cfg.Keys.RepeatRateMs > 500 {
-		log.Printf("Warning: repeat_rate_ms %d out of range [20,500], using 80", cfg.Keys.RepeatRateMs)
-		cfg.Keys.RepeatRateMs = 80
-	}
-	if cfg.Gamepad.ComboPeriodMs < 50 || cfg.Gamepad.ComboPeriodMs > 2000 {
-		log.Printf("Warning: combo_period_ms %d out of range [50,2000], using 200", cfg.Gamepad.ComboPeriodMs)
-		cfg.Gamepad.ComboPeriodMs = 200
-	}
-	if cfg.Gamepad.ToggleCombo != "" {
-		if _, err := parseComboString(cfg.Gamepad.ToggleCombo); err != nil {
-			log.Printf("Warning: invalid toggle_combo %q: %v - disabling", cfg.Gamepad.ToggleCombo, err)
-			cfg.Gamepad.ToggleCombo = ""
+	return out
+}
+
+// checkConfig lists every rule the config breaks (for --setup).
+func checkConfig(cfg Config) []string {
+	var issues []string
+	for _, r := range configRules {
+		if r.bad(cfg) {
+			issues = append(issues, r.msg(cfg))
 		}
 	}
-	if !validController(cfg.Gamepad.Controller) {
-		log.Printf("Warning: unknown controller %q, using auto", cfg.Gamepad.Controller)
-		cfg.Gamepad.Controller = ProfileAuto
+	return issues
+}
+
+// ValidateConfig logs every rule the config breaks and applies the fixes,
+// taking fallback values from DefaultConfig so the log and the value agree.
+func ValidateConfig(cfg *Config) {
+	def := DefaultConfig()
+	for _, r := range configRules {
+		if !r.bad(*cfg) {
+			continue
+		}
+		msg := r.msg(*cfg)
+		if r.fix == nil {
+			log.Printf("Warning: %s", msg)
+			continue
+		}
+		log.Printf("Warning: %s, using %s", msg, r.fix(cfg, def))
 	}
 }
 
