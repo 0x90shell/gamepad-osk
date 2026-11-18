@@ -129,6 +129,7 @@ type GamepadReader struct {
 	mouseAxisX uint16
 	mouseAxisY uint16
 	deviceName string // currently unused; stored for future logging/diagnostics
+	profile    string // controller profile ID, detected on every Open unless set in config
 
 	// DInput/HID-generic layout (e.g. 8BitDo over Bluetooth): right stick on
 	// ABS_Z/ABS_RZ, no ABS_RX/ABS_RY, triggers digital (BTN_TL2/BTN_TR2).
@@ -297,6 +298,12 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 		}
 	}
 
+	gp.profile = gp.config.Gamepad.Controller
+	if gp.profile == "" || gp.profile == ProfileAuto {
+		gp.profile = detectProfile(info)
+		log.Printf("Controller profile: %s (detected)", ControllerProfiles[gp.profile].Name)
+	}
+
 	gp.initButtonMap()
 
 	log.Printf("Opened gamepad: %s", path)
@@ -342,6 +349,16 @@ func isXpadDriver(driver string) bool {
 func isXboxName(name string) bool {
 	n := strings.ToLower(name)
 	return strings.Contains(n, "x-box") || strings.Contains(n, "xbox")
+}
+
+// Profile returns the controller profile of the open pad. Before the first
+// Open it is the configured one, or generic for auto.
+func (gp *GamepadReader) Profile() ControllerProfile {
+	id := gp.profile
+	if id == "" {
+		id = gp.config.Gamepad.Controller
+	}
+	return GetControllerProfile(id)
 }
 
 func (gp *GamepadReader) autoDetect() string {

@@ -68,6 +68,7 @@ type GamepadConfig struct {
 	Deadzone      float64
 	LongPressMs   int
 	SwapXY        string // "auto", "true", "false"
+	Controller    string // auto, xbox, playstation, nintendo, 8bitdo, generic (button names)
 	MouseStick    string // "left" or "right" (nav uses the other stick)
 	ToggleCombo   string // e.g. "select+start", empty = disabled
 	ComboPeriodMs int    // timing window for combo detection (default 200)
@@ -89,6 +90,7 @@ func DefaultConfig() Config {
 			Deadzone:      0.25,
 			LongPressMs:   500,
 			SwapXY:        "auto",
+			Controller:    ProfileAuto,
 			MouseStick:    "right",
 			ComboPeriodMs: 200,
 			Buttons: ButtonsConfig{
@@ -232,6 +234,8 @@ func parseINI(r io.Reader, cfg *Config) error {
 				}
 			case "swap_xy":
 				cfg.Gamepad.SwapXY = val
+			case "controller":
+				cfg.Gamepad.Controller = strings.ToLower(val)
 			case "mouse_stick":
 				cfg.Gamepad.MouseStick = val
 			case "toggle_combo":
@@ -323,6 +327,7 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f', -1, 64)), "stick deadzone (0.0-1.0)"))
 	b.WriteString(line(kvf("long_press_ms", cfg.Gamepad.LongPressMs), "ms to hold for accent popup (100-5000)"))
 	b.WriteString(line(kv("swap_xy", cfg.Gamepad.SwapXY), "auto = detect xpad/xpadneo/xone drivers (default), true = force swap, false = off"))
+	b.WriteString(line(kv("controller", cfg.Gamepad.Controller), "auto, xbox, playstation, nintendo, 8bitdo or generic - button names shown"))
 	b.WriteString(line(kv("mouse_stick", cfg.Gamepad.MouseStick), "left or right - nav uses the other stick"))
 	b.WriteString(line(kv("toggle_combo", cfg.Gamepad.ToggleCombo), "built-in show/hide combo (empty = disabled, use --toggle/evsieve)"))
 	b.WriteString("                             # format: button+button (2-4 buttons, + separated)\n")
@@ -711,6 +716,9 @@ func checkConfig(cfg Config) []string {
 	if s := cfg.Gamepad.SwapXY; s != "" && s != "auto" && s != "true" && s != "false" {
 		issues = append(issues, fmt.Sprintf("swap_xy %q is not valid (use auto, true, or false)", s))
 	}
+	if !validController(cfg.Gamepad.Controller) {
+		issues = append(issues, fmt.Sprintf("controller %q is not valid (use auto, xbox, playstation, nintendo, 8bitdo or generic)", cfg.Gamepad.Controller))
+	}
 	if cfg.Gamepad.ToggleCombo != "" {
 		if _, err := parseComboString(cfg.Gamepad.ToggleCombo); err != nil {
 			issues = append(issues, fmt.Sprintf("invalid toggle_combo %q: %v", cfg.Gamepad.ToggleCombo, err))
@@ -774,4 +782,17 @@ func ValidateConfig(cfg *Config) {
 			cfg.Gamepad.ToggleCombo = ""
 		}
 	}
+	if !validController(cfg.Gamepad.Controller) {
+		log.Printf("Warning: unknown controller %q, using auto", cfg.Gamepad.Controller)
+		cfg.Gamepad.Controller = ProfileAuto
+	}
+}
+
+// validController accepts auto, a profile ID, or empty (same as auto).
+func validController(id string) bool {
+	if id == "" || id == ProfileAuto {
+		return true
+	}
+	_, ok := ControllerProfiles[id]
+	return ok
 }

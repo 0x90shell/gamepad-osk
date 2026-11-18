@@ -25,6 +25,7 @@ grab = true                  # grab device when visible (prevents input bleed to
 deadzone = 0.25              # stick deadzone (0.0-1.0)
 long_press_ms = 500          # ms to hold for accent popup (100-5000)
 swap_xy = auto               # auto = detect xpad/xpadneo/xone drivers (default), true = force swap, false = off
+controller = auto            # auto, xbox, playstation, nintendo, 8bitdo or generic - button names shown
 mouse_stick = right          # left or right - nav uses the other stick
 toggle_combo =               # built-in show/hide combo (empty = disabled, use --toggle/evsieve)
                              # format: button+button (2-4 buttons, + separated)
