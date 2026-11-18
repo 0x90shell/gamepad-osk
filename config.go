@@ -44,7 +44,6 @@ type WindowConfig struct {
 type KeysConfig struct {
 	UnitSize      int
 	Padding       int
-	FontSize      int
 	Scale         int // percentage of screen width (30-100, default 50)
 	RepeatDelayMs int // ms before key repeat starts (default 400)
 	RepeatRateMs  int // ms between repeats (default 80)
@@ -84,7 +83,7 @@ func DefaultConfig() Config {
 	return Config{
 		Theme:  ThemeConfig{Name: "matrix", KeyStyle: "square", KeyShadow: true},
 		Window: WindowConfig{Position: "bottom", Margin: 0, Opacity: 0.95, PanelAvoid: true},
-		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80},
+		Keys:   KeysConfig{UnitSize: 0, Padding: 4, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80},
 		Gamepad: GamepadConfig{
 			Grab:          true,
 			Deadzone:      0.25,
@@ -125,8 +124,28 @@ func parseBool(key, val string, defaultVal bool) bool {
 // Supports [section] and [section.subsection] headers, key = value pairs,
 // # comments, and inline # comments.
 func parseINI(r io.Reader, cfg *Config) error {
+	unknown, err := parseINIKeys(r, cfg)
+	for _, k := range unknown {
+		log.Printf("Warning: unknown config key %s ignored (check for typos)", k) //nolint:gosec // G706: key from user's own config file
+	}
+	return err
+}
+
+// removedKeys were valid in older versions. They are ignored without a
+// warning and dropped on the next save.
+var removedKeys = map[string]bool{"keys.font_size": true}
+
+// parseINIKeys parses r into cfg and returns the unknown keys as
+// section.key, without logging them.
+func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 	scanner := bufio.NewScanner(r)
 	section := ""
+	var unknown []string
+	skip := func(key string) {
+		if k := section + "." + key; !removedKeys[k] {
+			unknown = append(unknown, k)
+		}
+	}
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -166,7 +185,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 			case "key_shadow":
 				cfg.Theme.KeyShadow = parseBool("key_shadow", val, cfg.Theme.KeyShadow)
 			default:
-				Debugf("unknown config key: theme.%s", key)
+				skip(key)
 			}
 		case "window":
 			switch key {
@@ -187,7 +206,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 			case "panel_avoid":
 				cfg.Window.PanelAvoid = parseBool("panel_avoid", val, true)
 			default:
-				Debugf("unknown config key: window.%s", key)
+				skip(key)
 			}
 		case "keys":
 			switch key {
@@ -198,10 +217,6 @@ func parseINI(r io.Reader, cfg *Config) error {
 			case "padding":
 				if n, err := strconv.Atoi(val); err == nil {
 					cfg.Keys.Padding = n
-				}
-			case "font_size":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Keys.FontSize = n
 				}
 			case "scale":
 				if n, err := strconv.Atoi(val); err == nil {
@@ -216,7 +231,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 					cfg.Keys.RepeatRateMs = n
 				}
 			default:
-				Debugf("unknown config key: keys.%s", key)
+				skip(key)
 			}
 		case "gamepad":
 			switch key {
@@ -245,7 +260,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 					cfg.Gamepad.ComboPeriodMs = n
 				}
 			default:
-				Debugf("unknown config key: gamepad.%s", key)
+				skip(key)
 			}
 		case "gamepad.buttons":
 			switch key {
@@ -268,7 +283,7 @@ func parseINI(r io.Reader, cfg *Config) error {
 			case "position_toggle":
 				cfg.Gamepad.Buttons.PositionToggle = val
 			default:
-				Debugf("unknown config key: gamepad.buttons.%s", key)
+				skip(key)
 			}
 		case "mouse":
 			switch key {
@@ -279,14 +294,14 @@ func parseINI(r io.Reader, cfg *Config) error {
 					cfg.Mouse.Sensitivity = n
 				}
 			default:
-				Debugf("unknown config key: mouse.%s", key)
+				skip(key)
 			}
 		default:
 			log.Printf("Warning: unknown config section [%s], key %q ignored (check section headers)", section, key) //nolint:gosec // G706: section/key from user's own config file
 		}
 	}
 
-	return scanner.Err()
+	return unknown, scanner.Err()
 }
 
 // writeINI writes a Config in INI format with inline comments.
@@ -315,7 +330,6 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString("[keys]\n")
 	b.WriteString(line(kvf("unit_size", cfg.Keys.UnitSize), "0 = auto-scale, or fixed pixel size"))
 	b.WriteString(line(kvf("padding", cfg.Keys.Padding), "pixels between keys"))
-	b.WriteString(line(kvf("font_size", cfg.Keys.FontSize), "0 = auto-scale relative to unit_size"))
 	b.WriteString(line(kvf("scale", cfg.Keys.Scale), "percentage of screen width (30-100)"))
 	b.WriteString(line(kvf("repeat_delay_ms", cfg.Keys.RepeatDelayMs), "ms before key repeat starts (100-2000)"))
 	b.WriteString(line(kvf("repeat_rate_ms", cfg.Keys.RepeatRateMs), "ms between repeats (20-500)"))
@@ -566,7 +580,7 @@ func saveConfig(mutate func(*Config)) {
 		if err != nil {
 			log.Printf("Warning: error reading config %s: %v", path, err)
 		} else {
-			if parseErr := parseINI(f, &cfg); parseErr != nil {
+			if _, parseErr := parseINIKeys(f, &cfg); parseErr != nil {
 				log.Printf("Warning: error parsing config %s: %v", path, parseErr)
 			}
 			_ = f.Close()
@@ -677,6 +691,16 @@ func checkConfigFile(path string) []string {
 					issues = append(issues, fmt.Sprintf("%s = %q is not a valid bool (use true/false)", key, val))
 				}
 			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return issues
+	}
+	if _, err := f.Seek(0, io.SeekStart); err == nil {
+		var scratch Config
+		unknown, _ := parseINIKeys(f, &scratch)
+		for _, k := range unknown {
+			issues = append(issues, fmt.Sprintf("unknown key %s - ignored (check for typos)", k))
 		}
 	}
 	return issues

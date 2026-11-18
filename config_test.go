@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -1114,4 +1115,111 @@ func TestLoadConfigSearchOrder(t *testing.T) {
 			t.Errorf("configSource = %+v, want %s from flag", configSource, flag)
 		}
 	})
+}
+
+func TestUnknownKeys(t *testing.T) {
+	in := "[theme]\nnam = nord\n[keys]\nfont_size = 14\nscale = 60\n[mouse]\nsensitivit = 5\n"
+	cfg := DefaultConfig()
+	unknown, err := parseINIKeys(strings.NewReader(in), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"theme.nam", "mouse.sensitivit"}; !reflect.DeepEqual(unknown, want) {
+		t.Errorf("unknown = %q, want %q (font_size is removed, not unknown)", unknown, want)
+	}
+	if cfg.Keys.Scale != 60 {
+		t.Errorf("an unknown key stopped parsing: scale = %d", cfg.Keys.Scale)
+	}
+
+	// parseINI logs each unknown key once.
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	cfg = DefaultConfig()
+	if err := parseINI(strings.NewReader(in), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	logged := buf.String()
+	for _, k := range []string{"theme.nam", "mouse.sensitivit"} {
+		if strings.Count(logged, k) != 1 {
+			t.Errorf("log should name %s once:\n%s", k, logged)
+		}
+	}
+	if strings.Contains(logged, "font_size") {
+		t.Errorf("removed key font_size was warned about:\n%s", logged)
+	}
+
+	// --setup lists them too.
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte(in), 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+	issues := checkConfigFile(path)
+	if len(issues) != 2 || !containsSubstr(issues, "theme.nam") || !containsSubstr(issues, "mouse.sensitivit") {
+		t.Errorf("checkConfigFile = %q, want the two unknown keys", issues)
+	}
+}
+
+// Saving does not warn about unknown keys (it would on every theme change)
+// and drops removed keys from the file.
+func TestSaveDropsRemovedKeys(t *testing.T) {
+	user, _ := isolateConfig(t)
+	if err := os.MkdirAll(filepath.Dir(user), 0755); err != nil { //nolint:gosec // G301: test dir
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(user, []byte("[keys]\nfont_size = 14\nscale = 60\n"), 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+	SaveTheme("nord")
+	data, err := os.ReadFile(user) //nolint:gosec // G304: test path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "font_size") {
+		t.Error("font_size still in the saved file")
+	}
+	if !strings.Contains(string(data), "scale = 60") {
+		t.Error("save lost scale = 60")
+	}
+}
+
+// The shipped example and a freshly written default file both load to
+// exactly DefaultConfig() and raise no issues.
+func TestExampleMatchesDefaults(t *testing.T) {
+	for _, src := range []string{"example", "written"} {
+		var data []byte
+		if src == "example" {
+			var err error
+			if data, err = os.ReadFile("config.example"); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			var buf strings.Builder
+			if err := writeINI(&buf, DefaultConfig()); err != nil {
+				t.Fatal(err)
+			}
+			data = []byte(buf.String())
+		}
+		var cfg Config
+		unknown, err := parseINIKeys(strings.NewReader(string(data)), &cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(unknown) != 0 {
+			t.Errorf("%s: unknown keys %q", src, unknown)
+		}
+		if !reflect.DeepEqual(cfg, DefaultConfig()) {
+			t.Errorf("%s does not match DefaultConfig():\n got  %+v\n want %+v", src, cfg, DefaultConfig())
+		}
+		if issues := checkConfig(cfg); len(issues) != 0 {
+			t.Errorf("%s: checkConfig issues %q", src, issues)
+		}
+		path := filepath.Join(t.TempDir(), "config")
+		if err := os.WriteFile(path, data, 0644); err != nil { //nolint:gosec // G306: test file
+			t.Fatal(err)
+		}
+		if issues := checkConfigFile(path); len(issues) != 0 {
+			t.Errorf("%s: checkConfigFile issues %q", src, issues)
+		}
+	}
 }

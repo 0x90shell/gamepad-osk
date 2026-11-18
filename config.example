@@ -14,7 +14,6 @@ panel_avoid = true           # Wayland: respect panel spacing (false = always sc
 [keys]
 unit_size = 0                # 0 = auto-scale, or fixed pixel size
 padding = 4                  # pixels between keys
-font_size = 0                # 0 = auto-scale relative to unit_size
 scale = 50                   # percentage of screen width (30-100)
 repeat_delay_ms = 400        # ms before key repeat starts (100-2000)
 repeat_rate_ms = 80          # ms between repeats (20-500)
