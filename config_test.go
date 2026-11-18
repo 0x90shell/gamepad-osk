@@ -96,6 +96,16 @@ func TestValidateConfig(t *testing.T) {
 			func(c *Config) bool { return c.Theme.KeyStyle == "square" }, "should reset to square"},
 		{"rounded key_style", func(c *Config) { c.Theme.KeyStyle = "rounded" },
 			func(c *Config) bool { return c.Theme.KeyStyle == "rounded" }, "should keep rounded"},
+		{"opacity zero", func(c *Config) { c.Window.Opacity = 0 },
+			func(c *Config) bool { return c.Window.Opacity == 0.2 }, "should raise to 0.2"},
+		{"opacity negative", func(c *Config) { c.Window.Opacity = -1 },
+			func(c *Config) bool { return c.Window.Opacity == 0.2 }, "should raise to 0.2"},
+		{"opacity at floor", func(c *Config) { c.Window.Opacity = 0.2 },
+			func(c *Config) bool { return c.Window.Opacity == 0.2 }, "should keep 0.2"},
+		{"opacity valid", func(c *Config) { c.Window.Opacity = 0.5 },
+			func(c *Config) bool { return c.Window.Opacity == 0.5 }, "should keep 0.5"},
+		{"opacity too high", func(c *Config) { c.Window.Opacity = 1.5 },
+			func(c *Config) bool { return c.Window.Opacity == 1 }, "should lower to 1"},
 	}
 
 	for _, tt := range tests {
@@ -934,6 +944,8 @@ func TestCheckConfig(t *testing.T) {
 		{"bad long_press", func(c *Config) { c.Gamepad.LongPressMs = 10 }, "long_press_ms"},
 		{"bad combo_period", func(c *Config) { c.Gamepad.ComboPeriodMs = 5 }, "combo_period_ms"},
 		{"bad toggle_combo", func(c *Config) { c.Gamepad.ToggleCombo = "a+banana" }, "toggle_combo"},
+		{"opacity below floor", func(c *Config) { c.Window.Opacity = 0.1 }, "opacity"},
+		{"opacity too high", func(c *Config) { c.Window.Opacity = 1.5 }, "opacity"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

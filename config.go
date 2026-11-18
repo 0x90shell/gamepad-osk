@@ -304,7 +304,7 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString("[window]\n")
 	b.WriteString(line(kv("position", cfg.Window.Position), "bottom or top"))
 	b.WriteString(line(kvf("margin", cfg.Window.Margin), "pixels from screen edge"))
-	b.WriteString(line(kv("opacity", strconv.FormatFloat(cfg.Window.Opacity, 'f', -1, 64)), "0.0-1.0 (1.0 = fully opaque)"))
+	b.WriteString(line(kv("opacity", strconv.FormatFloat(cfg.Window.Opacity, 'f', -1, 64)), "0.2-1.0 (1.0 = fully opaque)"))
 	b.WriteString(line(kv("panel_avoid", strconv.FormatBool(cfg.Window.PanelAvoid)), "Wayland: respect panel spacing (false = always screen edge)"))
 	b.WriteString("\n")
 
@@ -702,8 +702,8 @@ func checkConfig(cfg Config) []string {
 	if p := cfg.Window.Position; p != "bottom" && p != "top" {
 		issues = append(issues, fmt.Sprintf("position %q is not valid (use bottom or top)", p))
 	}
-	if cfg.Window.Opacity < 0 || cfg.Window.Opacity > 1 {
-		issues = append(issues, fmt.Sprintf("opacity %.2f out of range [0,1]", cfg.Window.Opacity))
+	if cfg.Window.Opacity < minOpacity || cfg.Window.Opacity > 1 {
+		issues = append(issues, fmt.Sprintf("opacity %.2f out of range [%.1f,1]", cfg.Window.Opacity, minOpacity))
 	}
 	if m := cfg.Gamepad.MouseStick; m != "" && m != "left" && m != "right" {
 		issues = append(issues, fmt.Sprintf("mouse_stick %q is not valid (use left or right)", m))
@@ -719,7 +719,19 @@ func checkConfig(cfg Config) []string {
 	return issues
 }
 
+// minOpacity keeps the keyboard visible: at opacity 0 it would be invisible
+// but still take the controller.
+const minOpacity = 0.2
+
 func ValidateConfig(cfg *Config) {
+	if cfg.Window.Opacity < minOpacity {
+		log.Printf("Warning: opacity %.2f below %.1f, using %.1f", cfg.Window.Opacity, minOpacity, minOpacity)
+		cfg.Window.Opacity = minOpacity
+	}
+	if cfg.Window.Opacity > 1 {
+		log.Printf("Warning: opacity %.2f above 1, using 1", cfg.Window.Opacity)
+		cfg.Window.Opacity = 1
+	}
 	if cfg.Gamepad.Deadzone < 0 || cfg.Gamepad.Deadzone > 1 {
 		log.Printf("Warning: deadzone %.2f out of range [0,1], using 0.25", cfg.Gamepad.Deadzone)
 		cfg.Gamepad.Deadzone = 0.25
