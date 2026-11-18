@@ -380,3 +380,30 @@ func TestThemeKeyCyclesThemes(t *testing.T) {
 		t.Error("one-shot shift still active after shift+press")
 	}
 }
+
+// A held Shift trigger keeps Shift on across the special keys too, as it
+// does for letters: Shift+Paste then Shift+Undo sends Copy then F1.
+func TestHeldShiftSurvivesSpecialKeys(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	kb.ShiftActive, kb.ShiftHeld = true, true
+	for _, label := range []string{"Paste", "Undo", themeKeyLabel, "\u2191"} {
+		for r, row := range kb.Layout {
+			for c, key := range row {
+				if key.Label == label {
+					kb.CursorRow, kb.CursorCol = r, c
+				}
+			}
+		}
+		kb.PressCurrent(nil)
+		if !kb.ShiftActive {
+			t.Errorf("Shift released by %q while the trigger is held", label)
+		}
+	}
+
+	// A one-shot Shift (Shift key on the keyboard) still ends after one key
+	kb.ShiftHeld = false
+	kb.PressCurrent(nil)
+	if kb.ShiftActive {
+		t.Error("one-shot Shift not released after a key")
+	}
+}

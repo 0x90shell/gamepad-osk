@@ -140,7 +140,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 			if inj != nil {
 				inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
 			}
-			if kb.ShiftActive {
+			if !kb.ShiftHeld { // a held trigger keeps Shift on
 				kb.ShiftActive = false
 			}
 		} else if inj != nil {
@@ -156,7 +156,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 			if kb.OnThemeCycleReverse != nil {
 				kb.OnThemeCycleReverse()
 			}
-			if kb.ShiftActive {
+			if !kb.ShiftHeld { // a held trigger keeps Shift on
 				kb.ShiftActive = false
 			}
 		} else if kb.OnThemeCycle != nil {
@@ -192,7 +192,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		} else if key.Code == KEY_DOWN && kb.OnSensitivityDown != nil {
 			kb.OnSensitivityDown()
 		}
-		if kb.ShiftActive {
+		if !kb.ShiftHeld { // a held trigger keeps Shift on
 			kb.ShiftActive = false
 		}
 		return
@@ -207,7 +207,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 				inj.PressKey(key.Code, key.Combo)
 			}
 		}
-		if kb.ShiftActive {
+		if !kb.ShiftHeld { // a held trigger keeps Shift on
 			kb.ShiftActive = false
 		}
 		kb.CtrlActive = false
