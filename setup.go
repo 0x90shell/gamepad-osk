@@ -237,12 +237,17 @@ func runInstall(configPath string) int {
 			fmt.Printf("  %-14s %s\n", "udev trigger", colorGreen("[✓]"))
 		}
 	} else {
-		fmt.Printf("  %-14s %s need root - run with sudo\n", "udev rules", colorDim("[~]"))
+		fmt.Printf("  %-14s %s skipped: needs root (system file)\n", "udev rules", colorDim("[~]"))
+		fmt.Printf("  %-14s   %s\n", "", colorDim("Not needed if your package installed it. Otherwise run:"))
+		fmt.Printf("  %-14s   %s\n", "", colorDim("sudo gamepad-osk --setup --install"))
 	}
 
-	// 2. config (not with --config: that file is the only one used)
+	// 2. config (not with --config: that file is the only one used, and not
+	// as root: the user's own first run creates it, owned by the user)
 	userCfg := UserConfigPath()
-	if configPath != "" {
+	if geteuid() == 0 {
+		fmt.Printf("  %-14s %s skipped as root: created by your user on first run\n", "config", colorDim("[~]"))
+	} else if configPath != "" {
 		fmt.Printf("  %-14s %s %s (--config, user config not created)\n", "config", colorDim("[~]"), configPath)
 	} else if _, err := os.Stat(userCfg); err == nil {
 		fmt.Printf("  %-14s %s %s (already exists)\n", "config", colorDim("[~]"), userCfg)
@@ -301,15 +306,21 @@ func runInstall(configPath string) int {
 		}
 	}
 
-	// 4. group membership hint
+	// 4. group membership hint. Under sudo, device access says nothing
+	// about the user's own access, so only the group counts.
 	if inGroup, _ := isUserInGroup("input"); !inGroup {
-		// Check if access works via ACL
-		if f, err := os.OpenFile("/dev/uinput", os.O_RDWR, 0); err != nil { //nolint:gosec // G304: constant path
-			fmt.Println()
-			fmt.Printf("  %s\n", colorYellow("Note: add yourself to the input group:"))
-			fmt.Printf("    sudo usermod -aG input $USER\n")
-		} else {
+		f, err := os.OpenFile("/dev/uinput", os.O_RDWR, 0) //nolint:gosec // G304: constant path
+		if err == nil {
 			_ = f.Close()
+		}
+		if err != nil || geteuid() == 0 { // works for this user via ACL otherwise
+			name := realUser()
+			if name == "" {
+				name = "$USER"
+			}
+			fmt.Println()
+			fmt.Printf("  %s\n", colorYellow("Note: add "+name+" to the input group:"))
+			fmt.Printf("    sudo usermod -aG input %s\n", name)
 		}
 	}
 

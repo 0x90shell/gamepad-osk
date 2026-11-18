@@ -60,14 +60,24 @@ func logPermissionFix() {
 	log.Print(colorDim("  Tip: run 'gamepad-osk --setup' to diagnose and fix permission issues"))
 }
 
-// isUserInGroup checks if the current user is a member of the named group
-// by reading /etc/group (covers persistent membership, not just active session).
+// realUser is the user the app acts for: under sudo the user who ran
+// sudo, not root.
+func realUser() string {
+	if s := os.Getenv("SUDO_USER"); s != "" && geteuid() == 0 {
+		return s
+	}
+	return os.Getenv("USER")
+}
+
+// isUserInGroup checks if the real user (see realUser) is a member of the
+// named group by reading /etc/group (covers persistent membership, not just
+// active session).
 func isUserInGroup(groupName string) (bool, error) {
 	data, err := os.ReadFile("/etc/group")
 	if err != nil {
 		return false, err
 	}
-	username := os.Getenv("USER")
+	username := realUser()
 	if username == "" {
 		return false, nil
 	}

@@ -473,12 +473,13 @@ func migrateFromTOML(tomlPath, newPath string) error {
 		return fmt.Errorf("reading TOML config: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil { //nolint:gosec // G301: XDG config dir
+	if err := mkdirOwned(filepath.Dir(newPath)); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
 	if err := os.WriteFile(newPath, []byte(b.String()), 0644); err != nil { //nolint:gosec // G306: user config
 		return fmt.Errorf("writing INI config: %w", err)
 	}
+	ownBySudoUser(newPath)
 
 	bakPath := tomlPath + ".v1.bak"
 	if err := os.Rename(tomlPath, bakPath); err != nil {
@@ -618,12 +619,13 @@ func loadConfig(overridePath string, create bool) Config {
 			}
 		}
 		if !copied {
-			if err := os.MkdirAll(filepath.Dir(userPath), 0755); err == nil { //nolint:gosec // G301: config dir
+			if err := mkdirOwned(filepath.Dir(userPath)); err == nil {
 				if f, err := os.Create(userPath); err == nil { //nolint:gosec // G304: user config path
 					if writeErr := writeINI(f, cfg); writeErr == nil {
 						log.Printf("Created user config at %s", userPath)
 					}
 					_ = f.Close()
+					ownBySudoUser(userPath)
 				}
 			}
 		}
@@ -640,13 +642,14 @@ func saveValue(section, key, value string) {
 	path := UserConfigPath()
 	if configSource.FromFlag {
 		path = configSource.Path
-	} else if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
+	} else if err := mkdirOwned(filepath.Dir(path)); err != nil {
 		saveFailed(path, err)
 		return
 	}
 
 	data, err := os.ReadFile(path) //nolint:gosec // G304: user config path
-	if os.IsNotExist(err) {
+	created := os.IsNotExist(err)
+	if created {
 		var b strings.Builder
 		if err := writeINI(&b, DefaultConfig()); err != nil {
 			saveFailed(path, err)
@@ -665,6 +668,10 @@ func saveValue(section, key, value string) {
 	}
 	if err := os.WriteFile(path, edited, 0644); err != nil { //nolint:gosec // G306: config file, not secrets
 		saveFailed(path, err)
+		return
+	}
+	if created {
+		ownBySudoUser(path)
 	}
 }
 
@@ -844,7 +851,7 @@ func SavePosition(top bool) {
 }
 
 func copyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
+	if err := mkdirOwned(filepath.Dir(dst)); err != nil {
 		return err
 	}
 	in, err := os.Open(src) //nolint:gosec // G304: user file path
@@ -857,8 +864,74 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer func() { _ = out.Close() }()
+	ownBySudoUser(dst)
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// Under sudo the user config lives in the real user's home (configDir).
+// Folders and files the app creates there are given to that user, so a
+// sudo run never leaves root-owned files the user cannot save to.
+// Variables so tests can fake root and record the calls.
+var (
+	geteuid  = os.Geteuid
+	lchown   = os.Lchown
+	homeOfID = func(uid int) (string, error) {
+		u, err := user.LookupId(strconv.Itoa(uid))
+		if err != nil {
+			return "", err
+		}
+		return u.HomeDir, nil
+	}
+)
+
+// sudoOwner returns the user who ran sudo, when the app runs as root
+// through sudo.
+func sudoOwner() (uid, gid int, home string, ok bool) {
+	if geteuid() != 0 {
+		return 0, 0, "", false
+	}
+	uid, err1 := strconv.Atoi(os.Getenv("SUDO_UID"))
+	gid, err2 := strconv.Atoi(os.Getenv("SUDO_GID"))
+	if err1 != nil || err2 != nil || uid == 0 {
+		return 0, 0, "", false
+	}
+	home, err := homeOfID(uid)
+	if err != nil {
+		return 0, 0, "", false
+	}
+	return uid, gid, home, true
+}
+
+// ownBySudoUser gives a path the app just created to the sudo user, if it
+// is inside that user's home. Elsewhere (root's own home) it stays root's.
+func ownBySudoUser(path string) {
+	uid, gid, home, ok := sudoOwner()
+	if !ok || !strings.HasPrefix(path, home+string(filepath.Separator)) {
+		return
+	}
+	if err := lchown(path, uid, gid); err != nil {
+		log.Printf("Warning: cannot give %s to the sudo user: %v", path, err) //nolint:gosec // G706: path from our config search
+	}
+}
+
+// mkdirOwned is os.MkdirAll that gives each folder it creates to the sudo
+// user (see ownBySudoUser). Folders that already existed are not touched.
+func mkdirOwned(dir string) error {
+	var missing []string
+	for d := dir; d != filepath.Dir(d); d = filepath.Dir(d) {
+		if _, err := os.Stat(d); err == nil {
+			break
+		}
+		missing = append(missing, d)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: config dir, not secrets
+		return err
+	}
+	for _, d := range missing {
+		ownBySudoUser(d)
+	}
+	return nil
 }
 
 // ValidateConfig checks config ranges and logs warnings.

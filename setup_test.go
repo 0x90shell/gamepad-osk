@@ -84,3 +84,24 @@ func TestIsUserInGroup(t *testing.T) {
 		t.Error("should not be in nonexistent group")
 	}
 }
+
+func TestRealUser(t *testing.T) {
+	t.Setenv("USER", "root")
+	t.Setenv("SUDO_USER", "alice")
+	old := geteuid
+	t.Cleanup(func() { geteuid = old })
+
+	geteuid = func() int { return 0 }
+	if got := realUser(); got != "alice" {
+		t.Errorf("under sudo: %q, want alice", got)
+	}
+	geteuid = func() int { return 1000 }
+	if got := realUser(); got != "root" {
+		t.Errorf("not root: %q, want $USER", got)
+	}
+	geteuid = func() int { return 0 }
+	t.Setenv("SUDO_USER", "")
+	if got := realUser(); got != "root" {
+		t.Errorf("root without sudo: %q, want root", got)
+	}
+}

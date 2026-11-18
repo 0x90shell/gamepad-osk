@@ -1638,3 +1638,93 @@ func TestWorkingDirNotSearched(t *testing.T) {
 		t.Error("read config from the working directory")
 	}
 }
+
+// fakeSudo makes the app believe it runs as root through sudo for a user
+// whose home is home. It returns the paths handed to lchown.
+func fakeSudo(t *testing.T, home string) *[]string {
+	t.Helper()
+	var chowned []string
+	oldEuid, oldChown, oldHome := geteuid, lchown, homeOfID
+	geteuid = func() int { return 0 }
+	lchown = func(path string, uid, gid int) error {
+		if uid != 1234 || gid != 5678 {
+			t.Errorf("lchown(%s, %d, %d), want 1234:5678", path, uid, gid)
+		}
+		chowned = append(chowned, path)
+		return nil
+	}
+	homeOfID = func(int) (string, error) { return home, nil }
+	t.Cleanup(func() { geteuid, lchown, homeOfID = oldEuid, oldChown, oldHome })
+	t.Setenv("SUDO_UID", "1234")
+	t.Setenv("SUDO_GID", "5678")
+	return &chowned
+}
+
+// R11: under sudo, what the app creates in the user's home goes to the user.
+func TestSudoCreatesOwnedByUser(t *testing.T) {
+	t.Run("first run: new folders and file", func(t *testing.T) {
+		home := t.TempDir()
+		xdg := filepath.Join(home, ".config")
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		resetConfigState(t)
+		orig := configSearchPaths
+		configSearchPaths = func() []string { return nil }
+		t.Cleanup(func() { configSearchPaths = orig })
+		log.SetOutput(io.Discard)
+		defer log.SetOutput(os.Stderr)
+		chowned := fakeSudo(t, home)
+		LoadConfig("")
+		want := []string{filepath.Join(xdg, "gamepad-osk"), xdg, filepath.Join(xdg, "gamepad-osk", "config")}
+		if !slices.Equal(*chowned, want) {
+			t.Errorf("chowned %q, want %q", *chowned, want)
+		}
+	})
+	t.Run("existing folders are not touched", func(t *testing.T) {
+		home := t.TempDir()
+		xdg := filepath.Join(home, ".config")
+		writeRaw(t, filepath.Join(xdg, "other", "x"), "", 0600)
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		resetConfigState(t)
+		chowned := fakeSudo(t, home)
+		SaveTheme("nord")
+		want := []string{filepath.Join(xdg, "gamepad-osk"), filepath.Join(xdg, "gamepad-osk", "config")}
+		if !slices.Equal(*chowned, want) {
+			t.Errorf("chowned %q, want %q", *chowned, want)
+		}
+		*chowned = nil
+		SaveTheme("cobalt") // existing file keeps its owner
+		if len(*chowned) != 0 {
+			t.Errorf("save to an existing file chowned %q", *chowned)
+		}
+	})
+	t.Run("outside the sudo user's home", func(t *testing.T) {
+		user, _ := isolateConfig(t)
+		chowned := fakeSudo(t, "/home/someone")
+		SaveTheme("nord")
+		if len(*chowned) != 0 {
+			t.Errorf("chowned %q outside the user's home (%s)", *chowned, user)
+		}
+	})
+	t.Run("not root", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		resetConfigState(t)
+		chowned := fakeSudo(t, home)
+		geteuid = os.Geteuid
+		SaveTheme("nord")
+		if os.Geteuid() != 0 && len(*chowned) != 0 {
+			t.Errorf("chowned %q without root", *chowned)
+		}
+	})
+	t.Run("root without sudo", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		resetConfigState(t)
+		chowned := fakeSudo(t, home)
+		t.Setenv("SUDO_UID", "")
+		SaveTheme("nord")
+		if len(*chowned) != 0 {
+			t.Errorf("chowned %q with no SUDO_UID", *chowned)
+		}
+	})
+}

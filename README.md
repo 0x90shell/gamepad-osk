@@ -245,11 +245,9 @@ sudo usermod -aG input $USER
 
 Log out and back in for the group change to take effect. Verify with `groups`.
 
-If you must use sudo, pass your config explicitly to avoid loading root's config:
+gamepad-osk does not need sudo to run. Only the udev rule is a system file: AUR packages and the manual install above put it in place, or run `sudo gamepad-osk --setup --install` (as root it installs only the udev rule and the system-wide service, never your config). `gamepad-osk --setup` checks device access, the rule and the input group.
 
-```bash
-sudo gamepad-osk --config ~/.config/gamepad-osk/config
-```
+If you still run the app with sudo, it reads your own config, and any file it creates in your home stays owned by you.
 
 ## Systemd User Service
 

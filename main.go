@@ -269,7 +269,8 @@ OPTIONS
   --daemon             Start hidden, wait for toggle combo or --toggle to show
                        Close button (B) hides instead of exiting in daemon mode
   --setup              Check system configuration (udev, permissions, config)
-  --setup --install    Deploy udev rules, config, and systemd service
+  --setup --install    Install config and user service; with sudo: udev rule and
+                       system-wide service (the app itself never needs sudo)
   --verbose, -v        Verbose logging (gamepad events, key injection, config)
   --version, -V        Print version and exit
   --help, -h           Show this help
