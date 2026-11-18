@@ -127,13 +127,11 @@ Install runtime dependencies for your distro first (see [Promptfont](#promptfont
 
 ```bash
 chmod +x gamepad-osk
-sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
-sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
-sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
-sudo udevadm control --reload-rules
+sudo install -Dm755 gamepad-osk /usr/local/bin/gamepad-osk
+sudo /usr/local/bin/gamepad-osk --setup --install
 ```
 
-A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
+As root, `--setup --install` puts the udev rule and the systemd user service in `/etc`, the place for files you add by hand, so a later package install never conflicts with them. A default config is created in `~/.config/gamepad-osk/` on first run.
 
 ### From source
 
@@ -143,12 +141,11 @@ Clone and build:
 git clone https://github.com/0x90shell/gamepad-osk.git
 cd gamepad-osk
 go build -o gamepad-osk .
-sudo install -Dm755 gamepad-osk /usr/bin/gamepad-osk
-sudo install -Dm644 config.example /usr/share/gamepad-osk/config
-sudo install -Dm644 gamepad-osk.service /usr/lib/systemd/user/gamepad-osk.service
-sudo install -Dm644 gamepad-osk.udev /usr/lib/udev/rules.d/80-gamepad-osk.rules
-sudo udevadm control --reload-rules
+sudo install -Dm755 gamepad-osk /usr/local/bin/gamepad-osk
+sudo /usr/local/bin/gamepad-osk --setup --install
 ```
+
+AUR packages install a reference copy of the config at `/usr/share/gamepad-osk/config`. The app does not read it; it creates `~/.config/gamepad-osk/config` on first run.
 
 Install build dependencies for your distro before building:
 

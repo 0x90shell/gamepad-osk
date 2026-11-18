@@ -10,10 +10,44 @@ import (
 	"path/filepath"
 )
 
+// Packages (AUR) own the /usr/lib copies. --setup --install as root writes
+// the /etc copies, the place for files an admin adds by hand: pacman never
+// conflicts with them. A file in /etc overrides the /usr/lib one.
 const (
-	udevRulePath = "/usr/lib/udev/rules.d/80-gamepad-osk.rules"
-	udevRuleAlt  = "/etc/udev/rules.d/80-gamepad-osk.rules"
+	udevRulePkg    = "/usr/lib/udev/rules.d/80-gamepad-osk.rules"
+	udevRuleEtc    = "/etc/udev/rules.d/80-gamepad-osk.rules"
+	serviceUnitPkg = "/usr/lib/systemd/user/gamepad-osk.service"
+	serviceUnitEtc = "/etc/systemd/user/gamepad-osk.service"
 )
+
+// firstExisting returns the first path that exists, or "".
+func firstExisting(paths ...string) string {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// writeSetupFile writes content to path and prints the result line.
+func writeSetupFile(label, path, content string) bool {
+	existed := firstExisting(path) != ""
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { //nolint:gosec // G301: system or user config dir
+		fmt.Printf("  %-14s %s %v\n", label, colorRed("[✗]"), err)
+		return false
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil { //nolint:gosec // G306: udev rules and units are world-readable
+		fmt.Printf("  %-14s %s %v\n", label, colorRed("[✗]"), err)
+		return false
+	}
+	note := ""
+	if existed {
+		note = " (updated)"
+	}
+	fmt.Printf("  %-14s %s %s%s\n", label, colorGreen("[✓]"), path, note)
+	return true
+}
 
 // Hardcoded canonical content - reviewed and versioned in source control.
 // Kept in sync with gamepad-osk.udev but intentionally not go:embed'd
@@ -117,12 +151,14 @@ func runDiagnose(configPath string) int {
 
 	// udev rules - only flag as a problem if device access is also failing
 	udevFound := false
-	for _, path := range []string{udevRulePath, udevRuleAlt} {
+	for _, path := range []string{udevRuleEtc, udevRulePkg} {
 		if _, err := os.Stat(path); err == nil {
 			fmt.Printf("  %-14s %s %s\n", "udev rules", colorGreen("[✓]"), path)
 			udevFound = true
-			break
 		}
+	}
+	if firstExisting(udevRuleEtc) != "" && firstExisting(udevRulePkg) != "" {
+		fmt.Printf("  %-14s   %s\n", "", colorDim("the /etc copy overrides the package's; remove it unless you edited it"))
 	}
 	if !udevFound {
 		if uinputOK && inputOK {
@@ -179,12 +215,11 @@ func runDiagnose(configPath string) int {
 
 	// 6. systemd service - check both system-wide and user-local paths
 	if hasSystemd() {
-		systemSvc := "/usr/lib/systemd/user/gamepad-osk.service"
-		userSvc := systemdUserServicePath()
-		if _, err := os.Stat(systemSvc); err == nil {
-			fmt.Printf("  %-14s %s %s\n", "systemd", colorGreen("[✓]"), systemSvc)
-		} else if _, err := os.Stat(userSvc); err == nil {
-			fmt.Printf("  %-14s %s %s\n", "systemd", colorGreen("[✓]"), userSvc)
+		if unit := firstExisting(systemdUserServicePath(), serviceUnitEtc, serviceUnitPkg); unit != "" {
+			fmt.Printf("  %-14s %s %s\n", "systemd", colorGreen("[✓]"), unit)
+			if unit != serviceUnitPkg && firstExisting(serviceUnitPkg) != "" {
+				fmt.Printf("  %-14s   %s\n", "", colorDim("this unit overrides the package's; remove it unless you edited it"))
+			}
 		} else {
 			fmt.Printf("  %-14s %s user service not installed (optional)\n", "systemd", colorDim("[~]"))
 		}
@@ -210,33 +245,27 @@ func runInstall(configPath string) int {
 	fmt.Printf("gamepad-osk v%s setup:\n", version)
 	fmt.Println()
 
-	// 1. udev rules
-	if canWritePath(udevRulePath) {
-		existed := false
-		if _, err := os.Stat(udevRulePath); err == nil {
-			existed = true
+	// 1. udev rules: the package's copy wins; else ours goes in /etc
+	switch {
+	case firstExisting(udevRulePkg) != "":
+		fmt.Printf("  %-14s %s %s (installed by your package)\n", "udev rules", colorGreen("[✓]"), udevRulePkg)
+	case canWritePath(udevRuleEtc):
+		if writeSetupFile("udev rules", udevRuleEtc, udevRuleContent) {
+			ctx := context.Background()
+			if out, err := exec.CommandContext(ctx, "udevadm", "control", "--reload-rules").CombinedOutput(); err != nil {
+				fmt.Printf("  %-14s %s %s\n", "udev reload", colorRed("[✗]"), string(out))
+			} else {
+				fmt.Printf("  %-14s %s\n", "udev reload", colorGreen("[✓]"))
+			}
+			if out, err := exec.CommandContext(ctx, "udevadm", "trigger").CombinedOutput(); err != nil {
+				fmt.Printf("  %-14s %s %s\n", "udev trigger", colorRed("[✗]"), string(out))
+			} else {
+				fmt.Printf("  %-14s %s\n", "udev trigger", colorGreen("[✓]"))
+			}
 		}
-		if err := os.WriteFile(udevRulePath, []byte(udevRuleContent), 0644); err != nil { //nolint:gosec // G306: udev rules are world-readable
-			fmt.Printf("  %-14s %s %v\n", "udev rules", colorRed("[✗]"), err)
-		} else if existed {
-			fmt.Printf("  %-14s %s %s (updated)\n", "udev rules", colorGreen("[✓]"), udevRulePath)
-		} else {
-			fmt.Printf("  %-14s %s %s\n", "udev rules", colorGreen("[✓]"), udevRulePath)
-		}
-
-		// Reload udev
-		ctx := context.Background()
-		if out, err := exec.CommandContext(ctx, "udevadm", "control", "--reload-rules").CombinedOutput(); err != nil {
-			fmt.Printf("  %-14s %s %s\n", "udev reload", colorRed("[✗]"), string(out))
-		} else {
-			fmt.Printf("  %-14s %s\n", "udev reload", colorGreen("[✓]"))
-		}
-		if out, err := exec.CommandContext(ctx, "udevadm", "trigger").CombinedOutput(); err != nil {
-			fmt.Printf("  %-14s %s %s\n", "udev trigger", colorRed("[✗]"), string(out))
-		} else {
-			fmt.Printf("  %-14s %s\n", "udev trigger", colorGreen("[✓]"))
-		}
-	} else {
+	case firstExisting(udevRuleEtc) != "":
+		fmt.Printf("  %-14s %s %s (installed; run with sudo to update)\n", "udev rules", colorGreen("[✓]"), udevRuleEtc)
+	default:
 		fmt.Printf("  %-14s %s skipped: needs root (system file)\n", "udev rules", colorDim("[~]"))
 		fmt.Printf("  %-14s   %s\n", "", colorDim("Not needed if your package installed it. Otherwise run:"))
 		fmt.Printf("  %-14s   %s\n", "", colorDim("sudo gamepad-osk --setup --install"))
@@ -271,39 +300,25 @@ func runInstall(configPath string) int {
 		}
 	}
 
-	// 3. systemd service
-	// Root: /usr/lib/systemd/user/ (system-wide user unit, same as AUR PKGBUILD)
-	// Non-root: ~/.config/systemd/user/ (user-local)
-	if !hasSystemd() {
+	// 3. systemd service: the package's unit wins. Root writes /etc; a
+	// user writes ~/.config only if no system-wide unit exists, since a
+	// user unit would shadow it.
+	exePath := "/usr/bin/gamepad-osk"
+	if exe, err := os.Executable(); err == nil {
+		exePath = exe
+	}
+	unit := fmt.Sprintf(systemdServiceTemplate, exePath)
+	switch system := firstExisting(serviceUnitPkg, serviceUnitEtc); {
+	case !hasSystemd():
 		fmt.Printf("  %-14s %s not detected\n", "systemd", colorDim("[~]"))
-	} else {
-		var svcPath string
-		if os.Geteuid() == 0 {
-			svcPath = "/usr/lib/systemd/user/gamepad-osk.service"
-		} else {
-			svcPath = systemdUserServicePath()
-		}
-		svcDir := filepath.Dir(svcPath)
-		if err := os.MkdirAll(svcDir, 0755); err != nil { //nolint:gosec // G301: systemd user dir
-			fmt.Printf("  %-14s %s %v\n", "systemd", colorRed("[✗]"), err)
-		} else {
-			exePath := "/usr/bin/gamepad-osk"
-			if exe, err := os.Executable(); err == nil {
-				exePath = exe
-			}
-			content := fmt.Sprintf(systemdServiceTemplate, exePath)
-			existed := false
-			if _, statErr := os.Stat(svcPath); statErr == nil {
-				existed = true
-			}
-			if err := os.WriteFile(svcPath, []byte(content), 0644); err != nil { //nolint:gosec // G306: service file
-				fmt.Printf("  %-14s %s %v\n", "systemd", colorRed("[✗]"), err)
-			} else if existed {
-				fmt.Printf("  %-14s %s %s (updated)\n", "systemd", colorGreen("[✓]"), svcPath)
-			} else {
-				fmt.Printf("  %-14s %s %s\n", "systemd", colorGreen("[✓]"), svcPath)
-			}
-		}
+	case system == serviceUnitPkg:
+		fmt.Printf("  %-14s %s %s (installed by your package)\n", "systemd", colorGreen("[✓]"), serviceUnitPkg)
+	case geteuid() == 0:
+		writeSetupFile("systemd", serviceUnitEtc, unit)
+	case system != "":
+		fmt.Printf("  %-14s %s %s (installed system-wide)\n", "systemd", colorGreen("[✓]"), system)
+	default:
+		writeSetupFile("systemd", systemdUserServicePath(), unit)
 	}
 
 	// 4. group membership hint. Under sudo, device access says nothing

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -103,5 +105,34 @@ func TestRealUser(t *testing.T) {
 	t.Setenv("SUDO_USER", "")
 	if got := realUser(); got != "root" {
 		t.Errorf("root without sudo: %q, want root", got)
+	}
+}
+
+// ruleLines drops comments and blank lines.
+func ruleLines(s string) []string {
+	var out []string
+	for line := range strings.SplitSeq(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// The rule and unit --setup --install writes match the files packages ship.
+func TestSetupFilesMatchRepo(t *testing.T) {
+	udev, err := os.ReadFile("gamepad-osk.udev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ruleLines(udevRuleContent), ruleLines(string(udev)); !slices.Equal(got, want) {
+		t.Errorf("built-in udev rule differs from gamepad-osk.udev:\n%q\n%q", got, want)
+	}
+	unit, err := os.ReadFile("gamepad-osk.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprintf(systemdServiceTemplate, "/usr/bin/gamepad-osk"), string(unit); got != want {
+		t.Errorf("built-in unit differs from gamepad-osk.service:\n%s\n---\n%s", got, want)
 	}
 }
