@@ -32,6 +32,9 @@ static SDL_Window* create_window_props(const char *title, int x, int y, int w, i
     if (wayland_role_custom) {
         SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_WAYLAND_SURFACE_ROLE_CUSTOM_BOOLEAN, true);
         SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
+        // Alpha channel, so the renderer can draw the keyboard see-through
+        // on compositors without wp_alpha_modifier_v1
+        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true);
     }
 
     SDL_Window *win = SDL_CreateWindowWithProperties(props);
