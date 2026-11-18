@@ -423,9 +423,9 @@ func migrateFromTOML(tomlPath, newPath string) error {
 
 var sudoHomeResolved string // cached sudo-aware home dir (log once)
 
-// UserConfigPath returns the user's config file path (XDG standard).
+// configDir returns the gamepad-osk config directory (XDG standard).
 // When run via sudo, resolves the real user's home via SUDO_USER.
-func UserConfigPath() string {
+func configDir() string {
 	xdg := os.Getenv("XDG_CONFIG_HOME")
 	if xdg == "" {
 		if sudoHomeResolved == "" {
@@ -439,24 +439,34 @@ func UserConfigPath() string {
 		}
 		xdg = filepath.Join(sudoHomeResolved, ".config")
 	}
-	return filepath.Join(xdg, "gamepad-osk", "config")
+	return filepath.Join(xdg, "gamepad-osk")
+}
+
+// UserConfigPath returns the user's config file path.
+func UserConfigPath() string {
+	return filepath.Join(configDir(), "config")
 }
 
 // legacyConfigPath returns the old TOML config path for migration.
 func legacyConfigPath() string {
-	xdg := os.Getenv("XDG_CONFIG_HOME")
-	if xdg == "" {
-		if sudoHomeResolved == "" {
-			sudoHomeResolved = os.Getenv("HOME")
-			if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && sudoHomeResolved == "/root" {
-				if u, err := user.Lookup(sudoUser); err == nil {
-					sudoHomeResolved = u.HomeDir
-				}
-			}
-		}
-		xdg = filepath.Join(sudoHomeResolved, ".config")
+	return filepath.Join(configDir(), "config.toml")
+}
+
+// configSearchPaths returns the read-only config locations searched after
+// the user config: system config, next to the binary, working directory.
+// A variable so tests can replace it.
+var configSearchPaths = func() []string {
+	paths := []string{"/etc/gamepad-osk/config"}
+	if exe, err := os.Executable(); err == nil {
+		paths = append(paths, filepath.Join(filepath.Dir(exe), "config"))
 	}
-	return filepath.Join(xdg, "gamepad-osk", "config.toml")
+	return append(paths, "config")
+}
+
+// configSource records which file LoadConfig read.
+var configSource struct {
+	Path     string // empty: no file found, defaults used
+	FromFlag bool   // Path came from --config
 }
 
 func LoadConfig(overridePath string) Config {
@@ -481,16 +491,11 @@ func LoadConfig(overridePath string) Config {
 	if overridePath != "" {
 		paths = append(paths, overridePath)
 	}
-	paths = append(paths,
-		userPath,
-		"/etc/gamepad-osk/config",
-	)
-	if exe, err := os.Executable(); err == nil {
-		paths = append(paths, filepath.Join(filepath.Dir(exe), "config"))
-	}
-	paths = append(paths, "config")
+	paths = append(paths, userPath)
+	paths = append(paths, configSearchPaths()...)
 
-	for _, p := range paths {
+	configSource.Path, configSource.FromFlag = "", false
+	for i, p := range paths {
 		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: config paths are trusted
 			f, err := os.Open(p) //nolint:gosec // G304: config paths are trusted
 			if err != nil {
@@ -503,6 +508,8 @@ func LoadConfig(overridePath string) Config {
 				Debugf("Loaded config from %s", p)
 			}
 			_ = f.Close()
+			configSource.Path = p
+			configSource.FromFlag = overridePath != "" && i == 0
 			break
 		}
 	}

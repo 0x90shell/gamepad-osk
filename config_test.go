@@ -1033,3 +1033,85 @@ func TestBorderlessThemes(t *testing.T) {
 		}
 	}
 }
+
+// isolateConfig points the user config and the read-only search paths at
+// temp dirs, so a config in /etc or next to the test binary is never read.
+// It returns the user config path and the dir holding the search paths.
+func isolateConfig(t *testing.T) (userPath, searchDir string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	searchDir = t.TempDir()
+	orig := configSearchPaths
+	configSearchPaths = func() []string {
+		return []string{filepath.Join(searchDir, "system"), filepath.Join(searchDir, "cwd")}
+	}
+	t.Cleanup(func() { configSearchPaths = orig })
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	return UserConfigPath(), searchDir
+}
+
+func writeTestConfig(t *testing.T, path, theme string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { //nolint:gosec // G301: test dir
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("[theme]\nname = "+theme+"\n"), 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+}
+
+func TestLoadConfigSearchOrder(t *testing.T) {
+	t.Run("nothing found", func(t *testing.T) {
+		isolateConfig(t)
+		cfg := LoadConfig("")
+		if cfg.Theme.Name != DefaultConfig().Theme.Name {
+			t.Errorf("theme = %q, want default", cfg.Theme.Name)
+		}
+		if configSource.Path != "" || configSource.FromFlag {
+			t.Errorf("configSource = %+v, want empty", configSource)
+		}
+	})
+	t.Run("search path used when no user config", func(t *testing.T) {
+		_, dir := isolateConfig(t)
+		cwd := filepath.Join(dir, "cwd")
+		writeTestConfig(t, cwd, "nord")
+		if cfg := LoadConfig(""); cfg.Theme.Name != "nord" {
+			t.Errorf("theme = %q, want nord", cfg.Theme.Name)
+		}
+		if configSource.Path != cwd || configSource.FromFlag {
+			t.Errorf("configSource = %+v, want %s", configSource, cwd)
+		}
+	})
+	t.Run("first search path wins", func(t *testing.T) {
+		_, dir := isolateConfig(t)
+		writeTestConfig(t, filepath.Join(dir, "system"), "nord")
+		writeTestConfig(t, filepath.Join(dir, "cwd"), "cobalt")
+		if cfg := LoadConfig(""); cfg.Theme.Name != "nord" {
+			t.Errorf("theme = %q, want nord", cfg.Theme.Name)
+		}
+	})
+	t.Run("user config before search paths", func(t *testing.T) {
+		user, dir := isolateConfig(t)
+		writeTestConfig(t, user, "dracula")
+		writeTestConfig(t, filepath.Join(dir, "system"), "nord")
+		if cfg := LoadConfig(""); cfg.Theme.Name != "dracula" {
+			t.Errorf("theme = %q, want dracula", cfg.Theme.Name)
+		}
+		if configSource.Path != user {
+			t.Errorf("configSource = %+v, want %s", configSource, user)
+		}
+	})
+	t.Run("--config before user config", func(t *testing.T) {
+		user, dir := isolateConfig(t)
+		writeTestConfig(t, user, "dracula")
+		flag := filepath.Join(dir, "flag")
+		writeTestConfig(t, flag, "gotham")
+		if cfg := LoadConfig(flag); cfg.Theme.Name != "gotham" {
+			t.Errorf("theme = %q, want gotham", cfg.Theme.Name)
+		}
+		if configSource.Path != flag || !configSource.FromFlag {
+			t.Errorf("configSource = %+v, want %s from flag", configSource, flag)
+		}
+	})
+}
