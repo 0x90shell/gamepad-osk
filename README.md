@@ -383,11 +383,12 @@ Uses wlr-layer-shell for native overlay support - no compositor rules needed. Th
 - **Hyprland** - native
 - **KDE Plasma 6** - native (via Layer Shell Qt)
 - **COSMIC (Pop!_OS)** - native (via Smithay)
-- **GNOME (Mutter)** - no layer-shell support; falls back to standard window (same as X11 without hints)
+- **GNOME (Mutter)** - not supported. Mutter has no layer-shell, and there is no fallback window yet: the keyboard does not appear, but it still takes the controller.
 
 **Wayland limitations:**
 - Pointer warp on hide is not available (Wayland does not allow clients to move the cursor). If you move the mouse to another monitor with the right stick, you need to move it back before hiding.
-- Window opacity (`opacity` config) is not supported. SDL_SetWindowOpacity is a no-op on Wayland. See TODO.md for planned client-side fallback.
+
+**Opacity:** `opacity` works on layer-shell compositors. When the compositor supports `wp_alpha_modifier_v1` (tested: Sway 1.12, KWin 6.8), the compositor blends the keyboard. On others (tested: Sway 1.9) the keyboard draws itself see-through. The default is 0.95, so the keyboard is slightly see-through unless you set `opacity = 1.0`. Values under 0.2 are raised to 0.2.
 
 ## License
 

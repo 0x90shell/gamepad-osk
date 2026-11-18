@@ -8,7 +8,7 @@ key_shadow = true            # drop shadow under keys
 [window]
 position = bottom            # bottom or top
 margin = 0                   # pixels from screen edge
-opacity = 0.95               # 0.0-1.0 (1.0 = fully opaque)
+opacity = 0.95               # 0.2-1.0 (1.0 = fully opaque)
 panel_avoid = true           # Wayland: respect panel spacing (false = always screen edge)
 
 [keys]
