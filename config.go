@@ -113,23 +113,32 @@ func DefaultConfig() Config {
 
 // --- INI config parser/writer ---
 
-// parseBool parses a bool value, logging a warning and returning the default on bad input.
-func parseBool(key, val string, defaultVal bool) bool {
-	b, err := strconv.ParseBool(val)
-	if err != nil {
-		log.Printf("Warning: %s has invalid bool value, using %v", key, defaultVal)
-		return defaultVal
-	}
-	return b
+// iniNote is one problem found while reading a config file: a value that
+// is not valid, an unknown key or section, a key set twice, a line that
+// is not key = value. The value it names is ignored and the setting keeps
+// its default (or the earlier line's value).
+type iniNote struct {
+	Line int    // 1-based line number
+	Key  string // section.key, empty for lines that have no key
+	Msg  string // no line numbers, so notes compare across edits
+	Prev int    // for a key set twice: the earlier line
 }
 
-// parseINI reads an INI-style config file into a Config.
+func (n iniNote) String() string {
+	if n.Prev > 0 {
+		return fmt.Sprintf("line %d: %s (also set on line %d, this line wins)", n.Line, n.Msg, n.Prev)
+	}
+	return fmt.Sprintf("line %d: %s", n.Line, n.Msg)
+}
+
+// parseINI reads an INI-style config file into a Config and logs every
+// problem it finds, so ignored values are never silent.
 // Supports [section] and [section.subsection] headers, key = value pairs,
 // # comments, and inline # comments.
 func parseINI(r io.Reader, cfg *Config) error {
-	unknown, err := parseINIKeys(r, cfg)
-	for _, k := range unknown {
-		log.Printf("Warning: unknown config key %s ignored (check for typos)", k) //nolint:gosec // G706: key from user's own config file
+	notes, err := parseINIKeys(r, cfg)
+	for _, n := range notes {
+		log.Printf("Warning: config %s", n) //nolint:gosec // G706: text from user's own config file
 	}
 	return err
 }
@@ -153,23 +162,59 @@ func iniSection(line string) (string, bool) {
 	return strings.ToLower(strings.TrimSpace(line[1 : len(line)-1])), true
 }
 
-// removedKeys were valid in older versions. They are ignored without a
-// warning and dropped on the next save.
+// removedKeys were valid in older versions. They are ignored, with a note
+// that the line can be deleted.
 var removedKeys = map[string]bool{"keys.font_size": true}
 
-// parseINIKeys parses r into cfg and returns the unknown keys as
-// section.key, without logging them.
-func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
+// parseINIKeys parses r into cfg and returns the problems it found,
+// without logging them.
+func parseINIKeys(r io.Reader, cfg *Config) ([]iniNote, error) {
 	scanner := bufio.NewScanner(r)
 	section := ""
-	var unknown []string
-	skip := func(key string) {
-		if k := section + "." + key; !removedKeys[k] {
-			unknown = append(unknown, k)
+	var notes []iniNote
+	lineNo := 0
+	seen := map[string]int{}        // section.key -> line it was last set
+	badSection := map[string]bool{} // unknown sections already noted
+	var key, val string
+
+	note := func(k, format string, args ...any) {
+		notes = append(notes, iniNote{Line: lineNo, Key: k, Msg: fmt.Sprintf(format, args...)})
+	}
+	bad := func(kind string, using any) {
+		note(section+"."+key, "%s.%s = %q is not %s, using %v", section, key, val, kind, using)
+	}
+	setInt := func(dst *int) {
+		if n, err := strconv.Atoi(val); err == nil {
+			*dst = n
+		} else {
+			bad("a whole number", *dst)
+		}
+	}
+	setFloat := func(dst *float64) {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			*dst = f
+		} else {
+			bad("a number (use a dot: 0.8)", *dst)
+		}
+	}
+	setBool := func(dst *bool) {
+		if b, err := strconv.ParseBool(val); err == nil {
+			*dst = b
+		} else {
+			bad("true or false", *dst)
+		}
+	}
+	skip := func() {
+		k := section + "." + key
+		if removedKeys[k] {
+			note(k, "%s is no longer used and is ignored (the line can be deleted)", k)
+		} else {
+			note(k, "unknown key %s ignored (check for typos)", k)
 		}
 	}
 
 	for scanner.Scan() {
+		lineNo++
 		line := iniLine(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -186,15 +231,29 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 		}
 
 		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+			note("", "%q is not a key = value line, ignored", line)
 			continue
 		}
-		key := strings.ToLower(strings.TrimSpace(parts[0]))
-		val := strings.TrimSpace(parts[1])
+		key = strings.ToLower(strings.TrimSpace(parts[0]))
+		val = strings.TrimSpace(parts[1])
 		// Strip quotes from TOML-migrated values
-		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+		if len(val) >= 2 && (val[0] == '"' && val[len(val)-1] == '"' || val[0] == '\'' && val[len(val)-1] == '\'') {
 			val = val[1 : len(val)-1]
 		}
+
+		if !knownSections[section] {
+			if !badSection[section] {
+				badSection[section] = true
+				note("", "unknown section [%s], keys under it are ignored (check section headers)", section)
+			}
+			continue
+		}
+		k := section + "." + key
+		if prev, ok := seen[k]; ok {
+			notes = append(notes, iniNote{Line: lineNo, Key: k, Msg: k + " is set twice", Prev: prev})
+		}
+		seen[k] = lineNo
 
 		switch section {
 		case "theme":
@@ -204,70 +263,50 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 			case "key_style":
 				cfg.Theme.KeyStyle = val
 			case "key_shadow":
-				cfg.Theme.KeyShadow = parseBool("key_shadow", val, cfg.Theme.KeyShadow)
+				setBool(&cfg.Theme.KeyShadow)
 			default:
-				skip(key)
+				skip()
 			}
 		case "window":
 			switch key {
 			case "position":
 				cfg.Window.Position = val
 			case "margin":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Window.Margin = n
-				}
+				setInt(&cfg.Window.Margin)
 			case "bottom_margin":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Window.BottomMargin = n
-				}
+				setInt(&cfg.Window.BottomMargin)
 			case "opacity":
-				if f, err := strconv.ParseFloat(val, 64); err == nil {
-					cfg.Window.Opacity = f
-				}
+				setFloat(&cfg.Window.Opacity)
 			case "panel_avoid":
-				cfg.Window.PanelAvoid = parseBool("panel_avoid", val, true)
+				setBool(&cfg.Window.PanelAvoid)
 			default:
-				skip(key)
+				skip()
 			}
 		case "keys":
 			switch key {
 			case "unit_size":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Keys.UnitSize = n
-				}
+				setInt(&cfg.Keys.UnitSize)
 			case "padding":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Keys.Padding = n
-				}
+				setInt(&cfg.Keys.Padding)
 			case "scale":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Keys.Scale = n
-				}
+				setInt(&cfg.Keys.Scale)
 			case "repeat_delay_ms":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Keys.RepeatDelayMs = n
-				}
+				setInt(&cfg.Keys.RepeatDelayMs)
 			case "repeat_rate_ms":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Keys.RepeatRateMs = n
-				}
+				setInt(&cfg.Keys.RepeatRateMs)
 			default:
-				skip(key)
+				skip()
 			}
 		case "gamepad":
 			switch key {
 			case "device":
 				cfg.Gamepad.Device = val
 			case "grab":
-				cfg.Gamepad.Grab = parseBool("grab", val, true)
+				setBool(&cfg.Gamepad.Grab)
 			case "deadzone":
-				if f, err := strconv.ParseFloat(val, 64); err == nil {
-					cfg.Gamepad.Deadzone = f
-				}
+				setFloat(&cfg.Gamepad.Deadzone)
 			case "long_press_ms":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Gamepad.LongPressMs = n
-				}
+				setInt(&cfg.Gamepad.LongPressMs)
 			case "swap_xy":
 				cfg.Gamepad.SwapXY = val
 			case "controller":
@@ -277,11 +316,9 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 			case "toggle_combo":
 				cfg.Gamepad.ToggleCombo = val
 			case "combo_period_ms":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Gamepad.ComboPeriodMs = n
-				}
+				setInt(&cfg.Gamepad.ComboPeriodMs)
 			default:
-				skip(key)
+				skip()
 			}
 		case "gamepad.buttons":
 			switch key {
@@ -304,25 +341,21 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 			case "position_toggle":
 				cfg.Gamepad.Buttons.PositionToggle = val
 			default:
-				skip(key)
+				skip()
 			}
 		case "mouse":
 			switch key {
 			case "enabled":
-				cfg.Mouse.Enabled = parseBool("enabled", val, true)
+				setBool(&cfg.Mouse.Enabled)
 			case "sensitivity":
-				if n, err := strconv.Atoi(val); err == nil {
-					cfg.Mouse.Sensitivity = n
-				}
+				setInt(&cfg.Mouse.Sensitivity)
 			default:
-				skip(key)
+				skip()
 			}
-		default:
-			log.Printf("Warning: unknown config section [%s], key %q ignored (check section headers)", section, key) //nolint:gosec // G706: section/key from user's own config file
 		}
 	}
 
-	return unknown, scanner.Err()
+	return notes, scanner.Err()
 }
 
 // writeINI writes a Config in INI format with inline comments.
@@ -622,11 +655,12 @@ func saveValue(section, key, value string) {
 }
 
 // checkINIEdit guards every save: the edited file must load to exactly
-// the old settings plus the one new value, with the same unknown keys.
+// the old settings plus the one new value, with the same notes about
+// every other key (unknown keys, bad values).
 // Anything else means the edit misread the file, and nothing is written.
 func checkINIEdit(old, edited []byte, section, key, value string) error {
 	want := DefaultConfig()
-	wantUnknown, err := parseINIKeys(strings.NewReader(string(old)), &want)
+	wantNotes, err := parseINIKeys(strings.NewReader(string(old)), &want)
 	if err != nil {
 		return err
 	}
@@ -634,14 +668,26 @@ func checkINIEdit(old, edited []byte, section, key, value string) error {
 		return err
 	}
 	got := DefaultConfig()
-	gotUnknown, err := parseINIKeys(strings.NewReader(string(edited)), &got)
+	gotNotes, err := parseINIKeys(strings.NewReader(string(edited)), &got)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(got, want) || !slices.Equal(gotUnknown, wantUnknown) {
+	if !reflect.DeepEqual(got, want) || !slices.Equal(otherNotes(gotNotes, section+"."+key), otherNotes(wantNotes, section+"."+key)) {
 		return fmt.Errorf("could not change %s.%s without touching other settings, file left as is", section, key)
 	}
 	return nil
+}
+
+// otherNotes returns the messages of notes about anything but key. Line
+// numbers are left out: an added line moves the lines below it.
+func otherNotes(notes []iniNote, key string) []string {
+	var out []string
+	for _, n := range notes {
+		if n.Key != key {
+			out = append(out, n.Msg)
+		}
+	}
+	return out
 }
 
 // setINIValue returns data with section.key set to value. It replaces
@@ -818,40 +864,11 @@ func checkConfigFile(path string) []string {
 		return nil
 	}
 	defer func() { _ = f.Close() }()
-	var issues []string
-	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true, "key_shadow": true}
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := iniLine(scanner.Text())
-		if section, ok := iniSection(line); ok {
-			if !knownSections[section] {
-				issues = append(issues, fmt.Sprintf("unknown section [%s] - keys under it are ignored (check for typos)", section))
-			}
-			continue
-		}
-		// Check bool fields for invalid values
-		if idx := strings.Index(line, "="); idx > 0 {
-			key := strings.TrimSpace(line[:idx])
-			if boolKeys[key] {
-				val := strings.TrimSpace(line[idx+1:])
-				if ci := strings.Index(val, "#"); ci > 0 {
-					val = strings.TrimSpace(val[:ci])
-				}
-				if _, err := strconv.ParseBool(val); err != nil {
-					issues = append(issues, fmt.Sprintf("%s = %q is not a valid bool (use true/false)", key, val))
-				}
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return issues
-	}
-	if _, err := f.Seek(0, io.SeekStart); err == nil {
-		var scratch Config
-		unknown, _ := parseINIKeys(f, &scratch)
-		for _, k := range unknown {
-			issues = append(issues, fmt.Sprintf("unknown key %s - ignored (check for typos)", k))
-		}
+	scratch := DefaultConfig() // so notes name the real fallback values
+	notes, _ := parseINIKeys(f, &scratch)
+	issues := make([]string, 0, len(notes))
+	for _, n := range notes {
+		issues = append(issues, n.String())
 	}
 	return issues
 }

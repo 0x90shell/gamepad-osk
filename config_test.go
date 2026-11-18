@@ -1132,46 +1132,90 @@ func TestLoadConfigSearchOrder(t *testing.T) {
 	})
 }
 
-func TestUnknownKeys(t *testing.T) {
-	in := "[theme]\nnam = nord\n[keys]\nfont_size = 14\nscale = 60\n[mouse]\nsensitivit = 5\n"
-	cfg := DefaultConfig()
-	unknown, err := parseINIKeys(strings.NewReader(in), &cfg)
-	if err != nil {
-		t.Fatal(err)
+// Every value the parser ignores is reported with its line, in the log
+// at start and in --setup. Nothing is ignored silently.
+func TestConfigNotes(t *testing.T) {
+	tests := []struct {
+		name, in string
+		want     []string
+		check    func(Config) bool // the setting kept its default
+	}{
+		{"unknown key", "[theme]\nnam = nord\n",
+			[]string{"line 2: unknown key theme.nam ignored (check for typos)"}, nil},
+		{"removed key", "[keys]\nfont_size = 14\n",
+			[]string{"line 2: keys.font_size is no longer used and is ignored (the line can be deleted)"}, nil},
+		{"unknown section once", "[kkeys]\nscale = 60\npadding = 3\n",
+			[]string{"line 2: unknown section [kkeys], keys under it are ignored (check section headers)"},
+			func(c Config) bool { return c.Keys.Scale == 50 && c.Keys.Padding == 4 }},
+		{"key before any section", "name = nord\n",
+			[]string{"line 1: unknown section [], keys under it are ignored (check section headers)"}, nil},
+		{"not key = value", "[theme]\nname: nord\n",
+			[]string{`line 2: "name: nord" is not a key = value line, ignored`}, nil},
+		{"empty key", "[theme]\n= nord\n",
+			[]string{`line 2: "= nord" is not a key = value line, ignored`}, nil},
+		{"bad whole number", "[keys]\nscale = 60ms\n",
+			[]string{`line 2: keys.scale = "60ms" is not a whole number, using 50`},
+			func(c Config) bool { return c.Keys.Scale == 50 }},
+		{"bad float", "[window]\nopacity = 0,8\n",
+			[]string{`line 2: window.opacity = "0,8" is not a number (use a dot: 0.8), using 0.95`},
+			func(c Config) bool { return c.Window.Opacity == 0.95 }},
+		{"bad bool", "[gamepad]\ngrab = yes\n",
+			[]string{`line 2: gamepad.grab = "yes" is not true or false, using true`},
+			func(c Config) bool { return c.Gamepad.Grab }},
+		{"bad value keeps the earlier line", "[keys]\nscale = 60\nscale = x\n",
+			[]string{"line 3: keys.scale is set twice (also set on line 2, this line wins)",
+				`line 3: keys.scale = "x" is not a whole number, using 60`},
+			func(c Config) bool { return c.Keys.Scale == 60 }},
+		{"set twice", "[theme]\nname = cobalt\n\nname = nord\n",
+			[]string{"line 4: theme.name is set twice (also set on line 2, this line wins)"},
+			func(c Config) bool { return c.Theme.Name == "nord" }},
+		{"single quotes stripped", "[theme]\nname = 'nord'\n", nil,
+			func(c Config) bool { return c.Theme.Name == "nord" }},
+		{"clean file", "[theme]\nname = nord # mine\n[ keys ] # x\nScale = 60\n", nil,
+			func(c Config) bool { return c.Keys.Scale == 60 }},
 	}
-	if want := []string{"theme.nam", "mouse.sensitivit"}; !reflect.DeepEqual(unknown, want) {
-		t.Errorf("unknown = %q, want %q (font_size is removed, not unknown)", unknown, want)
-	}
-	if cfg.Keys.Scale != 60 {
-		t.Errorf("an unknown key stopped parsing: scale = %d", cfg.Keys.Scale)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			notes, err := parseINIKeys(strings.NewReader(tt.in), &cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, n := range notes {
+				got = append(got, n.String())
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("notes =\n%q\nwant\n%q", got, tt.want)
+			}
+			if tt.check != nil && !tt.check(cfg) {
+				t.Errorf("setting changed: %+v", cfg)
+			}
 
-	// parseINI logs each unknown key once.
-	var buf strings.Builder
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
-	cfg = DefaultConfig()
-	if err := parseINI(strings.NewReader(in), &cfg); err != nil {
-		t.Fatal(err)
-	}
-	logged := buf.String()
-	for _, k := range []string{"theme.nam", "mouse.sensitivit"} {
-		if strings.Count(logged, k) != 1 {
-			t.Errorf("log should name %s once:\n%s", k, logged)
-		}
-	}
-	if strings.Contains(logged, "font_size") {
-		t.Errorf("removed key font_size was warned about:\n%s", logged)
-	}
-
-	// --setup lists them too.
-	path := filepath.Join(t.TempDir(), "config")
-	if err := os.WriteFile(path, []byte(in), 0644); err != nil { //nolint:gosec // G306: test file
-		t.Fatal(err)
-	}
-	issues := checkConfigFile(path)
-	if len(issues) != 2 || !containsSubstr(issues, "theme.nam") || !containsSubstr(issues, "mouse.sensitivit") {
-		t.Errorf("checkConfigFile = %q, want the two unknown keys", issues)
+			// The same notes reach the log and --setup.
+			var buf strings.Builder
+			log.SetOutput(&buf)
+			defer log.SetOutput(os.Stderr)
+			cfg = DefaultConfig()
+			if err := parseINI(strings.NewReader(tt.in), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(buf.String(), "Warning: config "+w) {
+					t.Errorf("log is missing %q:\n%s", w, buf.String())
+				}
+			}
+			if tt.want == nil && buf.Len() != 0 {
+				t.Errorf("clean file logged:\n%s", buf.String())
+			}
+			path := filepath.Join(t.TempDir(), "config")
+			if err := os.WriteFile(path, []byte(tt.in), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if issues := checkConfigFile(path); !slices.Equal(issues, tt.want) {
+				t.Errorf("checkConfigFile = %q, want %q", issues, tt.want)
+			}
+		})
 	}
 }
 
