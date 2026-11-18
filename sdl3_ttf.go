@@ -46,6 +46,11 @@ func TTF3RenderTextBlended(f *Font, text string, color Color) (*Surface, error) 
 	return &Surface{ptr: unsafe.Pointer(surf)}, nil
 }
 
+// TTF3FontHasGlyph reports whether the font has a glyph for r.
+func TTF3FontHasGlyph(f *Font, r rune) bool {
+	return bool(C.TTF_FontHasGlyph((*C.TTF_Font)(f.ptr), C.Uint32(r)))
+}
+
 // TTF3GetStringSize returns the width and height of the rendered text.
 func TTF3GetStringSize(f *Font, text string) (int32, int32) {
 	ct := C.CString(text)

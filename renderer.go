@@ -301,7 +301,7 @@ func (r *Renderer) drawModifierBar(kb *KeyboardState) int32 {
 
 		// Render glyph part (Promptfont, left of text)
 		if r.flashGlyphText != "" {
-			entry := r.cachedText(r.fontGlyph, r.flashGlyphText, r.theme.KeyText)
+			entry := r.cachedText(r.fontGlyph, r.drawable(r.fontGlyph, r.flashGlyphText), r.theme.KeyText)
 			if entry.tex != nil {
 				dst := FRect{X: rightEdge - entry.w, Y: float32(r.pad + 2), W: entry.w, H: entry.h}
 				SDL3RenderTexture(r.renderer, entry.tex, nil, &dst)
@@ -390,7 +390,7 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 	if r.fontGlyph != nil && hasPromptfontRune(label) {
 		labelFont = r.fontGlyph
 	}
-	r.renderText(labelFont, label, tc, rect, AlignCenter)
+	r.renderText(labelFont, r.drawable(labelFont, label), tc, rect, AlignCenter)
 
 	// Shift hint (top-right)
 	if key.ShiftLabel != "" && !key.IsModifier && !isCursor {
@@ -399,7 +399,7 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 			if r.fontGlyph != nil && hasPromptfontRune(key.ShiftLabel) {
 				hintFont = r.fontGlyph
 			}
-			r.renderText(hintFont, key.ShiftLabel, t.ModifierText,
+			r.renderText(hintFont, r.drawable(hintFont, key.ShiftLabel), t.ModifierText,
 				FRect{X: float32(x), Y: float32(y), W: float32(w - 4), H: float32(h)}, AlignTopRight)
 		}
 	}
@@ -409,7 +409,7 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 		// Without Promptfont, fontGlyph is the label font: show the button name
 		glyph := g.Glyph
 		if !r.hasPromptfont {
-			glyph = g.Text
+			glyph = r.drawable(r.fontGlyph, g.Text)
 		}
 		r.renderText(r.fontGlyph, glyph, t.GlyphColor,
 			FRect{X: float32(x), Y: float32(y), W: float32(w - 3), H: float32(h - 2)}, AlignBottomRight)
@@ -496,7 +496,7 @@ func (r *Renderer) drawHint(items []HintItem, minX int32) {
 		if i > 0 {
 			gap = space * 3
 		}
-		g := r.cachedText(r.fontSmall, it.Text, tc)
+		g := r.cachedText(r.fontSmall, r.drawable(r.fontSmall, it.Text), tc)
 		if r.hasPromptfont {
 			g = r.cachedText(r.fontGlyph, it.Glyph, tc)
 		}
@@ -666,6 +666,37 @@ func isModActive(key KeyDef, kb *KeyboardState) bool {
 		return kb.MetaActive
 	}
 	return false
+}
+
+// asciiFallback replaces symbols that the label font may lack. Without
+// Promptfont, fontGlyph is the label font, and fonts such as Liberation Sans
+// or Noto Sans have none of these. "" means draw nothing.
+var asciiFallback = map[string]string{
+	"\u25c0\u25b6": "< >", // popup hint: d-pad left and right
+	"\u27F9":       "M+",  // mouse speed up (Shift+Up)
+	"\u27FE":       "M-",  // mouse speed down (Shift+Down)
+	"\u2699":       "",    // Theme key gear; the key says Theme anyway
+}
+
+// drawable returns s if font has every character in it, else its ASCII
+// fallback, so a missing glyph never shows as an empty box.
+func (r *Renderer) drawable(font *Font, s string) string {
+	if font == nil {
+		return s
+	}
+	return fallbackText(s, func(c rune) bool { return TTF3FontHasGlyph(font, c) })
+}
+
+func fallbackText(s string, has func(rune) bool) string {
+	for _, c := range s {
+		if c != ' ' && !has(c) {
+			if a, ok := asciiFallback[s]; ok {
+				return a
+			}
+			return s
+		}
+	}
+	return s
 }
 
 // hasPromptfontRune returns true if the string contains codepoints from

@@ -175,7 +175,8 @@ func BuildKeyGlyphs(cfg GamepadConfig) map[int]HintItem {
 		}
 	}
 
-	// Theme key always gets the gear icon; the label font has it too
+	// Theme key always gets the gear icon; without Promptfont it shows only
+	// if the label font has it (see asciiFallback)
 	glyphs[0] = HintItem{Glyph: "\u2699", Text: "\u2699"}
 
 	return glyphs

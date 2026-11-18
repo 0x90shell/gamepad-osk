@@ -145,3 +145,26 @@ func TestPopupBorderPicksStrongerHighlight(t *testing.T) {
 		}
 	}
 }
+
+func TestFallbackText(t *testing.T) {
+	ascii := func(c rune) bool { return c < 0x80 }
+	all := func(rune) bool { return true }
+	tests := []struct {
+		s    string
+		has  func(rune) bool
+		want string
+	}{
+		{"\u25c0\u25b6", all, "\u25c0\u25b6"},
+		{"\u25c0\u25b6", ascii, "< >"},
+		{"\u27F9", ascii, "M+"},
+		{"\u27FE", ascii, "M-"},
+		{"\u2699", ascii, ""},
+		{"Bksp", ascii, "Bksp"},
+		{"\u00e9", ascii, "\u00e9"}, // no fallback known: unchanged
+	}
+	for _, tt := range tests {
+		if got := fallbackText(tt.s, tt.has); got != tt.want {
+			t.Errorf("fallbackText(%q) = %q, want %q", tt.s, got, tt.want)
+		}
+	}
+}
