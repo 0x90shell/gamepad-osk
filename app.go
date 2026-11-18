@@ -205,9 +205,6 @@ func (app *App) Run() error {
 	SDL3SetRenderDrawBlendMode(renderer, 1) // SDL_BLENDMODE_BLEND
 	Debugf("Renderer: %s", SDL3GetRendererName(renderer))
 
-	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
-	applyOpacity(window, cfg.Window.Opacity)
-
 	// Set X11 hints AFTER renderer init (layer-shell handles this on Wayland)
 	if !hasLayerShell() {
 		SetNoFocusHints(window)
@@ -221,6 +218,8 @@ func (app *App) Run() error {
 	defer rend.Destroy()
 	rend.keyShadow = cfg.Theme.KeyShadow
 	rend.roundKeys = cfg.Theme.KeyStyle == "rounded"
+	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
+	applyOpacity(window, rend, cfg.Window.Opacity)
 
 	inj, err := NewInjector()
 	if err != nil {
@@ -306,7 +305,7 @@ func (app *App) Run() error {
 		if !isWayland {
 			rend.Draw(kb) // render first frame before showing (Wayland: gated by IsLayerShellReady)
 			SDL3ShowWindow(window)
-			applyOpacity(window, cfg.Window.Opacity) // re-apply after show
+			applyOpacity(window, rend, cfg.Window.Opacity) // re-apply after show
 			SDL3SetWindowPosition(window, x, app.winY)
 			SetNoFocusHints(window)
 		}
@@ -333,7 +332,7 @@ func (app *App) Run() error {
 					SDL3ShowWindow(window)
 				}
 				rend.MarkDirty()
-				applyOpacity(window, cfg.Window.Opacity) // re-apply after show
+				applyOpacity(window, rend, cfg.Window.Opacity) // re-apply after show
 				if !isWayland {
 					app.winY = app.computeY()
 					SDL3SetWindowPosition(window, app.winX, app.winY)
@@ -659,7 +658,7 @@ const (
 	opacityOpaque  opacityPath = iota // opacity 1: nothing to do
 	opacityWindow                     // SDL window opacity: X11, Wayland without layer-shell
 	opacitySurface                    // compositor alpha modifier on the layer surface
-	opacityNone                       // layer surface without alpha modifier: stays opaque
+	opacityLayer                      // layer surface without alpha modifier: renderer draws see-through
 )
 
 // chooseOpacityPath picks the opacity method. Layer-shell attaches on each
@@ -674,21 +673,25 @@ func chooseOpacityPath(opacity float64, layerShell, alphaModifier bool) opacityP
 	case alphaModifier:
 		return opacitySurface
 	default:
-		return opacityNone
+		return opacityLayer
 	}
 }
 
 // applyOpacity sets the configured opacity by the method that works on the
 // current window. Call it after each show.
-func applyOpacity(window *Window, opacity float64) {
-	switch chooseOpacityPath(opacity, hasLayerShell(), hasAlphaModifier()) {
+func applyOpacity(window *Window, rend *Renderer, opacity float64) {
+	path := chooseOpacityPath(opacity, hasLayerShell(), hasAlphaModifier())
+	rend.layerOpacity = 1
+	switch path {
 	case opacityWindow:
 		SDL3SetWindowOpacity(window, float32(opacity))
 	case opacitySurface:
 		setLayerOpacity(opacity)
 		Debugf("Opacity %.2f via compositor alpha modifier", opacity)
-	case opacityNone:
-		Debugf("Opacity %.2f not applied: compositor has no alpha modifier", opacity)
+	case opacityLayer:
+		rend.layerOpacity = opacity
+		rend.MarkDirty()
+		Debugf("Opacity %.2f drawn by the renderer: compositor has no alpha modifier", opacity)
 	case opacityOpaque:
 	}
 }

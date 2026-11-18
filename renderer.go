@@ -40,6 +40,13 @@ type Renderer struct {
 	cursorText     Color                  // label on HighlightBg; see readableText
 	accentSelText  Color                  // selected accent on AccentHighlightBg
 	popupBorder    Color                  // accent popup border; see setTextColors
+
+	// See-through drawing for layer surfaces without a compositor alpha
+	// modifier: frames go to layer, which is drawn onto the cleared window
+	// with layerOpacity as alpha. 1 = draw straight to the window.
+	layerOpacity   float64
+	layer          *Texture
+	layerW, layerH int32
 }
 
 // minTextContrast is the WCAG contrast floor for large text. Key labels
@@ -181,6 +188,7 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 		return
 	}
 	r.dirtyFrames--
+	layered := r.beginLayer()
 
 	t := r.theme
 	setColor(r.renderer, t.Bg)
@@ -206,7 +214,36 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 		r.drawAccentPopup(kb, pillsEnd)
 	}
 
+	if layered {
+		r.endLayer()
+	}
 	SDL3RenderPresent(r.renderer)
+}
+
+// beginLayer redirects drawing into the off-screen layer when the frame is
+// drawn see-through. Returns whether the layer is in use.
+func (r *Renderer) beginLayer() bool {
+	if r.layerOpacity <= 0 || r.layerOpacity >= 1 {
+		return false
+	}
+	w, h := SDL3GetRenderOutputSize(r.renderer)
+	if r.layer == nil || r.layerW != w || r.layerH != h {
+		SDL3DestroyTexture(r.layer)
+		r.layer = SDL3CreateTargetTexture(r.renderer, w, h)
+		r.layerW, r.layerH = w, h
+	}
+	return r.layer != nil && SDL3SetRenderTarget(r.renderer, r.layer)
+}
+
+// endLayer clears the window to fully transparent and draws the layer onto
+// it once, with the opacity as alpha. The layer itself is opaque (cleared to
+// the theme background), so text edges blend against it and do not fringe.
+func (r *Renderer) endLayer() {
+	SDL3SetRenderTarget(r.renderer, nil)
+	setColor(r.renderer, Color{})
+	SDL3RenderClear(r.renderer)
+	SDL3SetTextureAlphaMod(r.layer, uint8(math.Round(r.layerOpacity*255)))
+	SDL3RenderTexture(r.renderer, r.layer, nil, nil)
 }
 
 // MarkDirty signals that the display needs updating.
@@ -554,6 +591,8 @@ func (r *Renderer) FlashGlyph(glyph string, text string) {
 
 func (r *Renderer) Destroy() {
 	r.flushTexCache()
+	SDL3DestroyTexture(r.layer)
+	r.layer = nil
 	if r.font != nil {
 		TTF3CloseFont(r.font)
 	}

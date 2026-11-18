@@ -52,7 +52,7 @@ func TestChooseOpacityPath(t *testing.T) {
 		{"X11", 0.8, false, false, opacityWindow},
 		{"Wayland without layer-shell", 0.8, false, true, opacityWindow},
 		{"layer-shell with alpha modifier", 0.8, true, true, opacitySurface},
-		{"layer-shell without alpha modifier", 0.8, true, false, opacityNone},
+		{"layer-shell without alpha modifier", 0.8, true, false, opacityLayer},
 	}
 	for _, tt := range tests {
 		if got := chooseOpacityPath(tt.opacity, tt.layerShell, tt.alphaModifier); got != tt.want {
