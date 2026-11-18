@@ -884,3 +884,83 @@ func TestShiftOnButtonLeavesLTAxisAlone(t *testing.T) {
 		t.Errorf("LT axis release = %v, want ActionBackspaceRelease", a.Type)
 	}
 }
+
+var (
+	xpadPad   = deviceInfo{Name: "Microsoft X-Box 360 pad", Driver: "xpad", Vendor: "045e"}
+	ds3Pad    = deviceInfo{Name: "Sony PLAYSTATION(R)3 Controller", Driver: "sony", Vendor: "054c"}
+	uinputBox = deviceInfo{Name: "Microsoft X-Box 360 pad 0"} // Sunshine/Steam: no driver
+)
+
+// xSends reports which evdev code the x button (Backspace by default) is on.
+func xSends(t *testing.T, gp *GamepadReader) uint16 {
+	t.Helper()
+	west := gp.actionMap.BtnPress[BTN_WEST] == ActionBackspace
+	north := gp.actionMap.BtnPress[BTN_NORTH] == ActionBackspace
+	switch {
+	case west && !north:
+		return BTN_WEST
+	case north && !west:
+		return BTN_NORTH
+	}
+	t.Fatalf("x is on neither or both codes: %v", gp.actionMap.BtnPress)
+	return 0
+}
+
+// Bug F: swap_xy = auto is decided again for every pad, not kept from the
+// first one.
+func TestSwapXYPerPad(t *testing.T) {
+	tests := []struct {
+		setting string
+		pads    []deviceInfo
+		want    []uint16 // where x lands on each pad, in order
+	}{
+		{"auto", []deviceInfo{xpadPad, ds3Pad, xpadPad}, []uint16{BTN_NORTH, BTN_WEST, BTN_NORTH}},
+		{"auto", []deviceInfo{uinputBox, ds3Pad}, []uint16{BTN_NORTH, BTN_WEST}},
+		{"auto", []deviceInfo{ds3Pad, xpadPad}, []uint16{BTN_WEST, BTN_NORTH}},
+		{"", []deviceInfo{xpadPad, ds3Pad}, []uint16{BTN_NORTH, BTN_WEST}},
+		{"true", []deviceInfo{ds3Pad, xpadPad}, []uint16{BTN_NORTH, BTN_NORTH}},
+		{"false", []deviceInfo{xpadPad, ds3Pad}, []uint16{BTN_WEST, BTN_WEST}},
+	}
+	for _, tt := range tests {
+		cfg := DefaultConfig()
+		cfg.Gamepad.SwapXY = tt.setting
+		gp := NewGamepadReader(cfg)
+		for i, pad := range tt.pads {
+			gp.applyDevice(pad)
+			if got := xSends(t, gp); got != tt.want[i] {
+				t.Errorf("swap_xy=%q, pad %d (%s): x on %#x, want %#x", tt.setting, i+1, pad.Name, got, tt.want[i])
+			}
+		}
+	}
+}
+
+// Bug G: a combo's x and y are the buttons printed X and Y, like the
+// action map, on swapped and unswapped pads, and after a reconnect.
+func TestComboFollowsSwapXY(t *testing.T) {
+	fires := func(gp *GamepadReader, code uint16) bool {
+		gp.btnHeld = map[uint16]bool{}
+		gp.comboFired = false
+		gp.handleButton(code, 1)
+		return gp.handleButton(0x13b, 1).Type == ActionToggle // start
+	}
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "x+start"
+	gp := NewGamepadReader(cfg)
+	for _, step := range []struct {
+		pad      deviceInfo
+		xCode    uint16
+		notXCode uint16
+	}{
+		{xpadPad, BTN_NORTH, BTN_WEST},
+		{ds3Pad, BTN_WEST, BTN_NORTH},
+		{xpadPad, BTN_NORTH, BTN_WEST},
+	} {
+		gp.applyDevice(step.pad)
+		if !fires(gp, step.xCode) {
+			t.Errorf("%s: x+start did not fire on %#x", step.pad.Name, step.xCode)
+		}
+		if fires(gp, step.notXCode) {
+			t.Errorf("%s: x+start fired on %#x (that is y)", step.pad.Name, step.notXCode)
+		}
+	}
+}

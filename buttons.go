@@ -212,12 +212,17 @@ func BuildPopupHint(cfg GamepadConfig) []HintItem {
 // comboButtonTable returns the full set of buttons available for toggle combos.
 // This is separate from buttonTable because combos need d-pad and guide which
 // aren't assignable to OSK actions, and need dual-input info (axis + button codes).
-func comboButtonTable() map[string]ComboButton {
+// swapXY swaps x and y as buttonTable does.
+func comboButtonTable(swapXY bool) map[string]ComboButton {
+	xBtn, yBtn := uint16(BTN_WEST), uint16(BTN_NORTH)
+	if swapXY {
+		xBtn, yBtn = yBtn, xBtn
+	}
 	return map[string]ComboButton{
 		"a":          {Name: "a", BtnCodes: []uint16{BTN_SOUTH}},
 		"b":          {Name: "b", BtnCodes: []uint16{BTN_EAST}},
-		"x":          {Name: "x", BtnCodes: []uint16{BTN_WEST}},
-		"y":          {Name: "y", BtnCodes: []uint16{BTN_NORTH}},
+		"x":          {Name: "x", BtnCodes: []uint16{xBtn}},
+		"y":          {Name: "y", BtnCodes: []uint16{yBtn}},
 		"lb":         {Name: "lb", BtnCodes: []uint16{BTN_TL}},
 		"rb":         {Name: "rb", BtnCodes: []uint16{BTN_TR}},
 		"l3":         {Name: "l3", BtnCodes: []uint16{BTN_THUMBL}},
@@ -243,12 +248,17 @@ func comboButtonTable() map[string]ComboButton {
 // Returns nil, nil if the string is empty (combo disabled).
 // Returns error if the string is invalid (unknown button, <2 or >4 buttons, duplicates).
 func parseComboString(combo string) ([]ComboButton, error) {
+	return parseComboSwap(combo, false)
+}
+
+// parseComboSwap is parseComboString for a pad with swap_xy in effect.
+func parseComboSwap(combo string, swapXY bool) ([]ComboButton, error) {
 	combo = strings.TrimSpace(combo)
 	if combo == "" {
 		return nil, nil
 	}
 
-	table := comboButtonTable()
+	table := comboButtonTable(swapXY)
 	parts := strings.Split(combo, "+")
 
 	if len(parts) < 2 {

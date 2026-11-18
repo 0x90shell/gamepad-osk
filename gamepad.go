@@ -131,6 +131,10 @@ type GamepadReader struct {
 	deviceName string // currently unused; stored for future logging/diagnostics
 	profile    string // controller profile ID, detected on every Open unless set in config
 
+	// swap_xy as configured (auto, true, false). config.Gamepad.SwapXY holds
+	// the value in effect for the open pad, decided again on every Open.
+	swapXYSetting string
+
 	// DInput/HID-generic layout (e.g. 8BitDo over Bluetooth): right stick on
 	// ABS_Z/ABS_RZ, no ABS_RX/ABS_RY, triggers digital (BTN_TL2/BTN_TR2).
 	hasAxis      map[uint16]bool
@@ -165,26 +169,37 @@ func NewGamepadReader(config Config) *GamepadReader {
 		btnHeld:   make(map[uint16]bool),
 		axisState: make(map[uint16]int32),
 		hasAxis:   make(map[uint16]bool),
+
+		swapXYSetting: config.Gamepad.SwapXY,
 	}
 
 	gp.setStickAxes()
-
-	// Parse toggle combo
-	if config.Gamepad.ToggleCombo != "" {
-		buttons, err := parseComboString(config.Gamepad.ToggleCombo)
-		if err != nil {
-			log.Printf("Warning: invalid toggle_combo: %v", err)
-		} else {
-			gp.comboButtons = buttons
-			gp.comboPeriodMs = config.Gamepad.ComboPeriodMs
-			if gp.comboPeriodMs <= 0 {
-				gp.comboPeriodMs = 200
-			}
-			log.Printf("Toggle combo: %s (%dms window)", config.Gamepad.ToggleCombo, gp.comboPeriodMs)
-		}
+	if gp.initCombo() && gp.comboButtons != nil {
+		log.Printf("Toggle combo: %s (%dms window)", config.Gamepad.ToggleCombo, gp.comboPeriodMs)
 	}
 
 	return gp
+}
+
+// initCombo parses toggle_combo for the swap_xy in effect, so x and y in a
+// combo are the buttons printed X and Y on the pad, as in the action map.
+// It returns false if the combo is invalid (combo disabled).
+func (gp *GamepadReader) initCombo() bool {
+	gp.comboButtons = nil
+	if gp.config.Gamepad.ToggleCombo == "" {
+		return true
+	}
+	buttons, err := parseComboSwap(gp.config.Gamepad.ToggleCombo, isSwapXY(gp.config.Gamepad))
+	if err != nil {
+		log.Printf("Warning: invalid toggle_combo: %v", err)
+		return false
+	}
+	gp.comboButtons = buttons
+	gp.comboPeriodMs = gp.config.Gamepad.ComboPeriodMs
+	if gp.comboPeriodMs <= 0 {
+		gp.comboPeriodMs = 200
+	}
+	return true
 }
 
 // setStickAxes configures stick assignments (mouse_stick sets mouse, other
@@ -284,17 +299,31 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	if rp, err := filepath.EvalSymlinks(path); err == nil {
 		resolvedPath = rp
 	}
-	info := readDeviceInfo(resolvedPath)
+	gp.applyDevice(readDeviceInfo(resolvedPath))
+
+	log.Printf("Opened gamepad: %s", path)
+	return true
+}
+
+// applyDevice sets up everything that depends on which pad is open:
+// swap_xy (when auto), the profile, the button map and the combo. Open
+// calls it for every pad, so a reconnect to a different pad starts from
+// the configured values, not from the last pad's.
+func (gp *GamepadReader) applyDevice(info deviceInfo) {
 	gp.deviceName = info.Name
-	if gp.config.Gamepad.SwapXY == "auto" || gp.config.Gamepad.SwapXY == "" {
-		if isXpadDriver(info.Driver) {
+	gp.config.Gamepad.SwapXY = gp.swapXYSetting
+	if gp.swapXYSetting == "auto" || gp.swapXYSetting == "" {
+		switch {
+		case isXpadDriver(info.Driver):
 			log.Printf("Auto-detected xpad driver, enabling swap_xy")
 			gp.config.Gamepad.SwapXY = "true"
-		} else if isXboxName(info.Name) {
+		case isXboxName(info.Name):
 			// Fallback for uinput-created virtual gamepads (Steam, Sunshine)
 			// that have no sysfs driver link
 			log.Printf("Auto-detected Xbox pad by name, enabling swap_xy")
 			gp.config.Gamepad.SwapXY = "true"
+		default:
+			Debugf("swap_xy auto: off for %q (driver %q)", info.Name, info.Driver)
 		}
 	}
 
@@ -305,9 +334,7 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	}
 
 	gp.initButtonMap()
-
-	log.Printf("Opened gamepad: %s", path)
-	return true
+	gp.initCombo()
 }
 
 // deviceInfo is what sysfs knows about an evdev node.
