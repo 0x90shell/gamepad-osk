@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -132,6 +134,25 @@ func parseINI(r io.Reader, cfg *Config) error {
 	return err
 }
 
+// iniLine trims a raw line and a UTF-8 byte order mark, which some
+// editors write at the start of a file.
+func iniLine(raw string) string {
+	return strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
+}
+
+// iniSection reports whether a trimmed line is a section header and
+// returns its lower-case name. It allows an inline comment after the
+// header and spaces inside the brackets: "[ Theme ]  # look".
+func iniSection(line string) (string, bool) {
+	if idx := strings.Index(line, "#"); idx > 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	if len(line) < 2 || line[0] != '[' || line[len(line)-1] != ']' {
+		return "", false
+	}
+	return strings.ToLower(strings.TrimSpace(line[1 : len(line)-1])), true
+}
+
 // removedKeys were valid in older versions. They are ignored without a
 // warning and dropped on the next save.
 var removedKeys = map[string]bool{"keys.font_size": true}
@@ -149,14 +170,13 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 	}
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := iniLine(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		// Section header
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = strings.ToLower(line[1 : len(line)-1])
+		if name, ok := iniSection(line); ok {
+			section = name
 			continue
 		}
 
@@ -169,7 +189,7 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]string, error) {
 		if len(parts) != 2 {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
 		val := strings.TrimSpace(parts[1])
 		// Strip quotes from TOML-migrated values
 		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
@@ -565,8 +585,11 @@ func LoadConfig(overridePath string) Config {
 	return cfg
 }
 
-// saveConfig loads the user config, applies mutator, and writes it back.
-func saveConfig(mutate func(*Config)) {
+// saveValue sets one key in the config file that saves go to (the
+// --config file, else the user config). Only that line changes; comments,
+// blank lines and unknown keys stay as the user wrote them. A missing file
+// is created with the defaults first.
+func saveValue(section, key, value string) {
 	path := UserConfigPath()
 	if configSource.FromFlag {
 		path = configSource.Path
@@ -575,30 +598,128 @@ func saveConfig(mutate func(*Config)) {
 		return
 	}
 
-	cfg := DefaultConfig()
-	if _, err := os.Stat(path); err == nil {
-		f, err := os.Open(path) //nolint:gosec // G304: user config path
-		if err != nil {
-			log.Printf("Warning: error reading config %s: %v", path, err)
-		} else {
-			if _, parseErr := parseINIKeys(f, &cfg); parseErr != nil {
-				log.Printf("Warning: error parsing config %s: %v", path, parseErr)
-			}
-			_ = f.Close()
+	data, err := os.ReadFile(path) //nolint:gosec // G304: user config path
+	if os.IsNotExist(err) {
+		var b strings.Builder
+		if err := writeINI(&b, DefaultConfig()); err != nil {
+			saveFailed(path, err)
+			return
 		}
+		data, err = []byte(b.String()), nil
 	}
-	mutate(&cfg)
-
-	f, err := os.Create(path) //nolint:gosec // G304: user config path
 	if err != nil {
 		saveFailed(path, err)
 		return
 	}
-	defer func() { _ = f.Close() }()
-
-	if err := writeINI(f, cfg); err != nil {
+	edited := setINIValue(data, section, key, value)
+	if err := checkINIEdit(data, edited, section, key, value); err != nil {
+		saveFailed(path, err)
+		return
+	}
+	if err := os.WriteFile(path, edited, 0644); err != nil { //nolint:gosec // G306: config file, not secrets
 		saveFailed(path, err)
 	}
+}
+
+// checkINIEdit guards every save: the edited file must load to exactly
+// the old settings plus the one new value, with the same unknown keys.
+// Anything else means the edit misread the file, and nothing is written.
+func checkINIEdit(old, edited []byte, section, key, value string) error {
+	want := DefaultConfig()
+	wantUnknown, err := parseINIKeys(strings.NewReader(string(old)), &want)
+	if err != nil {
+		return err
+	}
+	if _, err := parseINIKeys(strings.NewReader("["+section+"]\n"+key+" = "+value+"\n"), &want); err != nil {
+		return err
+	}
+	got := DefaultConfig()
+	gotUnknown, err := parseINIKeys(strings.NewReader(string(edited)), &got)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(got, want) || !slices.Equal(gotUnknown, wantUnknown) {
+		return fmt.Errorf("could not change %s.%s without touching other settings, file left as is", section, key)
+	}
+	return nil
+}
+
+// setINIValue returns data with section.key set to value. It replaces
+// the last matching line (the one parseINI uses), keeping its indent,
+// quotes and inline comment. A missing key goes after the section's last
+// key, a missing section at the end. Line endings follow the file.
+func setINIValue(data []byte, section, key, value string) []byte {
+	text := string(data)
+	eol := "\n"
+	if strings.Contains(text, "\r\n") {
+		eol = "\r\n"
+	}
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if text == "" {
+		lines = nil
+	}
+
+	match, lastKey, header := -1, -1, -1
+	current := ""
+	for i, raw := range lines {
+		line := iniLine(strings.TrimSuffix(raw, "\r"))
+		if name, ok := iniSection(line); ok {
+			current = name
+			if name == section {
+				header, lastKey = i, i
+			}
+			continue
+		}
+		if current != section || line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if eq := strings.Index(line, "="); eq > 0 {
+			lastKey = i
+			if strings.ToLower(strings.TrimSpace(line[:eq])) == key {
+				match = i
+			}
+		}
+	}
+
+	switch {
+	case match >= 0:
+		cr := strings.HasSuffix(lines[match], "\r")
+		lines[match] = replaceINIValue(strings.TrimSuffix(lines[match], "\r"), value)
+		if cr {
+			lines[match] += "\r"
+		}
+	case header >= 0:
+		lines = slices.Insert(lines, lastKey+1, key+" = "+value+strings.TrimSuffix(eol, "\n"))
+	default:
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
+			lines = append(lines, strings.TrimSuffix(eol, "\n"))
+		}
+		cr := strings.TrimSuffix(eol, "\n")
+		lines = append(lines, "["+section+"]"+cr, key+" = "+value+cr)
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+// replaceINIValue swaps the value in one key = value line. The inline
+// comment stays at its column when the new value fits, and quotes stay
+// if the old value had them.
+func replaceINIValue(line, value string) string {
+	eq := strings.Index(line, "=")
+	end, comment := len(line), ""
+	if idx := strings.Index(line, "#"); idx > eq {
+		end, comment = idx, line[idx:]
+	}
+	if old := strings.TrimSpace(line[eq+1 : end]); len(old) >= 2 && old[0] == '"' && old[len(old)-1] == '"' {
+		value = `"` + value + `"`
+	}
+	out := line[:eq+1] + " " + value
+	if comment == "" {
+		return out
+	}
+	if len(out) < end {
+		return out + strings.Repeat(" ", end-len(out)) + comment
+	}
+	return out + " " + comment
 }
 
 // saveWarned is set after the first failed save, so a read-only config
@@ -645,16 +766,12 @@ func pathErr(err error) error {
 
 // SaveTheme writes the current theme name to the user config file.
 func SaveTheme(themeName string) {
-	saveConfig(func(cfg *Config) {
-		cfg.Theme.Name = themeName
-	})
+	saveValue("theme", "name", themeName)
 }
 
 // SaveSensitivity writes the current mouse sensitivity to the user config file.
 func SaveSensitivity(value int) {
-	saveConfig(func(cfg *Config) {
-		cfg.Mouse.Sensitivity = value
-	})
+	saveValue("mouse", "sensitivity", strconv.Itoa(value))
 }
 
 // SavePosition writes the current position (top/bottom) to the user config file.
@@ -663,9 +780,7 @@ func SavePosition(top bool) {
 	if top {
 		pos = "top"
 	}
-	saveConfig(func(cfg *Config) {
-		cfg.Window.Position = pos
-	})
+	saveValue("window", "position", pos)
 }
 
 func copyFile(src, dst string) error {
@@ -707,18 +822,10 @@ func checkConfigFile(path string) []string {
 	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true, "key_shadow": true}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "[") {
-			// Strip inline comment before checking suffix
-			sec := line
-			if idx := strings.Index(sec, "#"); idx > 0 {
-				sec = strings.TrimSpace(sec[:idx])
-			}
-			if strings.HasSuffix(sec, "]") {
-				section := strings.ToLower(sec[1 : len(sec)-1])
-				if !knownSections[section] {
-					issues = append(issues, fmt.Sprintf("unknown section [%s] - keys under it are ignored (check for typos)", section))
-				}
+		line := iniLine(scanner.Text())
+		if section, ok := iniSection(line); ok {
+			if !knownSections[section] {
+				issues = append(issues, fmt.Sprintf("unknown section [%s] - keys under it are ignored (check for typos)", section))
 			}
 			continue
 		}

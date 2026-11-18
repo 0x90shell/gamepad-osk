@@ -1175,29 +1175,6 @@ func TestUnknownKeys(t *testing.T) {
 	}
 }
 
-// Saving does not warn about unknown keys (it would on every theme change)
-// and drops removed keys from the file.
-func TestSaveDropsRemovedKeys(t *testing.T) {
-	user, _ := isolateConfig(t)
-	if err := os.MkdirAll(filepath.Dir(user), 0755); err != nil { //nolint:gosec // G301: test dir
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(user, []byte("[keys]\nfont_size = 14\nscale = 60\n"), 0644); err != nil { //nolint:gosec // G306: test file
-		t.Fatal(err)
-	}
-	SaveTheme("nord")
-	data, err := os.ReadFile(user) //nolint:gosec // G304: test path
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "font_size") {
-		t.Error("font_size still in the saved file")
-	}
-	if !strings.Contains(string(data), "scale = 60") {
-		t.Error("save lost scale = 60")
-	}
-}
-
 // The shipped example and a freshly written default file both load to
 // exactly DefaultConfig() and raise no issues.
 func TestExampleMatchesDefaults(t *testing.T) {
@@ -1344,5 +1321,182 @@ func TestCheckConfigFlag(t *testing.T) {
 		if _, err := checkConfigFlag(unreadable); err == nil {
 			t.Error("unreadable: no error")
 		}
+	}
+}
+
+func TestSetINIValue(t *testing.T) {
+	tests := []struct {
+		name, in, section, key, value, want string
+	}{
+		{"replace keeps comment column",
+			"[theme]\nname = matrix                # see --help\n", "theme", "name", "nord",
+			"[theme]\nname = nord                  # see --help\n"},
+		{"long value pushes comment",
+			"[theme]\nname = a # c\n", "theme", "name", "tokyo_storm",
+			"[theme]\nname = tokyo_storm # c\n"},
+		{"comments, blank lines and unknown keys stay",
+			"# mine\n\n[theme]\n# pick one\nname = matrix\nfoo = bar\n\n[keys]\nfont_size = 14\n", "theme", "name", "nord",
+			"# mine\n\n[theme]\n# pick one\nname = nord\nfoo = bar\n\n[keys]\nfont_size = 14\n"},
+		{"other section untouched",
+			"[window]\nposition = top\n[theme]\nname = matrix\n", "window", "position", "bottom",
+			"[window]\nposition = bottom\n[theme]\nname = matrix\n"},
+		{"key missing goes after the section's last key",
+			"[window]\nmargin = 5\n\n[keys]\nscale = 60\n", "window", "position", "top",
+			"[window]\nmargin = 5\nposition = top\n\n[keys]\nscale = 60\n"},
+		{"empty section",
+			"[window]\n[keys]\nscale = 60\n", "window", "position", "top",
+			"[window]\nposition = top\n[keys]\nscale = 60\n"},
+		{"section missing goes at the end",
+			"[keys]\nscale = 60\n", "mouse", "sensitivity", "12",
+			"[keys]\nscale = 60\n\n[mouse]\nsensitivity = 12\n"},
+		{"empty file", "", "theme", "name", "nord", "[theme]\nname = nord\n"},
+		{"no final newline",
+			"[theme]\nname = matrix", "theme", "name", "nord", "[theme]\nname = nord\n"},
+		{"CRLF kept",
+			"[theme]\r\nname = matrix\r\n[keys]\r\nscale = 60\r\n", "theme", "name", "nord",
+			"[theme]\r\nname = nord\r\n[keys]\r\nscale = 60\r\n"},
+		{"CRLF insert",
+			"[keys]\r\nscale = 60\r\n", "mouse", "sensitivity", "12",
+			"[keys]\r\nscale = 60\r\n\r\n[mouse]\r\nsensitivity = 12\r\n"},
+		{"quotes kept", "[theme]\nname = \"matrix\" # q\n", "theme", "name", "nord",
+			"[theme]\nname = \"nord\"   # q\n"},
+		{"indent and tight equals",
+			"[theme]\n  name=matrix\n", "theme", "name", "nord", "[theme]\n  name= nord\n"},
+		{"last duplicate key wins, first left alone",
+			"[theme]\nname = a\nname = b\n", "theme", "name", "nord", "[theme]\nname = a\nname = nord\n"},
+		{"duplicate section: last key line",
+			"[theme]\nname = a\n[keys]\nscale = 60\n[theme]\nkey_style = square\n", "theme", "name", "nord",
+			"[theme]\nname = nord\n[keys]\nscale = 60\n[theme]\nkey_style = square\n"},
+		{"header with comment and spaces",
+			"[ Theme ] # look\nname = matrix\n", "theme", "name", "nord", "[ Theme ] # look\nname = nord\n"},
+		{"byte order mark",
+			"\ufeff[theme]\nname = matrix\n", "theme", "name", "nord", "\ufeff[theme]\nname = nord\n"},
+		{"upper-case key",
+			"[theme]\nName = matrix\n", "theme", "name", "nord", "[theme]\nName = nord\n"},
+		{"commented-out key is not the key",
+			"[theme]\n# name = old\nname = matrix\n", "theme", "name", "nord",
+			"[theme]\n# name = old\nname = nord\n"},
+		{"bad value elsewhere stays (R9)",
+			"[keys]\nscale = 60ms\n[theme]\nname = matrix\n", "theme", "name", "nord",
+			"[keys]\nscale = 60ms\n[theme]\nname = nord\n"},
+		{"dotted section",
+			"[gamepad]\ngrab = true\n[gamepad.buttons]\npress = a\n", "gamepad.buttons", "press", "b",
+			"[gamepad]\ngrab = true\n[gamepad.buttons]\npress = b\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(setINIValue([]byte(tt.in), tt.section, tt.key, tt.value))
+			if got != tt.want {
+				t.Errorf("got\n%q\nwant\n%q", got, tt.want)
+			}
+			if err := checkINIEdit([]byte(tt.in), []byte(got), tt.section, tt.key, tt.value); err != nil {
+				t.Errorf("guard rejects the edit: %v", err)
+			}
+		})
+	}
+}
+
+func TestCheckINIEditRejects(t *testing.T) {
+	old := []byte("[theme]\nname = matrix\n[keys]\nscale = 60\nfoo = 1\n")
+	bad := map[string]string{
+		"other value changed": "[theme]\nname = nord\n[keys]\nscale = 50\nfoo = 1\n",
+		"unknown key lost":    "[theme]\nname = nord\n[keys]\nscale = 60\n",
+		"new value missing":   "[theme]\nname = matrix\n[keys]\nscale = 60\nfoo = 1\n",
+		"section header lost": "name = nord\n[keys]\nscale = 60\nfoo = 1\n",
+		"emptied":             "",
+	}
+	for name, edited := range bad {
+		if err := checkINIEdit(old, []byte(edited), "theme", "name", "nord"); err == nil {
+			t.Errorf("%s: guard accepted it", name)
+		}
+	}
+}
+
+// Saves keep the user's file; the guard and unreadable files never lead
+// to a rewrite from defaults.
+func TestSaveKeepsUserFile(t *testing.T) {
+	t.Run("whole file kept except the line", func(t *testing.T) {
+		user, _ := isolateConfig(t)
+		in := "# my settings\n[window]\nbottom_margin = 20   # old name\n\n[keys]\nfont_size = 14\nscale = 60ms\n[theme]\nname = matrix # theme\n"
+		writeRaw(t, user, in, 0600)
+		SaveTheme("nord")
+		SavePosition(true)
+		SaveSensitivity(14)
+		data, _ := os.ReadFile(user) //nolint:gosec // G304: test path
+		want := "# my settings\n[window]\nbottom_margin = 20   # old name\nposition = top\n\n[keys]\nfont_size = 14\nscale = 60ms\n[theme]\nname = nord   # theme\n\n[mouse]\nsensitivity = 14\n"
+		if string(data) != want {
+			t.Errorf("got\n%s\nwant\n%s", data, want)
+		}
+		if info, _ := os.Stat(user); info.Mode().Perm() != 0600 {
+			t.Errorf("mode = %v, want 0600 kept", info.Mode().Perm())
+		}
+		// H2: the old bottom_margin still gives a margin of 20 after saves.
+		if cfg := LoadConfig(""); cfg.Window.Margin != 20 {
+			t.Errorf("margin after saves = %d, want 20 from bottom_margin", cfg.Window.Margin)
+		}
+	})
+	t.Run("new file starts from the defaults", func(t *testing.T) {
+		user, _ := isolateConfig(t)
+		SaveTheme("nord")
+		cfg := DefaultConfig()
+		data, _ := os.ReadFile(user) //nolint:gosec // G304: test path
+		if err := parseINI(strings.NewReader(string(data)), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		want := DefaultConfig()
+		want.Theme.Name = "nord"
+		if !reflect.DeepEqual(cfg, want) {
+			t.Errorf("new file loads to %+v, want defaults with nord", cfg)
+		}
+		if !strings.Contains(string(data), "# gamepad-osk configuration") {
+			t.Error("new file has no comments")
+		}
+	})
+	t.Run("unreadable file is not replaced", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("root ignores file permissions")
+		}
+		user, _ := isolateConfig(t)
+		writeRaw(t, user, "[theme]\nname = gotham\n", 0200)
+		SaveTheme("nord")
+		if err := os.Chmod(user, 0600); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := os.ReadFile(user) //nolint:gosec // G304: test path
+		if string(data) != "[theme]\nname = gotham\n" {
+			t.Errorf("unreadable file was rewritten:\n%s", data)
+		}
+	})
+}
+
+// FuzzSetINIValue: whatever the file holds, the edit must pass the guard.
+// A failure here is a bug in setINIValue; the guard still keeps the file.
+func FuzzSetINIValue(f *testing.F) {
+	seeds := []string{
+		"", "[theme]\nname = matrix\n", "[theme] # c\r\nname=\"x\"\r\n", "\ufeff[ theme ]\nName = a\nname = b\n",
+		"x = 1\n[theme]\n[theme]\nname = a # b # c\n", "[window]\nposition = top\n[unknown]\nname = z\n",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, in string) {
+		log.SetOutput(io.Discard)
+		defer log.SetOutput(os.Stderr)
+		for _, kv := range [][3]string{{"theme", "name", "nord"}, {"window", "position", "top"}, {"mouse", "sensitivity", "12"}} {
+			out := setINIValue([]byte(in), kv[0], kv[1], kv[2])
+			if err := checkINIEdit([]byte(in), out, kv[0], kv[1], kv[2]); err != nil {
+				t.Errorf("%s.%s on %q:\n%q\n%v", kv[0], kv[1], in, out, err)
+			}
+		}
+	})
+}
+
+func writeRaw(t *testing.T, path, content string, mode os.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { //nolint:gosec // G301: test dir
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatal(err)
 	}
 }
