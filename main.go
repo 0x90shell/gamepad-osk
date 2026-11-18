@@ -14,67 +14,85 @@ var version = "2.1.1"
 // Verbose controls debug logging throughout the app
 var Verbose bool
 
-func main() {
-	args := os.Args[1:]
+// options holds the parsed command line.
+type options struct {
+	toggle, version, help bool
+	setup, install        bool
+	daemon, verbose       bool
+	device, theme, config string
+}
 
-	var devicePath, themeName, configPath string
-	daemon := false
-	setupMode := false
-	installMode := false
-
+// parseArgs parses the command line. It acts on nothing; main does that
+// after every argument is read.
+func parseArgs(args []string) (options, error) {
+	var o options
+	value := func(i *int, flag, what string) (string, error) {
+		if *i+1 >= len(args) {
+			return "", fmt.Errorf("%s requires %s", flag, what)
+		}
+		*i++
+		return args[*i], nil
+	}
 	i := 0
 	for i < len(args) {
+		var err error
 		switch args[i] {
 		case "--toggle":
-			if IPCSend("toggle") {
-				os.Exit(0)
-			}
-			fmt.Fprintln(os.Stderr, "No running instance, starting new...")
+			o.toggle = true
 		case "--version", "-V":
-			fmt.Printf("gamepad-osk v%s\n", version)
-			os.Exit(0)
+			o.version = true
 		case "--help", "-h":
-			printHelp(LoadConfig(""))
-			os.Exit(0)
+			o.help = true
 		case "--setup":
-			setupMode = true
+			o.setup = true
 		case "--install":
-			installMode = true
+			o.install = true
 		case "--daemon":
-			daemon = true
+			o.daemon = true
 		case "--verbose", "-v":
-			Verbose = true
+			o.verbose = true
 		case "--device", "-d":
-			if i+1 < len(args) {
-				i++
-				devicePath = args[i]
-			} else {
-				fmt.Fprintln(os.Stderr, "Error: --device requires a path")
-				os.Exit(1)
-			}
+			o.device, err = value(&i, "--device", "a path")
 		case "--theme", "-t":
-			if i+1 < len(args) {
-				i++
-				themeName = args[i]
-			} else {
-				fmt.Fprintln(os.Stderr, "Error: --theme requires a name")
-				os.Exit(1)
-			}
+			o.theme, err = value(&i, "--theme", "a name")
 		case "--config", "-c":
-			if i+1 < len(args) {
-				i++
-				configPath = args[i]
-			} else {
-				fmt.Fprintln(os.Stderr, "Error: --config requires a path")
-				os.Exit(1)
-			}
+			o.config, err = value(&i, "--config", "a path")
 		default:
 			if strings.HasPrefix(args[i], "/") {
-				devicePath = args[i]
+				o.device = args[i]
 			}
+		}
+		if err != nil {
+			return o, err
 		}
 		i++
 	}
+	return o, nil
+}
+
+func main() {
+	opts, err := parseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	Verbose = opts.verbose
+	if opts.version {
+		fmt.Printf("gamepad-osk v%s\n", version)
+		os.Exit(0)
+	}
+	if opts.help {
+		printHelp(LoadConfig(""))
+		os.Exit(0)
+	}
+	if opts.toggle {
+		if IPCSend("toggle") {
+			os.Exit(0)
+		}
+		fmt.Fprintln(os.Stderr, "No running instance, starting new...")
+	}
+	devicePath, themeName, configPath := opts.device, opts.theme, opts.config
+	daemon, setupMode, installMode := opts.daemon, opts.setup, opts.install
 
 	// --install requires --setup
 	if installMode && !setupMode {
