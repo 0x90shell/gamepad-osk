@@ -383,7 +383,7 @@ Uses wlr-layer-shell for native overlay support - no compositor rules needed. Th
 - **Hyprland** - native
 - **KDE Plasma 6** - native (via Layer Shell Qt)
 - **COSMIC (Pop!_OS)** - native (via Smithay)
-- **GNOME (Mutter)** - not supported. Mutter has no layer-shell, and there is no fallback window yet: the keyboard does not appear, but it still takes the controller.
+- **GNOME (Mutter)** - through XWayland. Mutter has no layer-shell, so the keyboard runs as an X11 overlay window under XWayland: bottom or top centre, on top, never takes focus, opacity works. Without XWayland it falls back to a normal window that GNOME places itself. Tested on Fedora 45 (GNOME 51).
 
 **Wayland limitations:**
 - Pointer warp on hide is not available (Wayland does not allow clients to move the cursor). If you move the mouse to another monitor with the right stick, you need to move it back before hiding.
