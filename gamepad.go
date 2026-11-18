@@ -283,14 +283,13 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	if rp, err := filepath.EvalSymlinks(path); err == nil {
 		resolvedPath = rp
 	}
+	info := readDeviceInfo(resolvedPath)
+	gp.deviceName = info.Name
 	if gp.config.Gamepad.SwapXY == "auto" || gp.config.Gamepad.SwapXY == "" {
-		name := gp.getDeviceName(resolvedPath)
-		gp.deviceName = name
-		if gp.isXpadDriver(resolvedPath) {
+		if isXpadDriver(info.Driver) {
 			log.Printf("Auto-detected xpad driver, enabling swap_xy")
 			gp.config.Gamepad.SwapXY = "true"
-		} else if strings.Contains(strings.ToLower(name), "x-box") ||
-			strings.Contains(strings.ToLower(name), "xbox") {
+		} else if isXboxName(info.Name) {
 			// Fallback for uinput-created virtual gamepads (Steam, Sunshine)
 			// that have no sysfs driver link
 			log.Printf("Auto-detected Xbox pad by name, enabling swap_xy")
@@ -304,35 +303,45 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	return true
 }
 
-// isXpadDriver checks if the evdev device uses xpad, xpadneo, or xone kernel driver.
-// These drivers emit BTN_X (=BTN_NORTH numerically) for the physical X button at
-// the WEST position (legacy evdev convention).
-func (gp *GamepadReader) isXpadDriver(devPath string) bool {
-	base := filepath.Base(devPath)
-	link, err := os.Readlink(filepath.Join("/sys/class/input", base, "device", "device", "driver"))
-	if err != nil {
-		return false
+// deviceInfo is what sysfs knows about an evdev node.
+type deviceInfo struct {
+	Name   string
+	Driver string // kernel driver of the parent device, empty for uinput pads
+	Vendor string // USB vendor ID, lower-case hex
+}
+
+// readDeviceInfo reads name, driver and vendor of an evdev node such as
+// /dev/input/event5. Missing entries stay empty.
+func readDeviceInfo(devPath string) deviceInfo {
+	base := filepath.Join("/sys/class/input", filepath.Base(devPath), "device")
+	read := func(p string) string {
+		b, err := os.ReadFile(filepath.Join(base, p)) //nolint:gosec // G304: sysfs path built from device name
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(b))
 	}
-	driver := filepath.Base(link)
+	info := deviceInfo{
+		Name:   read("name"),
+		Vendor: strings.ToLower(read("id/vendor")),
+	}
+	if link, err := os.Readlink(filepath.Join(base, "device", "driver")); err == nil {
+		info.Driver = filepath.Base(link)
+	}
+	return info
+}
+
+// isXpadDriver reports whether the driver is xpad, xpadneo or xone. These
+// drivers emit BTN_X (=BTN_NORTH numerically) for the physical X button at
+// the WEST position (legacy evdev convention).
+func isXpadDriver(driver string) bool {
 	return driver == "xpad" || driver == "xpadneo" || driver == "xone"
 }
 
-func (gp *GamepadReader) getDeviceName(devPath string) string {
-	data, err := os.ReadFile("/proc/bus/input/devices")
-	if err != nil {
-		return ""
-	}
-	// Find the event handler matching our device path
-	eventName := devPath[strings.LastIndex(devPath, "/")+1:]
-	var name string
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if strings.HasPrefix(line, "N: Name=") {
-			name = strings.Trim(line[8:], "\"")
-		} else if strings.HasPrefix(line, "H: Handlers=") && strings.Contains(line, eventName) {
-			return name
-		}
-	}
-	return ""
+// isXboxName matches Xbox pads by name, for uinput pads without a driver.
+func isXboxName(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "x-box") || strings.Contains(n, "xbox")
 }
 
 func (gp *GamepadReader) autoDetect() string {
