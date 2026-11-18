@@ -1619,3 +1619,22 @@ func TestSetupDiagnoseConfig(t *testing.T) {
 		t.Error("--setup created the user config")
 	}
 }
+
+// R14: a file named config in the working directory is never read.
+func TestWorkingDirNotSearched(t *testing.T) {
+	for _, p := range configSearchPaths() {
+		if !filepath.IsAbs(p) {
+			t.Errorf("relative search path %q", p)
+		}
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	resetConfigState(t)
+	dir := t.TempDir()
+	writeTestConfig(t, filepath.Join(dir, "config"), "nord")
+	t.Chdir(dir)
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(os.Stderr)
+	if cfg := ReadConfig(""); cfg.Theme.Name == "nord" {
+		t.Error("read config from the working directory")
+	}
+}

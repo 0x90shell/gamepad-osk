@@ -272,7 +272,6 @@ Config is loaded from (first found):
 2. `~/.config/gamepad-osk/config`
 3. `/etc/gamepad-osk/config`
 4. `config` next to binary
-5. `config` in working directory
 
 A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
 

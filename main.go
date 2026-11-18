@@ -308,7 +308,6 @@ CONFIG (first found)
   2. ~/.config/gamepad-osk/config
   3. /etc/gamepad-osk/config
   4. config next to binary
-  5. config in working directory
   %s
 
 NOTES

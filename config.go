@@ -521,14 +521,16 @@ func legacyConfigPath() string {
 }
 
 // configSearchPaths returns the read-only config locations searched after
-// the user config: system config, next to the binary, working directory.
+// the user config: system config, then next to the binary. The working
+// directory is not searched: a stray file named config there would be read
+// and copied into the user config. Portable use: -c config.
 // A variable so tests can replace it.
 var configSearchPaths = func() []string {
 	paths := []string{"/etc/gamepad-osk/config"}
 	if exe, err := os.Executable(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(exe), "config"))
 	}
-	return append(paths, "config")
+	return paths
 }
 
 // configSource records which file LoadConfig read.
