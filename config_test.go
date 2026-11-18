@@ -1544,3 +1544,78 @@ func writeRaw(t *testing.T, path, content string, mode os.FileMode) {
 		t.Fatal(err)
 	}
 }
+
+// --help and --setup read the config but never create or migrate one.
+func TestReadConfigNeverWrites(t *testing.T) {
+	user, _ := isolateConfig(t)
+	legacy := filepath.Join(filepath.Dir(user), "config.toml")
+	writeRaw(t, legacy, "[theme]\nname = \"nord\"\n", 0600)
+	ReadConfig("")
+	if _, err := os.Stat(user); !os.IsNotExist(err) {
+		t.Errorf("ReadConfig created %s (err %v)", user, err)
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Errorf("ReadConfig migrated the TOML file: %v", err)
+	}
+}
+
+func TestConfigInUse(t *testing.T) {
+	user, dir := isolateConfig(t)
+	ReadConfig("")
+	if got := configInUse(); !strings.Contains(got, "none found") || !strings.Contains(got, user) {
+		t.Errorf("no file: %q", got)
+	}
+	system := filepath.Join(dir, "system")
+	writeTestConfig(t, system, "nord")
+	ReadConfig("")
+	if got := configInUse(); got != "In use: "+system {
+		t.Errorf("system file: %q", got)
+	}
+	flag := filepath.Join(dir, "flag")
+	writeTestConfig(t, flag, "nord")
+	ReadConfig(flag)
+	if got := configInUse(); got != "In use: "+flag+" (--config)" {
+		t.Errorf("--config: %q", got)
+	}
+}
+
+// Issue #3: --setup checks the --config file, else the file in use.
+func TestSetupDiagnoseConfig(t *testing.T) {
+	run := func(configPath string) string {
+		t.Helper()
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := os.Stdout
+		os.Stdout = w
+		runDiagnose(configPath)
+		os.Stdout = old
+		_ = w.Close()
+		out, _ := io.ReadAll(r)
+		return string(out)
+	}
+	user, dir := isolateConfig(t)
+
+	flag := filepath.Join(dir, "flag")
+	writeRaw(t, flag, "[keys]\nscale = 60ms\n", 0600)
+	writeTestConfig(t, user, "nord")
+	out := run(flag)
+	if !strings.Contains(out, flag) || !strings.Contains(out, `keys.scale = "60ms"`) {
+		t.Errorf("--setup -c did not check the flag file:\n%s", out)
+	}
+
+	trashUser := filepath.Join(dir, "gone")
+	if err := os.Rename(user, trashUser); err != nil {
+		t.Fatal(err)
+	}
+	system := filepath.Join(dir, "system")
+	writeRaw(t, system, "[theme]\nnam = x\n", 0600)
+	out = run("")
+	if !strings.Contains(out, system) || !strings.Contains(out, "unknown key theme.nam") {
+		t.Errorf("--setup did not check the file in use:\n%s", out)
+	}
+	if _, err := os.Stat(user); !os.IsNotExist(err) {
+		t.Error("--setup created the user config")
+	}
+}

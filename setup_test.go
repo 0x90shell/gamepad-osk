@@ -66,7 +66,7 @@ func TestSetupDiagnose_NoPanic(_ *testing.T) {
 	old := os.Stdout
 	os.Stdout, _ = os.Open(os.DevNull)
 	defer func() { os.Stdout = old }()
-	_ = runDiagnose()
+	_ = runDiagnose("")
 }
 
 func TestIsUserInGroup(t *testing.T) {

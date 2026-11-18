@@ -56,14 +56,15 @@ func canWritePath(path string) bool {
 }
 
 // runSetup performs system diagnostics (install=false) or deployment (install=true).
-func runSetup(install bool) int {
+// runSetup checks or installs. configPath is the --config file, or empty.
+func runSetup(install bool, configPath string) int {
 	if install {
-		return runInstall()
+		return runInstall(configPath)
 	}
-	return runDiagnose()
+	return runDiagnose(configPath)
 }
 
-func runDiagnose() int {
+func runDiagnose(configPath string) int {
 	fmt.Printf("gamepad-osk v%s system check:\n", version)
 	fmt.Println()
 
@@ -153,28 +154,27 @@ func runDiagnose() int {
 		}
 	}
 
-	// 5. config
-	userCfg := UserConfigPath()
-	if _, err := os.Stat(userCfg); err == nil {
-		// Suppress log output from config parsing (unknown section warnings etc.)
-		log.SetOutput(io.Discard)
-		cfg := LoadConfig(userCfg)
-		log.SetOutput(os.Stderr)
-		problems := checkConfigFile(userCfg)
+	// 5. config: the file the app would read (--config, else first found)
+	// Suppress log output from config parsing; the problems are listed below.
+	log.SetOutput(io.Discard)
+	cfg := ReadConfig(configPath)
+	log.SetOutput(os.Stderr)
+	if cfgPath := configSource.Path; cfgPath != "" {
+		problems := checkConfigFile(cfgPath)
 		problems = append(problems, checkConfig(cfg)...)
 		if len(problems) > 0 {
-			fmt.Printf("  %-14s %s %s\n", "config", colorYellow("[!]"), userCfg)
+			fmt.Printf("  %-14s %s %s\n", "config", colorYellow("[!]"), cfgPath)
 			for _, issue := range problems {
 				fmt.Printf("  %-14s   %s\n", "", colorYellow(issue))
 			}
-			fmt.Printf("  %-14s   %s\n", "", colorDim("Edit "+userCfg+" to fix"))
+			fmt.Printf("  %-14s   %s\n", "", colorDim("Edit "+cfgPath+" to fix"))
 			configIssues++
 			issues++
 		} else {
-			fmt.Printf("  %-14s %s %s\n", "config", colorGreen("[✓]"), userCfg)
+			fmt.Printf("  %-14s %s %s\n", "config", colorGreen("[✓]"), cfgPath)
 		}
 	} else {
-		fmt.Printf("  %-14s %s %s (will be created on first run)\n", "config", colorDim("[~]"), userCfg)
+		fmt.Printf("  %-14s %s %s (will be created on first run)\n", "config", colorDim("[~]"), UserConfigPath())
 	}
 
 	// 6. systemd service - check both system-wide and user-local paths
@@ -206,7 +206,7 @@ func runDiagnose() int {
 	return 0
 }
 
-func runInstall() int {
+func runInstall(configPath string) int {
 	fmt.Printf("gamepad-osk v%s setup:\n", version)
 	fmt.Println()
 
@@ -240,9 +240,11 @@ func runInstall() int {
 		fmt.Printf("  %-14s %s need root - run with sudo\n", "udev rules", colorDim("[~]"))
 	}
 
-	// 2. config
+	// 2. config (not with --config: that file is the only one used)
 	userCfg := UserConfigPath()
-	if _, err := os.Stat(userCfg); err == nil {
+	if configPath != "" {
+		fmt.Printf("  %-14s %s %s (--config, user config not created)\n", "config", colorDim("[~]"), configPath)
+	} else if _, err := os.Stat(userCfg); err == nil {
 		fmt.Printf("  %-14s %s %s (already exists)\n", "config", colorDim("[~]"), userCfg)
 	} else {
 		dir := filepath.Dir(userCfg)

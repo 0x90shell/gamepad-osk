@@ -537,14 +537,26 @@ var configSource struct {
 	FromFlag bool   // Path came from --config
 }
 
+// LoadConfig reads the config (see loadConfig) and, without --config,
+// creates the user config on first run.
 func LoadConfig(overridePath string) Config {
+	return loadConfig(overridePath, true)
+}
+
+// ReadConfig reads the config like LoadConfig but never writes a file:
+// no first-run creation, no TOML migration. For --help and --setup.
+func ReadConfig(overridePath string) Config {
+	return loadConfig(overridePath, false)
+}
+
+func loadConfig(overridePath string, create bool) Config {
 	cfg := DefaultConfig()
 
 	userPath := UserConfigPath()
 	legacyPath := legacyConfigPath()
 
 	// Auto-migrate: TOML → INI if legacy exists and new does not
-	if overridePath == "" {
+	if create && overridePath == "" {
 		if _, err := os.Stat(userPath); os.IsNotExist(err) {
 			if _, err := os.Stat(legacyPath); err == nil {
 				if migErr := migrateFromTOML(legacyPath, userPath); migErr != nil {
@@ -592,7 +604,7 @@ func LoadConfig(overridePath string) Config {
 
 	// Auto-create user config if it doesn't exist (not with --config).
 	// Prefer copying from a system/binary config file; fall back to writing defaults.
-	if _, err := os.Stat(userPath); overridePath == "" && os.IsNotExist(err) {
+	if _, err := os.Stat(userPath); create && overridePath == "" && os.IsNotExist(err) {
 		copied := false
 		for _, src := range paths[1:] { // skip user path itself
 			if _, err := os.Stat(src); err == nil { //nolint:gosec // G703: config paths are trusted

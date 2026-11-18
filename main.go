@@ -131,8 +131,15 @@ func main() {
 		fmt.Printf("gamepad-osk v%s\n", version)
 		os.Exit(0)
 	}
+	devicePath, themeName, configPath := opts.device, opts.theme, opts.config
+	if configPath != "" {
+		if configPath, err = checkConfigFlag(configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	if opts.help {
-		printHelp(LoadConfig(""))
+		printHelp(ReadConfig(configPath))
 		os.Exit(0)
 	}
 	if opts.toggle {
@@ -140,13 +147,6 @@ func main() {
 			os.Exit(0)
 		}
 		fmt.Fprintln(os.Stderr, "No running instance, starting new...")
-	}
-	devicePath, themeName, configPath := opts.device, opts.theme, opts.config
-	if configPath != "" {
-		if configPath, err = checkConfigFlag(configPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
 	}
 	daemon, setupMode, installMode := opts.daemon, opts.setup, opts.install
 
@@ -159,7 +159,7 @@ func main() {
 
 	// --setup mode: diagnose or install, then exit
 	if setupMode {
-		os.Exit(runSetup(installMode))
+		os.Exit(runSetup(installMode, configPath))
 	}
 
 	config := LoadConfig(configPath)
@@ -309,6 +309,7 @@ CONFIG (first found)
   3. /etc/gamepad-osk/config
   4. config next to binary
   5. config in working directory
+  %s
 
 NOTES
   Controller auto-reconnects if disconnected (timeout, power-off, unplug).
@@ -331,7 +332,19 @@ REQUIREMENTS
 		posToggleLabel(b.PositionToggle),
 		"Shift + hold A",
 		comboHelp,
-		availableThemes())
+		availableThemes(),
+		configInUse())
+}
+
+// configInUse names the file the last config read used, for --help.
+func configInUse() string {
+	switch {
+	case configSource.FromFlag:
+		return "In use: " + configSource.Path + " (--config)"
+	case configSource.Path != "":
+		return "In use: " + configSource.Path
+	}
+	return "In use: none found, built-in defaults (" + UserConfigPath() + " is created on first run)"
 }
 
 func mouseLbl(enabled bool, label string) string {
