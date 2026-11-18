@@ -20,6 +20,7 @@ type options struct {
 	setup, install        bool
 	daemon, verbose       bool
 	device, theme, config string
+	unknown               []string // ignored with a warning
 }
 
 // parseArgs parses the command line. It acts on nothing; main does that
@@ -60,6 +61,8 @@ func parseArgs(args []string) (options, error) {
 		default:
 			if strings.HasPrefix(args[i], "/") {
 				o.device = args[i]
+			} else {
+				o.unknown = append(o.unknown, args[i])
 			}
 		}
 		if err != nil {
@@ -70,6 +73,50 @@ func parseArgs(args []string) (options, error) {
 	return o, nil
 }
 
+// longOptions are the options a typo is matched against.
+var longOptions = []string{"--toggle", "--version", "--help", "--setup", "--install",
+	"--daemon", "--verbose", "--device", "--theme", "--config"}
+
+// unknownArgWarning says an argument is ignored, and names the closest
+// long option when the argument looks like a typo of one.
+func unknownArgWarning(arg string) string {
+	msg := fmt.Sprintf("Warning: unknown option %q, ignored", arg)
+	if !strings.HasPrefix(arg, "-") {
+		return msg
+	}
+	best, bestDist := "", 3
+	for _, opt := range longOptions {
+		if d := editDistance(arg, opt); d < bestDist {
+			best, bestDist = opt, d
+		}
+	}
+	if best != "" {
+		msg += fmt.Sprintf(" (did you mean %s?)", best)
+	}
+	return msg
+}
+
+// editDistance is the Levenshtein distance between a and b.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
+}
+
 func main() {
 	opts, err := parseArgs(os.Args[1:])
 	if err != nil {
@@ -77,6 +124,9 @@ func main() {
 		os.Exit(1)
 	}
 	Verbose = opts.verbose
+	for _, arg := range opts.unknown {
+		fmt.Fprintln(os.Stderr, unknownArgWarning(arg))
+	}
 	if opts.version {
 		fmt.Printf("gamepad-osk v%s\n", version)
 		os.Exit(0)

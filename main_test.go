@@ -68,3 +68,48 @@ func TestParseArgsMissingValue(t *testing.T) {
 		}
 	}
 }
+
+func TestParseArgsUnknown(t *testing.T) {
+	got, err := parseArgs([]string{"--confg", "x", "--daemon", "-q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.daemon {
+		t.Error("an unknown argument stopped parsing of the rest")
+	}
+	if want := []string{"--confg", "x", "-q"}; !reflect.DeepEqual(got.unknown, want) {
+		t.Errorf("unknown = %q, want %q", got.unknown, want)
+	}
+}
+
+func TestUnknownArgWarning(t *testing.T) {
+	tests := []struct{ arg, want string }{
+		{"--confg", `Warning: unknown option "--confg", ignored (did you mean --config?)`},
+		{"-config", `Warning: unknown option "-config", ignored (did you mean --config?)`},
+		{"--deamon", `Warning: unknown option "--deamon", ignored (did you mean --daemon?)`},
+		{"--them", `Warning: unknown option "--them", ignored (did you mean --theme?)`},
+		{"--fullscreen", `Warning: unknown option "--fullscreen", ignored`},
+		{"-q", `Warning: unknown option "-q", ignored`},
+		{"x", `Warning: unknown option "x", ignored`},
+	}
+	for _, tt := range tests {
+		if got := unknownArgWarning(tt.arg); got != tt.want {
+			t.Errorf("unknownArgWarning(%q) = %q, want %q", tt.arg, got, tt.want)
+		}
+	}
+}
+
+func TestEditDistance(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"", "", 0}, {"abc", "", 3}, {"", "ab", 2}, {"config", "config", 0},
+		{"confg", "config", 1}, {"deamon", "daemon", 2}, {"kitten", "sitting", 3},
+	}
+	for _, tt := range tests {
+		if got := editDistance(tt.a, tt.b); got != tt.want {
+			t.Errorf("editDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
