@@ -78,3 +78,22 @@ func TestAlphaFactor(t *testing.T) {
 		}
 	}
 }
+
+func TestChooseVideoDriver(t *testing.T) {
+	tests := []struct {
+		layerShell  int
+		hasXWayland bool
+		want        string
+	}{
+		{1, true, "wayland"},  // Sway, Hyprland, KDE
+		{1, false, "wayland"}, // layer-shell, no XWayland
+		{0, true, "x11"},      // GNOME: overlay through XWayland
+		{0, false, "wayland"}, // GNOME without XWayland: normal window
+		{-1, true, "wayland"}, // probe failed: let SDL report it
+	}
+	for _, tt := range tests {
+		if got := chooseVideoDriver(tt.layerShell, tt.hasXWayland); got != tt.want {
+			t.Errorf("chooseVideoDriver(%d, %v) = %q, want %q", tt.layerShell, tt.hasXWayland, got, tt.want)
+		}
+	}
+}

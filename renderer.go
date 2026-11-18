@@ -183,8 +183,8 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 	if r.dirtyFrames <= 0 {
 		return
 	}
-	// Wayland: don't render until layer-shell configure is received
-	if isWayland && !IsLayerShellReady() {
+	// Layer-shell: don't render until configure is received
+	if layerShellMode && !IsLayerShellReady() {
 		return
 	}
 	r.dirtyFrames--

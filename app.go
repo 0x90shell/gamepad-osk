@@ -13,6 +13,10 @@ import (
 var themeOrder []string
 var isWayland bool
 
+// waylandLayerShell: the Wayland compositor offers wlr-layer-shell (probed
+// before SDL starts). layerShellMode: the window is a layer surface.
+var waylandLayerShell, layerShellMode bool
+
 func init() {
 	for name := range Themes {
 		themeOrder = append(themeOrder, name)
@@ -75,11 +79,23 @@ func (app *App) Run() error {
 	KeyGlyphs = BuildKeyGlyphs(cfg.Gamepad)
 	PopupHint = BuildPopupHint(cfg.Gamepad)
 
-	// Prefer native Wayland over XWayland when running in a Wayland session
+	// Prefer native Wayland over XWayland when running in a Wayland session,
+	// unless the compositor has no layer-shell (GNOME): a Wayland window
+	// there cannot place itself, stay on top or refuse focus, but an X11
+	// override-redirect window under XWayland can.
 	if os.Getenv("WAYLAND_DISPLAY") != "" && os.Getenv("SDL_VIDEODRIVER") == "" {
-		if err := os.Setenv("SDL_VIDEODRIVER", "wayland"); err != nil {
+		layerShell := probeLayerShell()
+		driver := chooseVideoDriver(layerShell, os.Getenv("DISPLAY") != "")
+		switch {
+		case layerShell == 0 && driver == "x11":
+			log.Printf("Compositor has no wlr-layer-shell (GNOME?), using XWayland for the overlay")
+		case layerShell == 0:
+			log.Printf("Warning: compositor has no wlr-layer-shell and XWayland is not available, using a normal window")
+		}
+		if err := os.Setenv("SDL_VIDEODRIVER", driver); err != nil {
 			log.Printf("Warning: cannot set SDL_VIDEODRIVER: %v", err)
 		}
+		waylandLayerShell = layerShell == 1
 	}
 
 	// Allow the screensaver and sleep timers to fire. SDL_Init's video
@@ -146,17 +162,28 @@ func (app *App) Run() error {
 		log.Printf("Warning: cannot set SDL_APP_ID: %v", err)
 	}
 
-	isWayland = os.Getenv("WAYLAND_DISPLAY") != ""
+	isWayland = SDL3GetCurrentVideoDriver() == "wayland"
+	layerShellMode = isWayland && waylandLayerShell
 	var window *Window
 	var err error
-	if isWayland {
+	switch {
+	case layerShellMode:
 		// Wayland: create roleless surface, attach layer-shell asynchronously
 		setTargetMonitor(mon.X, mon.Y)
 		window, err = createWaylandWindow("gamepad-osk", width, height)
 		if err != nil {
 			return err
 		}
-	} else {
+	case isWayland:
+		// Wayland without layer-shell and without XWayland: a normal window,
+		// the best a client can do there. The compositor places it.
+		SDL3SetHint("SDL_WINDOW_ACTIVATE_WHEN_SHOWN", "0")
+		window, err = SDL3CreateWindowWithProps("gamepad-osk", 0, 0, width, height,
+			true, true, true, false)
+		if err != nil {
+			return err
+		}
+	default:
 		// X11: override-redirect handles z-ordering; SDL_WINDOW_ALWAYS_ON_TOP omitted.
 		// SDL3's X11 backend sends _NET_WM_STATE_ABOVE via XSendEvent to root when
 		// showing a window with that flag. xfwm4 processes it (even for override-redirect
@@ -192,7 +219,7 @@ func (app *App) Run() error {
 
 	// Attach layer-shell asynchronously -- configure arrives via SDL event pump.
 	// Skip in daemon mode (starts hidden, first toggle-show will attach).
-	if isWayland && app.visible {
+	if layerShellMode && app.visible {
 		attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
 	}
 
@@ -302,14 +329,16 @@ func (app *App) Run() error {
 
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
-		if !isWayland {
-			rend.Draw(kb) // render first frame before showing (Wayland: gated by IsLayerShellReady)
+		if !layerShellMode {
+			rend.Draw(kb) // render first frame before showing (layer-shell: gated by IsLayerShellReady)
 			SDL3ShowWindow(window)
 			applyOpacity(window, rend, cfg.Window.Opacity) // re-apply after show
-			SDL3SetWindowPosition(window, x, app.winY)
-			SetNoFocusHints(window)
+			if !isWayland {
+				SDL3SetWindowPosition(window, x, app.winY)
+				SetNoFocusHints(window)
+			}
 		}
-		// Wayland: first frame renders after configure arrives via SDL event pump
+		// Layer-shell: first frame renders after configure arrives via SDL event pump
 	}
 
 	for app.running {
@@ -326,7 +355,7 @@ func (app *App) Run() error {
 				if !hasLayerShell() {
 					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
 				}
-				if isWayland {
+				if layerShellMode {
 					attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
 				} else {
 					SDL3ShowWindow(window)
@@ -360,7 +389,7 @@ func (app *App) Run() error {
 				// Cancel any pending grab so it can't fire after hide.
 				app.grabPending = false
 				gamepad.Ungrab()
-				if isWayland {
+				if layerShellMode {
 					destroyLayerSurface()
 				} else {
 					SDL3HideWindow(window)
@@ -694,4 +723,13 @@ func applyOpacity(window *Window, rend *Renderer, opacity float64) {
 		Debugf("Opacity %.2f drawn by the renderer: compositor has no alpha modifier", opacity)
 	case opacityOpaque:
 	}
+}
+
+// chooseVideoDriver picks SDL's video driver in a Wayland session from the
+// layer-shell probe (1 yes, 0 no, -1 failed) and whether XWayland is there.
+func chooseVideoDriver(layerShell int, hasXWayland bool) string {
+	if layerShell == 0 && hasXWayland {
+		return "x11"
+	}
+	return "wayland"
 }

@@ -111,6 +111,35 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = registry_global_remove,
 };
 
+// --- Probe: does the compositor offer layer-shell? ---
+static void probe_global(void *data, struct wl_registry *registry,
+    uint32_t name, const char *interface, uint32_t version) {
+    (void)registry; (void)name; (void)version;
+    if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+        *(int *)data = 1;
+    }
+}
+
+static const struct wl_registry_listener probe_listener = {
+    .global = probe_global,
+    .global_remove = registry_global_remove,
+};
+
+// Ask the compositor for its globals on a throwaway connection, before SDL
+// starts. Returns 1 if it offers wlr-layer-shell, 0 if not, -1 if there is no
+// Wayland display to connect to.
+static int probe_layer_shell(void) {
+    struct wl_display *d = wl_display_connect(NULL);
+    if (!d) return -1;
+    int found = 0;
+    struct wl_registry *reg = wl_display_get_registry(d);
+    wl_registry_add_listener(reg, &probe_listener, &found);
+    wl_display_roundtrip(d);
+    wl_registry_destroy(reg);
+    wl_display_disconnect(d);
+    return found;
+}
+
 // --- Layer surface listener ---
 static void layer_surface_configure(void *data,
     struct zwlr_layer_surface_v1 *surface,
@@ -344,6 +373,12 @@ import (
 )
 
 var layerShellActive bool
+
+// probeLayerShell reports whether the Wayland compositor offers
+// wlr-layer-shell: 1 yes, 0 no (GNOME), -1 no Wayland display.
+func probeLayerShell() int {
+	return int(C.probe_layer_shell())
+}
 
 // setTargetMonitor sets the target monitor position for wl_output matching.
 func setTargetMonitor(x, y int32) {
