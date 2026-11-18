@@ -1,3 +1,4 @@
 # TODO
 
 - Accents: é goes out as Ctrl+Shift+U 00e9 Enter. GNOME's terminal (ptyxis) took that as plain keys and printed junk instead of é. Check which apps get it wrong on each test desktop before changing anything. If it's common, type the character directly with zwp_virtual_keyboard_v1 where the compositor has it (Sway does, KDE and GNOME don't) and keep Ctrl+Shift+U as the fallback. Idea from Kam1ni/gamepad-osk-no-uinput.
+- KDE Alt+Tab: in a Plasma VM, a quick second AltTab press sometimes only sends its Tab when the 3 s Alt timeout fires. Happens in most runs of the F42 test, never in 17 standalone tries, never on X11, Sway or GNOME. Input timing traced fine (release read within 16 ms), so it looks like an occasional stall in the app's loop under KWin. Check on real KDE hardware before touching code.
