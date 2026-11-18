@@ -4,6 +4,7 @@ package main
 #cgo pkg-config: wayland-client
 #include <wayland-client.h>
 #include "wlr-layer-shell-client.h"
+#include "alpha-modifier-v1-client.h"
 #include <stdlib.h>
 #include <string.h>
 #include <SDL3/SDL.h>
@@ -16,6 +17,14 @@ static struct zwlr_layer_surface_v1 *layer_surface = NULL;
 static struct wl_surface *wl_surf = NULL;
 static uint32_t configure_serial = 0;
 static int configured = 0;
+
+// --- Opacity (wp_alpha_modifier_v1) ---
+// The compositor multiplies the surface's alpha by alpha_factor. Window
+// opacity has no effect on a layer surface, so this is how it turns
+// see-through. The alpha surface lives as long as wl_surf.
+static struct wp_alpha_modifier_v1 *alpha_modifier = NULL;
+static struct wp_alpha_modifier_surface_v1 *alpha_surface = NULL;
+static uint32_t alpha_factor = UINT32_MAX;
 
 // --- Output matching ---
 static struct wl_output *target_output = NULL;
@@ -78,6 +87,10 @@ static void registry_global(void *data, struct wl_registry *registry,
     if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         layer_shell = wl_registry_bind(registry, name,
             &zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
+    }
+    if (strcmp(interface, wp_alpha_modifier_v1_interface.name) == 0) {
+        alpha_modifier = wl_registry_bind(registry, name,
+            &wp_alpha_modifier_v1_interface, 1);
     }
     if (strcmp(interface, "wl_output") == 0 && num_outputs < MAX_OUTPUTS) {
         struct wl_output *out = wl_registry_bind(registry, name,
@@ -254,6 +267,18 @@ static void reposition_layer_surface(int anchor_top, int margin,
     }
 }
 
+// Set the alpha factor on wl_surf. Takes effect with the next commit.
+// Returns 0 when the compositor has no wp_alpha_modifier_v1.
+static int set_layer_alpha(uint32_t factor) {
+    alpha_factor = factor;
+    if (!alpha_modifier || !wl_surf) return 0;
+    if (!alpha_surface) {
+        alpha_surface = wp_alpha_modifier_v1_get_surface(alpha_modifier, wl_surf);
+    }
+    wp_alpha_modifier_surface_v1_set_multiplier(alpha_surface, alpha_factor);
+    return 1;
+}
+
 // Destroy the layer surface (hide or cleanup).
 // Preserves layer_shell global and wl_surf for re-attach.
 static void destroy_layer_surface() {
@@ -267,6 +292,15 @@ static void destroy_layer_surface() {
 // Full cleanup on exit.
 static void cleanup_layer_shell() {
     destroy_layer_surface();
+    // Must go before wl_surf, which SDL destroys after this
+    if (alpha_surface) {
+        wp_alpha_modifier_surface_v1_destroy(alpha_surface);
+        alpha_surface = NULL;
+    }
+    if (alpha_modifier) {
+        wp_alpha_modifier_v1_destroy(alpha_modifier);
+        alpha_modifier = NULL;
+    }
     if (layer_shell) {
         zwlr_layer_shell_v1_destroy(layer_shell);
         layer_shell = NULL;
@@ -287,6 +321,11 @@ static int is_layer_shell_ready() {
     return layer_surface != NULL && configured;
 }
 
+// Check if the compositor offers wp_alpha_modifier_v1 (known after first attach).
+static int has_alpha_modifier() {
+    return alpha_modifier != NULL;
+}
+
 // Check if layer shell was attached (may not be configured yet).
 static int has_layer_shell() {
     return layer_surface != NULL;
@@ -301,6 +340,7 @@ static void set_target_monitor(int x, int y) {
 import "C"
 import (
 	"log"
+	"math"
 )
 
 var layerShellActive bool
@@ -388,6 +428,25 @@ func destroyLayerSurface() {
 func cleanupLayerShell() {
 	C.cleanup_layer_shell()
 	layerShellActive = false
+}
+
+// setLayerOpacity makes the layer surface see-through through the
+// compositor's alpha modifier. Returns false if the compositor has none.
+// Globals are found on the first attach, so call it after attachLayerShellAsync.
+func setLayerOpacity(opacity float64) bool {
+	return C.set_layer_alpha(C.uint32_t(alphaFactor(opacity))) != 0
+}
+
+// hasAlphaModifier reports whether the compositor can make the layer surface
+// see-through. Only known after the first attachLayerShellAsync.
+func hasAlphaModifier() bool {
+	return C.has_alpha_modifier() != 0
+}
+
+// alphaFactor maps opacity 0..1 to the protocol's 0..UINT32_MAX.
+func alphaFactor(opacity float64) uint32 {
+	opacity = max(0, min(1, opacity))
+	return uint32(math.Round(opacity * math.MaxUint32))
 }
 
 // hasLayerShell returns true if layer-shell was attached (may not be configured).

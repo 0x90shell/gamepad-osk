@@ -206,9 +206,7 @@ func (app *App) Run() error {
 	Debugf("Renderer: %s", SDL3GetRendererName(renderer))
 
 	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
-	if cfg.Window.Opacity < 1.0 {
-		SDL3SetWindowOpacity(window, float32(cfg.Window.Opacity))
-	}
+	applyOpacity(window, cfg.Window.Opacity)
 
 	// Set X11 hints AFTER renderer init (layer-shell handles this on Wayland)
 	if !hasLayerShell() {
@@ -303,16 +301,12 @@ func (app *App) Run() error {
 
 	app.running = true
 
-	opacity := float32(cfg.Window.Opacity)
-
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
 		if !isWayland {
 			rend.Draw(kb) // render first frame before showing (Wayland: gated by IsLayerShellReady)
 			SDL3ShowWindow(window)
-			if opacity < 1.0 {
-				SDL3SetWindowOpacity(window, opacity) // re-apply after show
-			}
+			applyOpacity(window, cfg.Window.Opacity) // re-apply after show
 			SDL3SetWindowPosition(window, x, app.winY)
 			SetNoFocusHints(window)
 		}
@@ -339,9 +333,7 @@ func (app *App) Run() error {
 					SDL3ShowWindow(window)
 				}
 				rend.MarkDirty()
-				if opacity < 1.0 {
-					SDL3SetWindowOpacity(window, opacity) // re-apply after show
-				}
+				applyOpacity(window, cfg.Window.Opacity) // re-apply after show
 				if !isWayland {
 					app.winY = app.computeY()
 					SDL3SetWindowPosition(window, app.winX, app.winY)
@@ -658,4 +650,45 @@ func (app *App) startRepeat(action ActionType) {
 
 func (app *App) stopRepeat() {
 	app.repeatAction = ActionNone
+}
+
+// opacityPath is how the window is made see-through.
+type opacityPath int
+
+const (
+	opacityOpaque  opacityPath = iota // opacity 1: nothing to do
+	opacityWindow                     // SDL window opacity: X11, Wayland without layer-shell
+	opacitySurface                    // compositor alpha modifier on the layer surface
+	opacityNone                       // layer surface without alpha modifier: stays opaque
+)
+
+// chooseOpacityPath picks the opacity method. Layer-shell attaches on each
+// show (daemon mode starts hidden), so this is decided after every attach,
+// not once at startup. Window opacity has no effect on a layer surface.
+func chooseOpacityPath(opacity float64, layerShell, alphaModifier bool) opacityPath {
+	switch {
+	case opacity >= 1:
+		return opacityOpaque
+	case !layerShell:
+		return opacityWindow
+	case alphaModifier:
+		return opacitySurface
+	default:
+		return opacityNone
+	}
+}
+
+// applyOpacity sets the configured opacity by the method that works on the
+// current window. Call it after each show.
+func applyOpacity(window *Window, opacity float64) {
+	switch chooseOpacityPath(opacity, hasLayerShell(), hasAlphaModifier()) {
+	case opacityWindow:
+		SDL3SetWindowOpacity(window, float32(opacity))
+	case opacitySurface:
+		setLayerOpacity(opacity)
+		Debugf("Opacity %.2f via compositor alpha modifier", opacity)
+	case opacityNone:
+		Debugf("Opacity %.2f not applied: compositor has no alpha modifier", opacity)
+	case opacityOpaque:
+	}
 }
