@@ -1,4 +1,3 @@
-# Post-Release TODO
+# TODO
 
-- [x] Opacity on Wayland layer-shell: compositor alpha modifier (`wp_alpha_modifier_v1`), or an off-screen layer drawn with alpha where the compositor lacks it. X11 keeps window opacity.
-- [x] GNOME: no layer-shell, so the overlay runs through XWayland; without XWayland a normal window.
+- Accents: é goes out as Ctrl+Shift+U 00e9 Enter. GNOME's terminal (ptyxis) took that as plain keys and printed junk instead of é. Check which apps get it wrong on each test desktop before changing anything. If it's common, type the character directly with zwp_virtual_keyboard_v1 where the compositor has it (Sway does, KDE and GNOME don't) and keep Ctrl+Shift+U as the fallback. Idea from Kam1ni/gamepad-osk-no-uinput.
