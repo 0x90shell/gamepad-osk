@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -192,7 +193,8 @@ func parseINIKeys(r io.Reader, cfg *Config) ([]iniNote, error) {
 		}
 	}
 	setFloat := func(dst *float64) {
-		if f, err := strconv.ParseFloat(val, 64); err == nil {
+		// ParseFloat takes "nan" and "inf", and NaN passes every range check
+		if f, err := strconv.ParseFloat(val, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
 			*dst = f
 		} else {
 			bad("a number (use a dot: 0.8)", *dst)
