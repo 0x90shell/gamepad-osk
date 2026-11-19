@@ -6,7 +6,8 @@ import (
 )
 
 func TestCloseCancelsAccentPopup(t *testing.T) {
-	app := &App{visible: true, running: true}
+	app := &App{visible: true}
+	app.running.Store(true)
 	rend := &Renderer{}
 	kb := NewKeyboardState(LayoutQWERTY)
 	kb.CtrlActive = true // any real key press clears it
@@ -16,7 +17,7 @@ func TestCloseCancelsAccentPopup(t *testing.T) {
 	if kb.AccentPopup != nil {
 		t.Fatal("close should cancel the open popup")
 	}
-	if !app.running {
+	if !app.running.Load() {
 		t.Fatal("close with the popup open must not quit")
 	}
 
@@ -34,7 +35,7 @@ func TestCloseCancelsAccentPopup(t *testing.T) {
 
 	// Without a popup, close still quits
 	app.handleAction(Action{Type: ActionClose}, kb, nil, rend)
-	if app.running {
+	if app.running.Load() {
 		t.Error("close without a popup should quit")
 	}
 }
@@ -101,7 +102,8 @@ func TestChooseVideoDriver(t *testing.T) {
 // A pad that disconnects mid-hold never sends its releases: repeat, a held
 // Shift and the accent popup end; toggled keys stay.
 func TestReleasePadHolds(t *testing.T) {
-	app := &App{visible: true, running: true}
+	app := &App{visible: true}
+	app.running.Store(true)
 	kb := NewKeyboardState(LayoutQWERTY)
 	app.startRepeat(ActionBackspace)
 	kb.ShiftHeld, kb.ShiftActive = true, true

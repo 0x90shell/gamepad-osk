@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 func initSockPath() string {
@@ -29,10 +31,13 @@ func initSockPath() string {
 
 var sockPath = initSockPath()
 
+// errInstanceRunning: a live instance already listens on the socket.
+var errInstanceRunning = errors.New("another instance is listening")
+
 type IPCServer struct {
 	listener  net.Listener
 	onCommand func(string)
-	running   bool
+	running   atomic.Bool
 }
 
 func NewIPCServer(onCommand func(string)) *IPCServer {
@@ -46,7 +51,7 @@ func (s *IPCServer) Start() error {
 		if isAddrInUse(err) {
 			if IPCSend("ping") {
 				// Live instance owns this socket
-				return fmt.Errorf("another instance is listening on %s", sockPath)
+				return fmt.Errorf("%w on %s", errInstanceRunning, sockPath)
 			}
 			// Can't connect - could be stale (crash) or permission mismatch (sudo).
 			// Only remove if we own the file or are root.
@@ -63,21 +68,25 @@ func (s *IPCServer) Start() error {
 		}
 	}
 	s.listener = l
-	s.running = true
+	s.running.Store(true)
 	log.Printf("IPC: listening on %s", sockPath)
 	go s.listen()
 	return nil
 }
 
 func (s *IPCServer) listen() {
-	for s.running {
+	for s.running.Load() {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if s.running {
-				continue
+			if !s.running.Load() || errors.Is(err, net.ErrClosed) {
+				return
 			}
-			return
+			time.Sleep(100 * time.Millisecond) // e.g. out of fds: do not spin
+			continue
 		}
+		// A client that connects and sends nothing must not block later
+		// --toggle calls for long
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		buf := make([]byte, 256)
 		n, _ := conn.Read(buf)
 		if n > 0 {
@@ -88,11 +97,15 @@ func (s *IPCServer) listen() {
 	}
 }
 
+// Stop closes the listener and removes the socket, but only one this
+// server created: a server that failed to start must not remove the socket
+// of the instance that owns it.
 func (s *IPCServer) Stop() {
-	s.running = false
-	if s.listener != nil {
-		_ = s.listener.Close()
+	s.running.Store(false)
+	if s.listener == nil {
+		return
 	}
+	_ = s.listener.Close()
 	_ = os.Remove(sockPath)
 }
 

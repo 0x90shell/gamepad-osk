@@ -203,7 +203,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-sigCh
-		app.running = false
+		app.running.Store(false)
 	}()
 
 	if err := app.Run(); err != nil {
