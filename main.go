@@ -4,12 +4,53 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"syscall"
 )
 
-var version = "2.1.1"
+// releaseVersion is the last release. A build from a git checkout adds the
+// commit (see withRevision); -ldflags "-X main.version=..." replaces it all.
+const releaseVersion = "2.1.1"
+
+var version = releaseVersion
+
+func init() {
+	if version != releaseVersion {
+		return // set at link time
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		var rev string
+		var modified bool
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				rev = s.Value
+			case "vcs.modified":
+				modified = s.Value == "true"
+			}
+		}
+		version = withRevision(version, rev, modified)
+	}
+}
+
+// withRevision adds the git commit a build came from as semver build
+// metadata, so a -git package or a dev build is not taken for the release:
+// 2.1.1+git.0d08c62, or 2.1.1+git.0d08c62.modified with uncommitted changes.
+func withRevision(v, rev string, modified bool) string {
+	if rev == "" {
+		return v
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	v += "+git." + rev
+	if modified {
+		v += ".modified"
+	}
+	return v
+}
 
 // Verbose controls debug logging throughout the app
 var Verbose bool
