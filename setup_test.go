@@ -136,3 +136,64 @@ func TestSetupFilesMatchRepo(t *testing.T) {
 		t.Errorf("built-in unit differs from gamepad-osk.service:\n%s\n---\n%s", got, want)
 	}
 }
+
+// installOutput runs runInstall with stdout in a file and returns the exit
+// code and what it printed.
+func installOutput(t *testing.T) (int, string) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = f
+	code := runInstall("")
+	os.Stdout = old
+	out, _ := os.ReadFile(f.Name())
+	_ = f.Close()
+	return code, string(out)
+}
+
+// A file --install cannot write makes it exit 1 and say so (B5).
+func TestRunInstallExitCode(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("as root runInstall writes /etc")
+	}
+	t.Run("ok", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		code, out := installOutput(t)
+		if code != 0 || !strings.Contains(out, "Setup complete.") {
+			t.Errorf("exit %d, output:\n%s", code, out)
+		}
+	})
+	t.Run("config not writable", func(t *testing.T) {
+		dir := t.TempDir()
+		blocker := dir + "/file"
+		if err := os.WriteFile(blocker, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("XDG_CONFIG_HOME", blocker) // a file, so MkdirAll fails
+		code, out := installOutput(t)
+		if code != 1 || !strings.Contains(out, "Setup finished with errors") || strings.Contains(out, "Setup complete.") {
+			t.Errorf("exit %d, output:\n%s", code, out)
+		}
+	})
+}
+
+func TestSystemdExecPath(t *testing.T) {
+	for in, want := range map[string]string{
+		"/usr/bin/gamepad-osk":         "/usr/bin/gamepad-osk",
+		"/home/a b/gamepad-osk":        `"/home/a b/gamepad-osk"`,
+		"/opt/100%/gamepad-osk":        "/opt/100%%/gamepad-osk",
+		"/opt/$x/gamepad-osk":          "/opt/$$x/gamepad-osk",
+		`/opt/a"b/gamepad-osk`:         `"/opt/a\"b/gamepad-osk"`,
+		`/opt/a\b c/gamepad-osk`:       `"/opt/a\\b c/gamepad-osk"`,
+		"/home/o'neil/bin/gamepad-osk": `"/home/o'neil/bin/gamepad-osk"`,
+	} {
+		if got := systemdExecPath(in); got != want {
+			t.Errorf("systemdExecPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Packages (AUR) own the /usr/lib copies. --setup --install as root writes
@@ -244,6 +245,7 @@ func runDiagnose(configPath string) int {
 func runInstall(configPath string) int {
 	fmt.Printf("gamepad-osk v%s setup:\n", version)
 	fmt.Println()
+	failed := false // a file could not be written: exit 1
 
 	// 1. udev rules: the package's copy wins; else ours goes in /etc
 	switch {
@@ -251,17 +253,21 @@ func runInstall(configPath string) int {
 		fmt.Printf("  %-14s %s %s (installed by your package)\n", "udev rules", colorGreen("[✓]"), udevRulePkg)
 	case canWritePath(udevRuleEtc):
 		if writeSetupFile("udev rules", udevRuleEtc, udevRuleContent) {
+			// The rule is on disk: if udevd cannot load it now, it applies
+			// after a reboot or a replug, so this is a warning only
 			ctx := context.Background()
-			if out, err := exec.CommandContext(ctx, "udevadm", "control", "--reload-rules").CombinedOutput(); err != nil {
-				fmt.Printf("  %-14s %s %s\n", "udev reload", colorRed("[✗]"), string(out))
-			} else {
-				fmt.Printf("  %-14s %s\n", "udev reload", colorGreen("[✓]"))
+			for _, step := range []struct{ label, arg string }{
+				{"udev reload", "control --reload-rules"}, {"udev trigger", "trigger"},
+			} {
+				if out, err := exec.CommandContext(ctx, "udevadm", strings.Fields(step.arg)...).CombinedOutput(); err != nil { //nolint:gosec // G204: constant arguments
+					fmt.Printf("  %-14s %s %s\n", step.label, colorYellow("[!]"), strings.TrimSpace(string(out)))
+					fmt.Printf("  %-14s   %s\n", "", colorDim("The rule applies after a reboot or a replug."))
+				} else {
+					fmt.Printf("  %-14s %s\n", step.label, colorGreen("[✓]"))
+				}
 			}
-			if out, err := exec.CommandContext(ctx, "udevadm", "trigger").CombinedOutput(); err != nil {
-				fmt.Printf("  %-14s %s %s\n", "udev trigger", colorRed("[✗]"), string(out))
-			} else {
-				fmt.Printf("  %-14s %s\n", "udev trigger", colorGreen("[✓]"))
-			}
+		} else {
+			failed = true
 		}
 	case firstExisting(udevRuleEtc) != "":
 		fmt.Printf("  %-14s %s %s (installed; run with sudo to update)\n", "udev rules", colorGreen("[✓]"), udevRuleEtc)
@@ -284,15 +290,18 @@ func runInstall(configPath string) int {
 		dir := filepath.Dir(userCfg)
 		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: config dir
 			fmt.Printf("  %-14s %s %v\n", "config", colorRed("[✗]"), err)
+			failed = true
 		} else {
 			cfg := DefaultConfig()
 			f, err := os.Create(userCfg) //nolint:gosec // G304: user config path
 			if err != nil {
 				fmt.Printf("  %-14s %s %v\n", "config", colorRed("[✗]"), err)
+				failed = true
 			} else {
 				defer func() { _ = f.Close() }()
 				if err := writeINI(f, cfg); err != nil {
 					fmt.Printf("  %-14s %s %v\n", "config", colorRed("[✗]"), err)
+					failed = true
 				} else {
 					fmt.Printf("  %-14s %s %s\n", "config", colorGreen("[✓]"), userCfg)
 				}
@@ -307,18 +316,18 @@ func runInstall(configPath string) int {
 	if exe, err := os.Executable(); err == nil {
 		exePath = exe
 	}
-	unit := fmt.Sprintf(systemdServiceTemplate, exePath)
+	unit := fmt.Sprintf(systemdServiceTemplate, systemdExecPath(exePath))
 	switch system := firstExisting(serviceUnitPkg, serviceUnitEtc); {
 	case !hasSystemd():
 		fmt.Printf("  %-14s %s not detected\n", "systemd", colorDim("[~]"))
 	case system == serviceUnitPkg:
 		fmt.Printf("  %-14s %s %s (installed by your package)\n", "systemd", colorGreen("[✓]"), serviceUnitPkg)
 	case geteuid() == 0:
-		writeSetupFile("systemd", serviceUnitEtc, unit)
+		failed = !writeSetupFile("systemd", serviceUnitEtc, unit) || failed
 	case system != "":
 		fmt.Printf("  %-14s %s %s (installed system-wide)\n", "systemd", colorGreen("[✓]"), system)
 	default:
-		writeSetupFile("systemd", systemdUserServicePath(), unit)
+		failed = !writeSetupFile("systemd", systemdUserServicePath(), unit) || failed
 	}
 
 	// 4. group membership hint. Under sudo, device access says nothing
@@ -340,8 +349,22 @@ func runInstall(configPath string) int {
 	}
 
 	fmt.Println()
+	if failed {
+		fmt.Println(colorRed("  Setup finished with errors: see [✗] above."))
+		return 1
+	}
 	fmt.Println(colorGreen("  Setup complete."))
 	return 0
+}
+
+// systemdExecPath makes a binary path safe for ExecStart: systemd expands
+// % specifiers and $ variables, and splits words on spaces.
+func systemdExecPath(p string) string {
+	p = strings.NewReplacer("%", "%%", "$", "$$").Replace(p)
+	if !strings.ContainsAny(p, " \t\"'\\") {
+		return p
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(p) + `"`
 }
 
 func systemdUserServicePath() string {
