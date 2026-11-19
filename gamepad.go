@@ -17,6 +17,9 @@ const (
 	evdevEV_KEY = 0x01
 	evdevEV_ABS = 0x03
 	evdevEV_SYN = 0x00
+	synDropped  = 0x03 // synReport (0x00) is in injector.go
+	// EVIOCGKEY(96): the pressed-key bitmap, KEY_MAX 0x2ff = 768 bits
+	eviocgkey96 = 0x80604518
 
 	// Standard evdev button codes
 	BTN_SOUTH      = 0x130 // 304 - Xbox A, PS Cross
@@ -152,6 +155,7 @@ type GamepadReader struct {
 	// reconnect loop retries every 2s with the same error (e.g. no gamepad
 	// plugged in). Cleared on successful open.
 	lastOpenErr string
+	dropped     bool // SYN_DROPPED seen: skip events until the next SYN_REPORT
 }
 
 func NewGamepadReader(config Config) *GamepadReader {
@@ -442,6 +446,74 @@ func (gp *GamepadReader) autoDetect() string {
 	return ""
 }
 
+// feed handles one raw evdev event. The kernel sends SYN_DROPPED when its
+// buffer overflowed: what follows up to the next SYN_REPORT is partial, so
+// it is skipped and the pad's real state is read instead.
+func (gp *GamepadReader) feed(evType, evCode uint16, value int32) []Action {
+	if evType == evdevEV_SYN && evCode == synDropped {
+		gp.dropped = true
+		return nil
+	}
+	if gp.dropped {
+		if evType == evdevEV_SYN && evCode == synReport {
+			gp.dropped = false
+			return gp.resync()
+		}
+		return nil
+	}
+	if a := gp.handleEvent(evType, evCode, value); a.Type != ActionNone {
+		return []Action{a}
+	}
+	return nil
+}
+
+// resync reads the pad's real button and axis state after SYN_DROPPED.
+// Without a device (or if the ioctl fails) every button counts as released.
+func (gp *GamepadReader) resync() []Action {
+	log.Printf("Gamepad events dropped by the kernel, reading the pad state again")
+	var keys [96]byte
+	abs := make(map[uint16]int32)
+	if gp.fd == nil {
+		return gp.resyncFrom(keys[:], abs)
+	}
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), eviocgkey96,
+		uintptr(unsafe.Pointer(&keys[0]))) //nolint:gosec // G103: ioctl requires pointer to kernel struct
+	if errno != 0 {
+		keys = [96]byte{}
+	}
+	for _, axis := range []uint16{ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ, ABS_HAT0X, ABS_HAT0Y} {
+		var info [6]int32
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(),
+			uintptr(eviocgabsBase+uint32(axis)), //nolint:gosec // G115: axis fits in uint32
+			uintptr(unsafe.Pointer(&info[0])))   //nolint:gosec // G103: ioctl requires pointer to kernel struct
+		if errno == 0 {
+			abs[axis] = info[0]
+		}
+	}
+	return gp.resyncFrom(keys[:], abs)
+}
+
+// resyncFrom releases every button the reader holds that keys (an
+// EVIOCGKEY bitmap) shows released, and feeds each axis its current value.
+// Buttons pressed during the gap are not pressed here: their press is lost.
+func (gp *GamepadReader) resyncFrom(keys []byte, abs map[uint16]int32) []Action {
+	var actions []Action
+	add := func(a Action) {
+		if a.Type != ActionNone {
+			actions = append(actions, a)
+		}
+	}
+	for code, held := range gp.btnHeld {
+		if held && (int(code/8) >= len(keys) || keys[code/8]&(1<<(code%8)) == 0) {
+			add(gp.handleButton(code, 0))
+		}
+	}
+	for axis, v := range abs {
+		add(gp.handleAxis(axis, v))
+	}
+	return actions
+}
+
 // readAxisInfo queries EVIOCGABS for each axis to get the actual min/max range.
 // This handles controllers with different ranges (DS4/DS5: 0-255, Xbox: -32768 to 32767).
 func (gp *GamepadReader) readAxisInfo() {
@@ -531,9 +603,7 @@ func (gp *GamepadReader) ReadEvents() []Action {
 		evCode := binary.LittleEndian.Uint16(buf[18:])
 		evValue := int32(binary.LittleEndian.Uint32(buf[20:])) //nolint:gosec // G115: evdev value fits in int32
 
-		if a := gp.handleEvent(evType, evCode, evValue); a.Type != ActionNone {
-			actions = append(actions, a)
-		}
+		actions = append(actions, gp.feed(evType, evCode, evValue)...)
 	}
 
 	// Adaptive repeat (stick + d-pad independently)

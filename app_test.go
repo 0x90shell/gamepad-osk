@@ -97,3 +97,36 @@ func TestChooseVideoDriver(t *testing.T) {
 		}
 	}
 }
+
+// A pad that disconnects mid-hold never sends its releases: repeat, a held
+// Shift and the accent popup end; toggled keys stay.
+func TestReleasePadHolds(t *testing.T) {
+	app := &App{visible: true, running: true}
+	kb := NewKeyboardState(LayoutQWERTY)
+	app.startRepeat(ActionBackspace)
+	kb.ShiftHeld, kb.ShiftActive = true, true
+	kb.AccentPopup = &AccentPopupState{Accents: accentE}
+	kb.SkipPress = true
+	kb.CapsActive, kb.CtrlActive = true, true
+
+	app.releasePadHolds(kb, nil)
+	if app.repeatAction != ActionNone {
+		t.Errorf("repeat still %v", app.repeatAction)
+	}
+	if kb.ShiftHeld || kb.ShiftActive {
+		t.Error("held Shift not released")
+	}
+	if kb.AccentPopup != nil || kb.SkipPress {
+		t.Errorf("popup %v, skip %v: want closed, no skip", kb.AccentPopup, kb.SkipPress)
+	}
+	if !kb.CapsActive || !kb.CtrlActive {
+		t.Error("toggled Caps or Ctrl was cleared")
+	}
+
+	// Shift toggled with the Shift key (not held) stays on
+	kb.ShiftActive, kb.ShiftHeld = true, false
+	app.releasePadHolds(kb, nil)
+	if !kb.ShiftActive {
+		t.Error("toggled Shift was cleared")
+	}
+}

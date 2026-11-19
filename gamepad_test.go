@@ -1180,3 +1180,61 @@ func TestPressOnTrigger(t *testing.T) {
 		t.Errorf("DInput right stick on Z pressed: %v", got)
 	}
 }
+
+// SYN_DROPPED: events up to the next SYN_REPORT are skipped, then the real
+// state releases what the reader still held (here X with Backspace repeat,
+// whose release was in the dropped part). With no device, resync counts
+// every button as released.
+func TestSynDroppedResync(t *testing.T) {
+	gp := newTestGamepad()
+	backspace := buttonTable(isSwapXY(gp.config.Gamepad))["x"].EvdevBtn
+	gp.handleButton(backspace, 1)
+	var types []ActionType
+	for _, ev := range []struct {
+		typ, code uint16
+		v         int32
+	}{
+		{evdevEV_SYN, synDropped, 0},
+		{evdevEV_KEY, backspace, 0}, // partial: skipped
+		{evdevEV_KEY, BTN_SOUTH, 1}, // partial: skipped
+		{evdevEV_SYN, synReport, 0},
+	} {
+		for _, a := range gp.feed(ev.typ, ev.code, ev.v) {
+			types = append(types, a.Type)
+		}
+	}
+	if !slices.Equal(types, []ActionType{ActionBackspaceRelease}) {
+		t.Errorf("after SYN_DROPPED: %v, want only the Backspace release", types)
+	}
+	if slices.Contains(types, ActionPressStart) {
+		t.Errorf("a press from the dropped part was handled: %v", types)
+	}
+	if gp.btnHeld[backspace] || gp.dropped {
+		t.Error("held state not cleared")
+	}
+	// Events after the resync are handled normally
+	if got := gp.feed(evdevEV_KEY, BTN_SOUTH, 1); len(got) != 1 || got[0].Type != ActionPressStart {
+		t.Errorf("after resync: %v, want press start", got)
+	}
+}
+
+// resyncFrom feeds each axis its current value: RT at rest ends Enter.
+func TestResyncReleasesTrigger(t *testing.T) {
+	gp := newTestGamepad()
+	gp.handleAxis(ABS_RZ, 200)
+	got := gp.resyncFrom(make([]byte, 96), map[uint16]int32{ABS_RZ: 0})
+	if len(got) != 1 || got[0].Type != ActionEnterRelease || gp.trigActive[ABS_RZ] {
+		t.Errorf("RT at rest: %v, active %v; want Enter release", got, gp.trigActive[ABS_RZ])
+	}
+}
+
+// resyncFrom keeps a button the kernel still shows pressed.
+func TestResyncKeepsHeldButton(t *testing.T) {
+	gp := newTestGamepad()
+	gp.handleButton(BTN_TR, 1)
+	keys := make([]byte, 96)
+	keys[BTN_TR/8] |= 1 << (BTN_TR % 8)
+	if got := gp.resyncFrom(keys, nil); len(got) != 0 || !gp.btnHeld[BTN_TR] {
+		t.Errorf("held RB: %v, held %v; want no action, still held", got, gp.btnHeld[BTN_TR])
+	}
+}
