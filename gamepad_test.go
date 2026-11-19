@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -618,7 +619,7 @@ func TestDisconnectResetsState(t *testing.T) {
 	gp.navX.Direction = 1
 	gp.dpadY.Direction = -1
 	gp.ltActive = true
-	gp.rtActive = true
+	gp.trigActive[ABS_RZ] = true
 	gp.btnHeld[BTN_SOUTH] = true
 	gp.grabbed = true
 
@@ -635,7 +636,7 @@ func TestDisconnectResetsState(t *testing.T) {
 	gp.btnHeld = make(map[uint16]bool)
 	gp.axisState = make(map[uint16]int32)
 	gp.ltActive = false
-	gp.rtActive = false
+	gp.trigActive = make(map[uint16]bool)
 
 	if gp.mouseX != 0 || gp.mouseY != 0 {
 		t.Error("mouse should be zeroed after disconnect")
@@ -643,7 +644,7 @@ func TestDisconnectResetsState(t *testing.T) {
 	if gp.navX.Direction != 0 || gp.dpadY.Direction != 0 {
 		t.Error("nav axes should be zeroed after disconnect")
 	}
-	if gp.ltActive || gp.rtActive {
+	if gp.ltActive || gp.trigActive[ABS_RZ] {
 		t.Error("trigger state should be cleared after disconnect")
 	}
 	if len(gp.btnHeld) != 0 {
@@ -962,5 +963,220 @@ func TestComboFollowsSwapXY(t *testing.T) {
 		if fires(gp, step.notXCode) {
 			t.Errorf("%s: x+start fired on %#x (that is y)", step.pad.Name, step.notXCode)
 		}
+	}
+}
+
+// triggerClickConfig puts both clicks on the triggers, with shift and enter
+// moved off them so nothing clashes.
+func triggerClickConfig() Config {
+	cfg := DefaultConfig()
+	b := &cfg.Gamepad.Buttons
+	b.LeftClick, b.RightClick, b.Enter, b.Shift = "rt", "lt", "rb", "select"
+	return cfg
+}
+
+func TestTriggerClicks_ActionMap(t *testing.T) {
+	m := BuildActionMap(triggerClickConfig().Gamepad)
+	checks := []struct {
+		name      string
+		got, want ActionType
+	}{
+		{"axis RZ", m.AxisActions[ABS_RZ], ActionLeftClick},
+		{"axis RZ release", m.AxisRelease[ABS_RZ], ActionLeftClickRelease},
+		{"axis Z", m.AxisActions[ABS_Z], ActionRightClick},
+		{"axis Z release", m.AxisRelease[ABS_Z], ActionRightClickRelease},
+		{"button TR2", m.BtnPress[BTN_TR2], ActionLeftClick},
+		{"button TR2 release", m.BtnRelease[BTN_TR2], ActionLeftClickRelease},
+		{"button TL2", m.BtnPress[BTN_TL2], ActionRightClick},
+		{"button TL2 release", m.BtnRelease[BTN_TL2], ActionRightClickRelease},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
+		}
+	}
+}
+
+// Each trigger keeps its own held state: holding one never hides the
+// other's press or release.
+func TestTriggerClicks_AnalogIndependent(t *testing.T) {
+	gp := NewGamepadReader(triggerClickConfig())
+	gp.initButtonMap()
+	steps := []struct {
+		code  uint16
+		value int32
+		want  ActionType
+	}{
+		{ABS_RZ, 200, ActionLeftClick},
+		{ABS_Z, 200, ActionRightClick},
+		{ABS_RZ, 255, ActionNone}, // still held
+		{ABS_Z, 0, ActionRightClickRelease},
+		{ABS_RZ, 250, ActionNone}, // still held, no second click
+		{ABS_RZ, 0, ActionLeftClickRelease},
+	}
+	for i, s := range steps {
+		if a := gp.handleAxis(s.code, s.value); a.Type != s.want {
+			t.Errorf("step %d: axis 0x%x = %d: %v, want %v", i, s.code, s.value, a.Type, s.want)
+		}
+	}
+}
+
+func TestTriggerClicks_Digital(t *testing.T) {
+	gp := newDInputGamepad(triggerClickConfig())
+	steps := []struct {
+		code  uint16
+		value int32
+		want  ActionType
+	}{
+		{BTN_TR2, 1, ActionLeftClick},
+		{BTN_TR2, 0, ActionLeftClickRelease},
+		{BTN_TL2, 1, ActionRightClick},
+		{BTN_TL2, 0, ActionRightClickRelease},
+	}
+	for _, s := range steps {
+		if a := gp.handleButton(s.code, s.value); a.Type != s.want {
+			t.Errorf("button 0x%x value %d = %v, want %v", s.code, s.value, a.Type, s.want)
+		}
+	}
+	// Z/RZ are the right stick on this layout: no click from the stick
+	if a := gp.handleAxis(ABS_RZ, 255); a.Type == ActionLeftClick {
+		t.Error("ABS_RZ on DInput pad fired ActionLeftClick")
+	}
+}
+
+// Two non-shift actions on the two analog triggers (here the defaults'
+// space and enter) no longer share one held flag.
+func TestTriggerActions_TwoAnalogTriggers(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.Buttons.Shift, cfg.Gamepad.Buttons.Space = "y", "lt"
+	gp := NewGamepadReader(cfg)
+	gp.initButtonMap()
+	if a := gp.handleAxis(ABS_RZ, 200); a.Type != ActionEnter {
+		t.Fatalf("RT = %v, want ActionEnter", a.Type)
+	}
+	if a := gp.handleAxis(ABS_Z, 200); a.Type != ActionSpace {
+		t.Errorf("LT with RT held = %v, want ActionSpace", a.Type)
+	}
+}
+
+// Trigger axes are scaled by their own range: 0-1, 0-255 and 0-32767 all
+// click at the same point of travel.
+func TestTriggerClicks_AxisRanges(t *testing.T) {
+	for _, max := range []int32{1, 255, 32767} {
+		gp := NewGamepadReader(triggerClickConfig())
+		gp.axisRanges[ABS_RZ] = axisRange{min: 0, max: max}
+		gp.initButtonMap()
+		if a := gp.handleAxis(ABS_RZ, max/5); a.Type != ActionNone && max > 1 {
+			t.Errorf("0-%d: 20%% travel = %v, want no click", max, a.Type)
+		}
+		if a := gp.handleAxis(ABS_RZ, max); a.Type != ActionLeftClick {
+			t.Errorf("0-%d: full travel = %v, want ActionLeftClick", max, a.Type)
+		}
+		if a := gp.handleAxis(ABS_RZ, 0); a.Type != ActionLeftClickRelease {
+			t.Errorf("0-%d: released = %v, want ActionLeftClickRelease", max, a.Type)
+		}
+	}
+}
+
+// DS3, DS4 and DualSense send a trigger as ABS_RZ and BTN_TR2 at once: one
+// pull is one action. A pad with button triggers only keeps them.
+func TestTriggerSentBothWays(t *testing.T) {
+	type step struct {
+		btn  bool
+		code uint16
+		v    int32
+	}
+	pull := []step{{true, BTN_TR2, 1}, {false, ABS_RZ, 200}, {false, ABS_RZ, 0}, {true, BTN_TR2, 0}}
+	run := func(gp *GamepadReader, steps []step) []ActionType {
+		var got []ActionType
+		for _, s := range steps {
+			var a Action
+			if s.btn {
+				a = gp.handleButton(s.code, s.v)
+			} else {
+				a = gp.handleAxis(s.code, s.v)
+			}
+			if a.Type != ActionNone {
+				got = append(got, a.Type)
+			}
+		}
+		return got
+	}
+
+	gp := NewGamepadReader(DefaultConfig())
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ)
+	if got, want := run(gp, pull), []ActionType{ActionEnter, ActionEnterRelease}; !slices.Equal(got, want) {
+		t.Errorf("DS pad, enter = rt: %v, want %v", got, want)
+	}
+	gp = NewGamepadReader(triggerClickConfig())
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ)
+	if got, want := run(gp, pull), []ActionType{ActionLeftClick, ActionLeftClickRelease}; !slices.Equal(got, want) {
+		t.Errorf("DS pad, left_click = rt: %v, want %v", got, want)
+	}
+
+	// xpad triggers_to_buttons, fight sticks: no trigger axes, buttons only
+	gp = NewGamepadReader(DefaultConfig())
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_RX, ABS_RY)
+	buttons := []step{{true, BTN_TR2, 1}, {true, BTN_TR2, 0}, {true, BTN_TL2, 1}, {true, BTN_TL2, 0}}
+	want := []ActionType{ActionEnter, ActionEnterRelease, ActionShiftOn, ActionShiftOff}
+	if got := run(gp, buttons); !slices.Equal(got, want) {
+		t.Errorf("button triggers: %v, want %v", got, want)
+	}
+}
+
+// press = lt: LT gives press start and press like A does (the app does the
+// hold timing), A is free, and a pad sending LT both ways presses once.
+func TestPressOnTrigger(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gamepad.Buttons.Press, cfg.Gamepad.Buttons.Shift = "lt", "select"
+	if issues := checkConfig(cfg); issues != nil {
+		t.Fatalf("press = lt: %q", issues)
+	}
+	type step struct {
+		btn  bool
+		code uint16
+		v    int32
+	}
+	run := func(gp *GamepadReader, steps []step) []ActionType {
+		var got []ActionType
+		for _, s := range steps {
+			var a Action
+			if s.btn {
+				a = gp.handleButton(s.code, s.v)
+			} else {
+				a = gp.handleAxis(s.code, s.v)
+			}
+			got = append(got, a.Type)
+		}
+		return got
+	}
+	press := []ActionType{ActionPressStart, ActionPress}
+
+	// Xbox (xpad): LT is an axis only
+	gp := NewGamepadReader(cfg)
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ)
+	if got := run(gp, []step{{false, ABS_Z, 200}, {false, ABS_Z, 0}}); !slices.Equal(got, press) {
+		t.Errorf("analog LT: %v, want %v", got, press)
+	}
+	if got := run(gp, []step{{true, BTN_SOUTH, 1}, {true, BTN_SOUTH, 0}}); !slices.Equal(got, []ActionType{ActionNone, ActionNone}) {
+		t.Errorf("A with press = lt: %v, want nothing", got)
+	}
+
+	// DS pad: LT as axis and button at once, one press
+	gp = NewGamepadReader(cfg)
+	simulateOpen(gp, ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ)
+	both := []step{{true, BTN_TL2, 1}, {false, ABS_Z, 200}, {false, ABS_Z, 0}, {true, BTN_TL2, 0}}
+	want := []ActionType{ActionNone, ActionPressStart, ActionPress, ActionNone}
+	if got := run(gp, both); !slices.Equal(got, want) {
+		t.Errorf("DS LT: %v, want %v", got, want)
+	}
+
+	// DInput: LT is a button, Z is the right stick
+	gp = newDInputGamepad(cfg)
+	if got := run(gp, []step{{true, BTN_TL2, 1}, {true, BTN_TL2, 0}}); !slices.Equal(got, press) {
+		t.Errorf("digital LT: %v, want %v", got, press)
+	}
+	if got := run(gp, []step{{false, ABS_Z, 255}, {false, ABS_Z, 128}}); slices.Contains(got, ActionPressStart) {
+		t.Errorf("DInput right stick on Z pressed: %v", got)
 	}
 }

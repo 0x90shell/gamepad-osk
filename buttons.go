@@ -84,7 +84,15 @@ func BuildActionMap(cfg GamepadConfig) ActionMap {
 	}
 
 	b := cfg.Buttons
-	setBtn(b.Press, ActionPress) // special: handled as press_start/press
+	// Press: the reader turns the press button into press start and press
+	// (the app does the hold timing); a trigger axis does the same on its
+	// edges. Digital triggers go through the press button too.
+	if info, ok := table[b.Press]; ok && info.IsAxis {
+		axes[info.EvdevAxis] = ActionPressStart
+		axesRelease[info.EvdevAxis] = ActionPress
+	} else {
+		setBtn(b.Press, ActionPress)
+	}
 	setBtn(b.Close, ActionClose)
 	setBtn(b.Backspace, ActionBackspace)
 	setBtn(b.Space, ActionSpace)
@@ -131,14 +139,27 @@ func BuildActionMap(cfg GamepadConfig) ActionMap {
 		release[info.EvdevBtn] = ActionShiftOff
 	}
 
-	// Mouse clicks: need both press and release for hold/drag
-	if info, ok := table[b.LeftClick]; ok && !info.IsAxis {
-		press[info.EvdevBtn] = ActionLeftClick
-		release[info.EvdevBtn] = ActionLeftClickRelease
-	}
-	if info, ok := table[b.RightClick]; ok && !info.IsAxis {
-		press[info.EvdevBtn] = ActionRightClick
-		release[info.EvdevBtn] = ActionRightClickRelease
+	// Mouse clicks: need both press and release for hold/drag. A trigger
+	// gets the axis and, for digital triggers, the button.
+	for _, c := range []struct {
+		name     string
+		down, up ActionType
+	}{
+		{b.LeftClick, ActionLeftClick, ActionLeftClickRelease},
+		{b.RightClick, ActionRightClick, ActionRightClickRelease},
+	} {
+		info, ok := table[c.name]
+		if !ok {
+			continue
+		}
+		if info.IsAxis {
+			axes[info.EvdevAxis] = c.down
+			axesRelease[info.EvdevAxis] = c.up
+		}
+		if info.EvdevBtn != 0 {
+			press[info.EvdevBtn] = c.down
+			release[info.EvdevBtn] = c.up
+		}
 	}
 
 	return ActionMap{BtnPress: press, BtnRelease: release, AxisActions: axes, AxisRelease: axesRelease}

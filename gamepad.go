@@ -117,8 +117,8 @@ type GamepadReader struct {
 	dpadY      NavAxis
 	mouseX     float64
 	mouseY     float64
-	ltActive   bool
-	rtActive   bool
+	ltActive   bool                 // shift axis held
+	trigActive map[uint16]bool      // other trigger axes held, per axis
 	axisRanges map[uint16]axisRange // per-axis min/max from EVIOCGABS
 	actionMap  ActionMap
 	pressBtn   uint16 // "press" button evdev code
@@ -166,9 +166,10 @@ func NewGamepadReader(config Config) *GamepadReader {
 			ABS_Z:  {0, 255},
 			ABS_RZ: {0, 255},
 		},
-		btnHeld:   make(map[uint16]bool),
-		axisState: make(map[uint16]int32),
-		hasAxis:   make(map[uint16]bool),
+		btnHeld:    make(map[uint16]bool),
+		axisState:  make(map[uint16]int32),
+		trigActive: make(map[uint16]bool),
+		hasAxis:    make(map[uint16]bool),
 
 		swapXYSetting: config.Gamepad.SwapXY,
 	}
@@ -236,7 +237,7 @@ func (gp *GamepadReader) initButtonMap() {
 	table := buttonTable(isSwapXY(gp.config.Gamepad))
 
 	gp.pressBtn = BTN_SOUTH
-	if info, ok := table[gp.config.Gamepad.Buttons.Press]; ok && !info.IsAxis {
+	if info, ok := table[gp.config.Gamepad.Buttons.Press]; ok {
 		gp.pressBtn = info.EvdevBtn
 	}
 	// Only an axis-mapped shift gets hold-on-axis handling. A button-mapped
@@ -253,6 +254,18 @@ func (gp *GamepadReader) initButtonMap() {
 			delete(gp.actionMap.AxisRelease, ax)
 		}
 		gp.shiftAxis = absNone
+	} else {
+		// DS3, DS4 and DualSense send each trigger as an axis and as a
+		// button: the axis alone drives it, or every action fires twice.
+		for _, t := range []struct{ axis, btn uint16 }{{ABS_Z, BTN_TL2}, {ABS_RZ, BTN_TR2}} {
+			if gp.hasAxis[t.axis] {
+				delete(gp.actionMap.BtnPress, t.btn)
+				delete(gp.actionMap.BtnRelease, t.btn)
+				if gp.pressBtn == t.btn {
+					gp.pressBtn = absNone
+				}
+			}
+		}
 	}
 }
 
@@ -508,7 +521,7 @@ func (gp *GamepadReader) ReadEvents() []Action {
 				gp.btnHeld = make(map[uint16]bool)
 				gp.axisState = make(map[uint16]int32)
 				gp.ltActive = false
-				gp.rtActive = false
+				gp.trigActive = make(map[uint16]bool)
 				gp.comboFirstPress = time.Time{}
 				gp.comboFired = false
 			}
@@ -682,11 +695,11 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 				}
 			} else {
 				// Other triggers: fire once on press (edge detection)
-				if active && !gp.rtActive {
-					gp.rtActive = true
+				if active && !gp.trigActive[code] {
+					gp.trigActive[code] = true
 					return Action{Type: action}
-				} else if !active && gp.rtActive {
-					gp.rtActive = false
+				} else if !active && gp.trigActive[code] {
+					gp.trigActive[code] = false
 					if releaseAction, ok := gp.actionMap.AxisRelease[code]; ok {
 						return Action{Type: releaseAction}
 					}

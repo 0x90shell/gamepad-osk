@@ -1850,13 +1850,13 @@ func TestButtonClashes(t *testing.T) {
 	}{
 		{"defaults", func(*Config) {}, nil},
 		{"two actions on one button", func(c *Config) { c.Gamepad.Buttons.Close = "a" },
-			[]string{"press and close are both on a, only one works"}},
+			[]string{"press and close are both on a"}},
 		{"action on the caps stick click", func(c *Config) { c.Gamepad.Buttons.Space = "l3" },
-			[]string{"Caps Lock (stick click) and space are both on l3, only one works"}},
+			[]string{"Caps Lock (stick click) and space are both on l3"}},
 		{"mouse_stick left swaps the stick clicks", func(c *Config) {
 			c.Gamepad.MouseStick = "left"
 			c.Gamepad.Buttons.Space = "l3"
-		}, []string{"left click (stick click) and space are both on l3, only one works"}},
+		}, []string{"left click (stick click) and space are both on l3"}},
 		{"position_toggle disabled is no clash", func(c *Config) { c.Gamepad.Buttons.PositionToggle = "" }, nil},
 		{"swapped pair is fine", func(c *Config) {
 			c.Gamepad.Buttons.Backspace, c.Gamepad.Buttons.Space = "y", "x"
@@ -1869,16 +1869,55 @@ func TestButtonClashes(t *testing.T) {
 			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
 		}
 	}
-	// A clash warns at start but changes nothing (which one the user meant
-	// is unknown).
-	c := DefaultConfig()
-	c.Gamepad.Buttons.Close = "a"
-	var buf strings.Builder
-	log.SetOutput(&buf)
-	ValidateConfig(&c)
-	log.SetOutput(os.Stderr)
-	if !strings.Contains(buf.String(), "press and close are both on a") || c.Gamepad.Buttons.Close != "a" {
-		t.Errorf("clash: log %q, close = %q", buf.String(), c.Gamepad.Buttons.Close)
+	// A clash puts back every button, since which action the user meant is
+	// unknown. The warning names the clash and the buttons now in use.
+	def := DefaultConfig().Gamepad.Buttons
+	clash := []struct {
+		name string
+		set  func(*Config)
+		want string
+	}{
+		{"two actions on one button", func(c *Config) {
+			c.Gamepad.Buttons.Close, c.Gamepad.Buttons.Space = "a", "lb"
+		}, "press and close are both on a"},
+		{"click on the enter trigger", func(c *Config) {
+			c.Gamepad.Buttons.LeftClick, c.Gamepad.Buttons.Backspace = "rt", "y"
+		}, "enter and left_click are both on rt"},
+		{"action on a stick click", func(c *Config) { c.Gamepad.Buttons.Close = "r3" },
+			"left click (stick click) and close are both on r3"},
+	}
+	for _, tt := range clash {
+		c := DefaultConfig()
+		tt.set(&c)
+		var buf strings.Builder
+		log.SetOutput(&buf)
+		ValidateConfig(&c)
+		log.SetOutput(os.Stderr)
+		if c.Gamepad.Buttons != def {
+			t.Errorf("%s: buttons = %+v, want the defaults", tt.name, c.Gamepad.Buttons)
+		}
+		got := buf.String()
+		if !strings.Contains(got, tt.want) || !strings.Contains(got, "using the default buttons") ||
+			!strings.Contains(got, "left_click = rb") {
+			t.Errorf("%s: log %q", tt.name, got)
+		}
+		if strings.Count(got, "Warning:") != 1 {
+			t.Errorf("%s: want one warning, log %q", tt.name, got)
+		}
+	}
+	// The defaults never clash with either stick, so the revert always ends
+	// in a working layout.
+	for _, stick := range []string{"right", "left"} {
+		c := DefaultConfig()
+		c.Gamepad.MouseStick = stick
+		if got := buttonClashes(c); got != nil {
+			t.Errorf("defaults with mouse_stick=%s clash: %q", stick, got)
+		}
+	}
+	// Clicks on the triggers with shift and enter moved off them is valid.
+	c := triggerClickConfig()
+	if issues := checkConfig(c); issues != nil {
+		t.Errorf("clicks on triggers: %q", issues)
 	}
 }
 
