@@ -417,6 +417,7 @@ func (app *App) Run() error {
 			app.handleAction(action, kb, inj, rend)
 		}
 		if prevFd >= 0 && gamepad.Fd() < 0 {
+			app.releasePadHolds(kb, inj)
 			rend.Flash("Controller lost")
 		}
 
@@ -674,6 +675,24 @@ func (app *App) startRepeat(action ActionType) {
 	app.repeatAction = action
 	app.repeatStart = time.Now()
 	app.repeatInitial = true
+}
+
+// releasePadHolds lets go of everything a held pad button or trigger was
+// keeping down, for a pad that disconnects mid-hold: its releases never
+// arrive. Key repeat, a held Shift, mouse buttons, a pending long press and
+// the accent popup end; toggled keys (Caps, sticky modifiers, Alt-Tab) stay.
+func (app *App) releasePadHolds(kb *KeyboardState, inj *Injector) {
+	app.stopRepeat()
+	if kb.ShiftHeld {
+		kb.ShiftHeld = false
+		kb.ShiftActive = false
+	}
+	kb.CloseAccentPopup()
+	kb.SkipPress = false
+	if inj != nil {
+		inj.ClickMouse(0x110, false) // BTN_LEFT release
+		inj.ClickMouse(0x111, false) // BTN_RIGHT release
+	}
 }
 
 func (app *App) stopRepeat() {
