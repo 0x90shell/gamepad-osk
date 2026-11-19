@@ -1,12 +1,14 @@
 package main //nolint:revive // main package needs no doc comment
 
 import (
+	"errors"
 	"log"
 	"os"
 	"runtime"
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,7 +28,7 @@ func init() {
 
 type App struct {
 	config        Config
-	running       bool
+	running       atomic.Bool // set from the signal handler goroutine
 	visible       bool
 	daemon        bool
 	togglePending bool
@@ -287,6 +289,11 @@ func (app *App) Run() error {
 		}
 	})
 	if err := ipc.Start(); err != nil {
+		if errors.Is(err, errInstanceRunning) {
+			// Lost a start race with another instance: two keyboards would
+			// fight over the pad, and this one's exit would end --toggle
+			return errors.New("another instance is already running")
+		}
 		log.Printf("Warning: IPC server failed: %v", err)
 	}
 	defer ipc.Stop()
@@ -325,7 +332,7 @@ func (app *App) Run() error {
 		SaveSensitivity(cfg.Mouse.Sensitivity)
 	}
 
-	app.running = true
+	app.running.Store(true)
 
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
@@ -341,7 +348,7 @@ func (app *App) Run() error {
 		// Layer-shell: first frame renders after configure arrives via SDL event pump
 	}
 
-	for app.running {
+	for app.running.Load() {
 		// Handle toggle
 		app.lock.Lock()
 		if app.togglePending {
@@ -407,7 +414,7 @@ func (app *App) Run() error {
 		// Process SDL3 window events
 		for evType, ok := SDL3PollEvent(); ok; evType, ok = SDL3PollEvent() {
 			if evType == SDL_EVENT_QUIT {
-				app.running = false
+				app.running.Store(false)
 			}
 		}
 
@@ -648,7 +655,7 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 			return
 		}
 		app.stopRepeat()
-		app.running = false
+		app.running.Store(false)
 		return
 	}
 }
