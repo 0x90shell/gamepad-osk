@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // Debugf logs only when --verbose is set
@@ -667,13 +668,72 @@ func saveValue(section, key, value string) {
 		saveFailed(path, err)
 		return
 	}
-	if err := os.WriteFile(path, edited, 0644); err != nil { //nolint:gosec // G306: config file, not secrets
+	if err := writeConfigFile(path, edited); err != nil {
 		saveFailed(path, err)
 		return
 	}
 	if created {
 		ownBySudoUser(path)
 	}
+}
+
+// writeConfigFile replaces a config file so that a crash or a full disk
+// leaves the old file or the new one, never a cut one: it writes a temp
+// file next to the real file and renames it over. It follows symlinks, so a
+// dotfile manager's link stays a link, and the new file keeps the old one's
+// mode and owner. A read-only file is not replaced. In a folder the app
+// cannot write to, it writes in place as before.
+func writeConfigFile(path string, data []byte) error {
+	target, err := filepath.EvalSymlinks(path)
+	if os.IsNotExist(err) {
+		target = path
+	} else if err != nil {
+		return err
+	}
+	mode := os.FileMode(0644)
+	old, statErr := os.Stat(target)
+	if statErr == nil {
+		mode = old.Mode().Perm()
+		if err := syscall.Access(target, 2); err != nil { // W_OK
+			return &os.PathError{Op: "open", Path: target, Err: err}
+		}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".*.tmp")
+	if err != nil {
+		return os.WriteFile(target, data, mode) //nolint:gosec // G306: config file, not secrets
+	}
+	name := tmp.Name()
+	defer func() {
+		if name != "" {
+			_ = os.Remove(name) // failed before the rename
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, mode); err != nil {
+		return err
+	}
+	if statErr == nil && geteuid() == 0 {
+		if st, ok := old.Sys().(*syscall.Stat_t); ok {
+			if err := lchown(name, int(st.Uid), int(st.Gid)); err != nil {
+				return err
+			}
+		}
+	}
+	if err := os.Rename(name, target); err != nil {
+		return err
+	}
+	name = ""
+	return nil
 }
 
 // checkINIEdit guards every save: the edited file must load to exactly

@@ -1693,10 +1693,20 @@ func TestSudoCreatesOwnedByUser(t *testing.T) {
 		if !slices.Equal(*chowned, want) {
 			t.Errorf("chowned %q, want %q", *chowned, want)
 		}
-		*chowned = nil
-		SaveTheme("cobalt") // existing file keeps its owner
-		if len(*chowned) != 0 {
-			t.Errorf("save to an existing file chowned %q", *chowned)
+		// Existing file keeps its owner: the save writes a temp file and
+		// gives it to the old file's owner (here the test user, since the
+		// fake lchown above changed nothing) before the rename
+		var kept []string
+		lchown = func(path string, uid, gid int) error {
+			if uid != os.Getuid() || gid != os.Getgid() || filepath.Dir(path) != filepath.Join(xdg, "gamepad-osk") {
+				t.Errorf("save to an existing file: lchown(%s, %d, %d), want the old owner in the same folder", path, uid, gid)
+			}
+			kept = append(kept, path)
+			return nil
+		}
+		SaveTheme("cobalt")
+		if len(kept) != 1 {
+			t.Errorf("save to an existing file: lchown calls %q, want one", kept)
 		}
 	})
 	t.Run("outside the sudo user's home", func(t *testing.T) {
@@ -1947,4 +1957,127 @@ func TestPanelAvoidAndBottomMargin(t *testing.T) {
 	if got := LoadConfig("").Window.Margin; got != 5 {
 		t.Errorf("margin and bottom_margin: margin %d, want 5 (margin wins)", got)
 	}
+}
+
+// writeConfigFile replaces the file through a temp file and a rename.
+func TestWriteConfigFile(t *testing.T) {
+	read := func(p string) string {
+		b, err := os.ReadFile(p) //nolint:gosec // G304: test path
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	noTemp := func(dir string) {
+		t.Helper()
+		if m, _ := filepath.Glob(filepath.Join(dir, ".*.tmp")); len(m) > 0 {
+			t.Errorf("temp files left: %v", m)
+		}
+	}
+
+	t.Run("keeps mode", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "config")
+		writeRaw(t, p, "old", 0640)
+		before, _ := os.Stat(p)
+		if err := writeConfigFile(p, []byte("new")); err != nil {
+			t.Fatal(err)
+		}
+		info, _ := os.Stat(p)
+		if read(p) != "new" || info.Mode().Perm() != 0640 {
+			t.Errorf("content %q mode %v, want new and 0640", read(p), info.Mode().Perm())
+		}
+		// A new inode: the file was replaced by a rename, never cut to
+		// zero and rewritten in place (a crash then left an empty config)
+		if os.SameFile(before, info) {
+			t.Error("the file was rewritten in place, not replaced")
+		}
+		noTemp(dir)
+	})
+
+	t.Run("symlink stays a link", func(t *testing.T) {
+		dir := t.TempDir()
+		realDir := filepath.Join(dir, "dotfiles")
+		target := filepath.Join(realDir, "config")
+		link := filepath.Join(dir, "config")
+		writeRaw(t, target, "old", 0600)
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeConfigFile(link, []byte("new")); err != nil {
+			t.Fatal(err)
+		}
+		if fi, _ := os.Lstat(link); fi.Mode()&os.ModeSymlink == 0 {
+			t.Error("the link was replaced by a file")
+		}
+		if read(target) != "new" {
+			t.Errorf("target %q, want new", read(target))
+		}
+		noTemp(realDir)
+	})
+
+	t.Run("read-only file is not replaced", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root can write a read-only file")
+		}
+		dir := t.TempDir()
+		p := filepath.Join(dir, "config")
+		writeRaw(t, p, "old", 0444)
+		if err := writeConfigFile(p, []byte("new")); err == nil {
+			t.Error("no error for a read-only file")
+		}
+		if read(p) != "old" {
+			t.Errorf("read-only file changed to %q", read(p))
+		}
+		noTemp(dir)
+	})
+
+	t.Run("read-only folder writes in place", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root can write a read-only folder")
+		}
+		dir := t.TempDir()
+		p := filepath.Join(dir, "config")
+		writeRaw(t, p, "old", 0644)
+		if err := os.Chmod(dir, 0555); err != nil { //nolint:gosec // G302: read-only test dir
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0755) }) //nolint:gosec // G302: restore test dir
+		if err := writeConfigFile(p, []byte("new")); err != nil {
+			t.Fatal(err)
+		}
+		if read(p) != "new" {
+			t.Errorf("content %q, want new", read(p))
+		}
+	})
+
+	t.Run("new file", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "config")
+		if err := writeConfigFile(p, []byte("new")); err != nil {
+			t.Fatal(err)
+		}
+		if read(p) != "new" {
+			t.Errorf("content %q, want new", read(p))
+		}
+	})
+
+	t.Run("under sudo the owner is kept", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "config")
+		writeRaw(t, p, "old", 0644)
+		oldEuid, oldChown := geteuid, lchown
+		t.Cleanup(func() { geteuid, lchown = oldEuid, oldChown })
+		var calls []string
+		geteuid = func() int { return 0 }
+		lchown = func(_ string, uid, gid int) error {
+			calls = append(calls, fmt.Sprintf("%d:%d", uid, gid))
+			return nil
+		}
+		if err := writeConfigFile(p, []byte("new")); err != nil {
+			t.Fatal(err)
+		}
+		want := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+		if len(calls) != 1 || calls[0] != want {
+			t.Errorf("lchown calls %v, want [%s] (the old file's owner)", calls, want)
+		}
+	})
 }
