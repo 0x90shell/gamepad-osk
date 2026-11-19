@@ -6,6 +6,7 @@ package main
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <string.h>
+#include <stdlib.h>
 
 // Store the previously focused window so we can restore focus
 static Window prev_focused = 0;
@@ -22,7 +23,8 @@ static int x11_suppress_focus_errors(Display *dpy, XErrorEvent *ev) {
     (void)dpy; (void)ev;
     // XSetInputFocus can only produce BadMatch (window not viewable, e.g. Wine
     // fullscreen) or BadWindow (window destroyed or invalid). Both are expected
-    // when restoring focus to a window saved at startup.
+    // when restoring focus to a window saved at startup. Reads of other
+    // apps' windows use it too: those windows can close at any time.
     return 0;
 }
 
@@ -128,7 +130,12 @@ int is_fullscreen_active() {
 
     if (active == 0 || active == root) { XCloseDisplay(dpy); return 0; }
 
+    // The active window can close between the two reads (BadWindow): with
+    // Xlib's default handler that error ends the process
+    XErrorHandler prev = XSetErrorHandler(x11_suppress_focus_errors);
     int result = check_window_fullscreen(dpy, active);
+    XSync(dpy, False);
+    XSetErrorHandler(prev);
     XCloseDisplay(dpy);
     return result;
 }
@@ -293,6 +300,8 @@ void get_strut_insets(int mon_x, int mon_y, int mon_w, int mon_h,
         return;
     }
 
+    // A client in the list can close while we read it (BadWindow)
+    XErrorHandler prev = XSetErrorHandler(x11_suppress_focus_errors);
     Window *clients = (Window *)data;
     int mon_x2 = mon_x + mon_w;
     int mon_y2 = mon_y + mon_h;
@@ -334,12 +343,25 @@ void get_strut_insets(int mon_x, int mon_y, int mon_w, int mon_h,
         XFree(sd);
     }
 
+    XSync(dpy, False);
+    XSetErrorHandler(prev);
     XFree(data);
     XCloseDisplay(dpy);
 }
 
 void set_prev_focused_for_test(unsigned long wid) {
     prev_focused = (Window)wid;
+}
+
+// Test helper: set a WINDOW-type property on the root window of $DISPLAY.
+void set_root_windows_for_test(const char *prop, unsigned long *ids, int n) {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return;
+    Atom a = XInternAtom(dpy, prop, False);
+    XChangeProperty(dpy, DefaultRootWindow(dpy), a, XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)ids, n);
+    XSync(dpy, False);
+    XCloseDisplay(dpy);
 }
 
 void set_no_focus_hints(unsigned long window_id) {
@@ -395,6 +417,7 @@ import "C"
 
 import (
 	"log"
+	"unsafe"
 )
 
 var hasX11 bool
@@ -438,6 +461,16 @@ func GetWorkarea() (x, y, w, h int32, ok bool) {
 
 func setPrevFocusedForTest(id uint64) {
 	C.set_prev_focused_for_test(C.ulong(id)) //nolint:gosec // G115: test helper, value is controlled
+}
+
+func setRootWindowsForTest(prop string, ids ...uint64) {
+	cs := C.CString(prop)
+	defer C.free(unsafe.Pointer(cs))
+	cids := make([]C.ulong, len(ids))
+	for i, id := range ids {
+		cids[i] = C.ulong(id) //nolint:gosec // G115: test helper, value is controlled
+	}
+	C.set_root_windows_for_test(cs, &cids[0], C.int(len(cids)))
 }
 
 // GetStrutInsets scans _NET_WM_STRUT_PARTIAL on all client windows to find
