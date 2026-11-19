@@ -1238,3 +1238,35 @@ func TestResyncKeepsHeldButton(t *testing.T) {
 		t.Errorf("held RB: %v, held %v; want no action, still held", got, gp.btnHeld[BTN_TR])
 	}
 }
+
+// toggle_combo = guide+a: releasing the combo's buttons after it fires does
+// nothing (A's release used to type the highlighted key on the keyboard it
+// had just shown). The next A press types as usual.
+func TestComboReleaseSwallowed(t *testing.T) {
+	const guide = 0x13c // BTN_MODE
+	cfg := DefaultConfig()
+	cfg.Gamepad.ToggleCombo = "guide+a"
+	for _, tt := range []struct {
+		name  string
+		steps [][2]int // code, value
+		want  []ActionType
+	}{
+		{"guide first", [][2]int{{guide, 1}, {BTN_SOUTH, 1}, {BTN_SOUTH, 0}, {guide, 0}},
+			[]ActionType{ActionNone, ActionToggle, ActionNone, ActionNone}},
+		{"a first", [][2]int{{BTN_SOUTH, 1}, {guide, 1}, {guide, 0}, {BTN_SOUTH, 0}},
+			[]ActionType{ActionPressStart, ActionToggle, ActionNone, ActionNone}},
+		{"a again after the combo", [][2]int{{guide, 1}, {BTN_SOUTH, 1}, {BTN_SOUTH, 0}, {guide, 0},
+			{BTN_SOUTH, 1}, {BTN_SOUTH, 0}},
+			[]ActionType{ActionNone, ActionToggle, ActionNone, ActionNone, ActionPressStart, ActionPress}},
+	} {
+		gp := NewGamepadReader(cfg)
+		gp.initButtonMap()
+		var got []ActionType
+		for _, s := range tt.steps {
+			got = append(got, gp.handleButton(uint16(s[0]), int32(s[1])).Type) //nolint:gosec // G115: small test codes
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}

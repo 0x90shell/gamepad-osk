@@ -150,6 +150,7 @@ type GamepadReader struct {
 	axisState       map[uint16]int32 // current axis values (for d-pad and triggers)
 	comboFirstPress time.Time        // when the first combo button was pressed
 	comboFired      bool             // edge-trigger flag (prevents repeat while held)
+	comboSwallow    map[uint16]bool  // combo buttons held when it fired: their release does nothing
 
 	// Last Open() error string. Suppresses repeat log lines while the
 	// reconnect loop retries every 2s with the same error (e.g. no gamepad
@@ -170,10 +171,11 @@ func NewGamepadReader(config Config) *GamepadReader {
 			ABS_Z:  {0, 255},
 			ABS_RZ: {0, 255},
 		},
-		btnHeld:    make(map[uint16]bool),
-		axisState:  make(map[uint16]int32),
-		trigActive: make(map[uint16]bool),
-		hasAxis:    make(map[uint16]bool),
+		btnHeld:      make(map[uint16]bool),
+		axisState:    make(map[uint16]int32),
+		trigActive:   make(map[uint16]bool),
+		hasAxis:      make(map[uint16]bool),
+		comboSwallow: make(map[uint16]bool),
 
 		swapXYSetting: config.Gamepad.SwapXY,
 	}
@@ -596,6 +598,7 @@ func (gp *GamepadReader) ReadEvents() []Action {
 				gp.trigActive = make(map[uint16]bool)
 				gp.comboFirstPress = time.Time{}
 				gp.comboFired = false
+				gp.comboSwallow = make(map[uint16]bool)
 			}
 			break
 		}
@@ -657,6 +660,10 @@ func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 	// Check combo on every button event
 	if toggle := gp.checkCombo(); toggle.Type != ActionNone {
 		return toggle
+	}
+	if !pressed && gp.comboSwallow[code] {
+		delete(gp.comboSwallow, code)
+		return Action{Type: ActionNone}
 	}
 
 	if code == gp.pressBtn {
@@ -841,6 +848,15 @@ func (gp *GamepadReader) checkCombo() Action {
 	}
 	if time.Since(gp.comboFirstPress) <= time.Duration(gp.comboPeriodMs)*time.Millisecond {
 		gp.comboFired = true
+		// The combo shows or hides the keyboard; the release of its
+		// buttons must not act on it as well (A's release would type)
+		for _, cb := range gp.comboButtons {
+			for _, code := range cb.BtnCodes {
+				if gp.btnHeld[code] {
+					gp.comboSwallow[code] = true
+				}
+			}
+		}
 		Debugf("Toggle combo fired: %s", gp.config.Gamepad.ToggleCombo)
 		return Action{Type: ActionToggle}
 	}
