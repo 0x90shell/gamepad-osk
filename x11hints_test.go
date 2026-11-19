@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -46,4 +50,63 @@ func TestIsFullscreenActiveWithDisplay(t *testing.T) {
 	// Result depends on desktop state -just verify no crash
 	result := IsFullscreenActive()
 	t.Logf("IsFullscreenActive() = %v (depends on current desktop state)", result)
+}
+
+// startXvfb starts a private X server and returns its DISPLAY, so a test can
+// change root properties without touching the user's desktop. -noreset: by
+// default Xvfb wipes properties and atoms when its last client disconnects.
+func startXvfb(t *testing.T) string {
+	t.Helper()
+	bin, err := exec.LookPath("Xvfb")
+	if err != nil {
+		t.Skip("Xvfb not installed")
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "-displayfd", "3", "-screen", "0", "800x600x24", "-nolisten", "tcp", "-noreset") //nolint:gosec,noctx // Xvfb from PATH, killed in Cleanup
+	cmd.ExtraFiles = []*os.File{w}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	line, err := bufio.NewReader(r).ReadString('\n')
+	if err != nil {
+		t.Fatalf("Xvfb gave no display number: %v", err)
+	}
+	return ":" + strings.TrimSpace(line)
+}
+
+// B4: the active window or a listed client can close while the app reads
+// it. Xlib's default error handler then ends the process. The reads run in
+// a child process, so a crash fails this test instead of the whole run.
+func TestX11BadWindowReads(t *testing.T) {
+	const gone = 0x3fffff0 // a window ID that does not exist
+	if os.Getenv("OSK_X11_BADWINDOW_CHILD") == "1" {
+		hasX11 = true
+		// A bare Xvfb lacks these atoms and the app would return before
+		// the read: setting any property creates them
+		for _, atom := range []string{"_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STRUT_PARTIAL"} {
+			setRootWindowsForTest(atom, 0)
+		}
+		setRootWindowsForTest("_NET_ACTIVE_WINDOW", gone)
+		setRootWindowsForTest("_NET_CLIENT_LIST", gone)
+		if IsFullscreenActive() {
+			t.Error("a window that does not exist reads as fullscreen")
+		}
+		if top, bottom, left, right := GetStrutInsets(MonitorRect{W: 800, H: 600}); top|bottom|left|right != 0 {
+			t.Errorf("insets %d %d %d %d from a window that does not exist", top, bottom, left, right)
+		}
+		fmt.Println("survived")
+		return
+	}
+	display := startXvfb(t)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestX11BadWindowReads$") //nolint:gosec,noctx // the test binary itself
+	cmd.Env = append(os.Environ(), "OSK_X11_BADWINDOW_CHILD=1", "DISPLAY="+display)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "survived") {
+		t.Fatalf("the reads ended the process (%v):\n%s", err, out)
+	}
 }
