@@ -35,6 +35,7 @@ combo_period_ms = 200        # ms window for all combo buttons to be held (50-20
 
 [gamepad.buttons]
 # button names: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select
+# one action per button: if two actions share a button, all buttons use the defaults
 press = a                    # press highlighted key
 close = b                    # close keyboard (daemon mode: hides instead)
 backspace = x                # backspace

@@ -407,6 +407,7 @@ func writeINI(w io.Writer, cfg Config) error {
 
 	b.WriteString("[gamepad.buttons]\n")
 	b.WriteString("# button names: a, b, x, y, lb, rb, lt, rt, l3, r3, start, select\n")
+	b.WriteString("# one action per button: if two actions share a button, all buttons use the defaults\n")
 	b.WriteString(line(kv("press", cfg.Gamepad.Buttons.Press), "press highlighted key"))
 	b.WriteString(line(kv("close", cfg.Gamepad.Buttons.Close), "close keyboard (daemon mode: hides instead)"))
 	b.WriteString(line(kv("backspace", cfg.Gamepad.Buttons.Backspace), "backspace"))
@@ -1101,10 +1102,23 @@ var configRules = []configRule{
 	buttonRule("right_click", false, func(c *Config) *string { return &c.Gamepad.Buttons.RightClick }),
 	buttonRule("position_toggle", true, func(c *Config) *string { return &c.Gamepad.Buttons.PositionToggle }),
 	{
+		// Which action the user meant for the button is unknown, and
+		// reverting one pair can clash with another: put back all buttons.
 		bad: func(c Config) bool { return len(buttonClashes(c)) > 0 },
 		msg: func(c Config) string { return strings.Join(buttonClashes(c), "; ") },
+		fix: func(c *Config, def Config) string {
+			c.Gamepad.Buttons = def.Gamepad.Buttons
+			return "the default buttons for every action (" + buttonList(def.Gamepad.Buttons) + ")"
+		},
 	},
 	rangeRule("sensitivity", 1, 50, func(c *Config) *int { return &c.Mouse.Sensitivity }),
+}
+
+// buttonList names each action's button, in config file order.
+func buttonList(b ButtonsConfig) string {
+	return fmt.Sprintf("press = %s, close = %s, backspace = %s, space = %s, shift = %s, "+
+		"enter = %s, left_click = %s, right_click = %s, position_toggle = %s",
+		b.Press, b.Close, b.Backspace, b.Space, b.Shift, b.Enter, b.LeftClick, b.RightClick, b.PositionToggle)
 }
 
 // buttonClashes lists buttons given to two actions. Stick clicks are taken
@@ -1126,7 +1140,7 @@ func buttonClashes(c Config) []string {
 			continue
 		}
 		if prev, ok := owner[a.button]; ok {
-			out = append(out, fmt.Sprintf("%s and %s are both on %s, only one works", prev, a.name, a.button))
+			out = append(out, fmt.Sprintf("%s and %s are both on %s", prev, a.name, a.button))
 			continue
 		}
 		owner[a.button] = a.name

@@ -274,7 +274,7 @@ With `--config`, that file is the only one read and written. Nothing else is sea
 
 Changes made on the keyboard (Theme key, Shift + up/down, Start) are saved by editing only that one line, so your comments and other lines stay as you wrote them.
 
-Problems are reported, never fixed silently. A value the app cannot read, an unknown key or section, a key set twice, or a button used for two actions prints a warning with its line number at start and in `gamepad-osk --setup`. The app then uses the default for that setting and starts. `gamepad-osk --help` shows which config file is in use.
+Problems are reported, never fixed silently. A value the app cannot read, an unknown key or section, or a key set twice prints a warning with its line number at start and in `gamepad-osk --setup`. The app then uses the default for that setting and starts. A button used for two actions (including a stick click, which already has Caps Lock or left click) puts every button back to its default, with a warning that names the clash; the keys on the keyboard then show the default buttons. The file is not changed, so the warning comes back at every start until you fix the line. `gamepad-osk --help` shows which config file is in use.
 
 See `config.example` for all options including button remapping, toggle combo, mouse stick, theme, scale, opacity, and deadzone.
 
