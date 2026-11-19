@@ -58,6 +58,8 @@ type App struct {
 	// fallback so a user who never releases the combo still gets a grab.
 	grabPending      bool
 	grabPendingUntil time.Time
+
+	layerClosedAt time.Time // last time the compositor closed the layer surface
 }
 
 func NewApp(config Config) *App {
@@ -416,6 +418,26 @@ func (app *App) Run() error {
 			if evType == SDL_EVENT_QUIT {
 				app.running.Store(false)
 			}
+		}
+
+		// The compositor closed the keyboard (its output went away): show it
+		// again where the compositor chooses, or hide it if that keeps failing
+		if layerShellMode && takeLayerSurfaceClosed() && app.visible {
+			destroyLayerSurface()
+			forgetTargetOutput()
+			now := time.Now()
+			if reattachAfterClose(now, app.layerClosedAt) {
+				log.Printf("Compositor closed the keyboard (output removed?), showing it again")
+				attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
+				rend.MarkDirty()
+				applyOpacity(window, rend, cfg.Window.Opacity)
+			} else {
+				log.Printf("Compositor closed the keyboard again, hiding it: press the toggle combo to show it")
+				app.lock.Lock()
+				app.togglePending = true
+				app.lock.Unlock()
+			}
+			app.layerClosedAt = now
 		}
 
 		// Process gamepad events (evdev - works regardless of window focus)

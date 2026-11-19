@@ -17,6 +17,7 @@ static struct zwlr_layer_surface_v1 *layer_surface = NULL;
 static struct wl_surface *wl_surf = NULL;
 static uint32_t configure_serial = 0;
 static int configured = 0;
+static int surface_closed = 0; // the compositor sent closed (e.g. its output went away)
 
 // --- Opacity (wp_alpha_modifier_v1) ---
 // The compositor multiplies the surface's alpha by alpha_factor. Window
@@ -150,9 +151,25 @@ static void layer_surface_configure(void *data,
     zwlr_layer_surface_v1_ack_configure(surface, serial);
 }
 
+// The surface is dead after closed. The main loop destroys it and decides
+// whether to attach a new one (take_layer_surface_closed).
 static void layer_surface_closed(void *data,
     struct zwlr_layer_surface_v1 *surface) {
     (void)data; (void)surface;
+    surface_closed = 1;
+    configured = 0;
+}
+
+static int take_layer_surface_closed() {
+    int c = surface_closed;
+    surface_closed = 0;
+    return c;
+}
+
+// After a close the target output may be gone (the registry is not kept,
+// so removals are not seen). NULL lets the compositor choose an output.
+static void forget_target_output() {
+    target_output = NULL;
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
@@ -226,6 +243,7 @@ static int attach_layer_shell_async(SDL_Window *sdl_win, int width, int height,
         layer_surface = NULL;
         configured = 0;
     }
+    surface_closed = 0;
 
     // Clear any pending EGL buffer state before attaching layer-shell role.
     // SDL's eglSwapBuffers may have queued a buffer on the wl_surface from
@@ -316,6 +334,7 @@ static void destroy_layer_surface() {
         layer_surface = NULL;
     }
     configured = 0;
+    surface_closed = 0;
 }
 
 // Full cleanup on exit.
@@ -370,6 +389,7 @@ import "C"
 import (
 	"log"
 	"math"
+	"time"
 )
 
 var layerShellActive bool
@@ -457,6 +477,24 @@ func destroyLayerSurface() {
 		C.destroy_layer_surface()
 		layerShellActive = false
 	}
+}
+
+// takeLayerSurfaceClosed reports (once) that the compositor closed the
+// layer surface since the last call.
+func takeLayerSurfaceClosed() bool {
+	return C.take_layer_surface_closed() != 0
+}
+
+// forgetTargetOutput makes the next attach let the compositor pick the output.
+func forgetTargetOutput() {
+	C.forget_target_output()
+}
+
+// reattachAfterClose decides what to do when the compositor closes the
+// keyboard: show it again once, but hide it if it was closed again within
+// 2 s (no output takes it), so it cannot loop and the pad grab is released.
+func reattachAfterClose(now, lastClose time.Time) bool {
+	return lastClose.IsZero() || now.Sub(lastClose) >= 2*time.Second
 }
 
 // cleanupLayerShell fully cleans up all layer-shell resources (exit).
