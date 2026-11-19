@@ -113,3 +113,20 @@ func TestEditDistance(t *testing.T) {
 		}
 	}
 }
+
+func TestWithRevision(t *testing.T) {
+	for _, tt := range []struct {
+		rev      string
+		modified bool
+		want     string
+	}{
+		{"", false, "2.1.1"},
+		{"0d08c62f1a2b3c4d5e6f", false, "2.1.1+git.0d08c62"},
+		{"0d08c62f1a2b3c4d5e6f", true, "2.1.1+git.0d08c62.modified"},
+		{"abc", false, "2.1.1+git.abc"},
+	} {
+		if got := withRevision("2.1.1", tt.rev, tt.modified); got != tt.want {
+			t.Errorf("withRevision(%q, %v) = %q, want %q", tt.rev, tt.modified, got, tt.want)
+		}
+	}
+}
