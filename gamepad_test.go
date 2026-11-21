@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1264,6 +1265,82 @@ func TestComboReleaseSwallowed(t *testing.T) {
 		var got []ActionType
 		for _, s := range tt.steps {
 			got = append(got, gp.handleButton(uint16(s[0]), int32(s[1])).Type) //nolint:gosec // G115: small test codes
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// Device blocks from /proc/bus/input/devices on real machines (2026-11-21).
+// Sunshine's absolute mouse gets a js handler from joydev but has only
+// mouse buttons; it comes before Sunshine's virtual pad in the list.
+const (
+	procSunshineMouse = `I: Bus=0003 Vendor=1209 Product=0003 Version=0001
+N: Name="libvirtualhid Mouse (Absolute)"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input35
+U: Uniq=
+H: Handlers=event25 js0 mouse5 
+B: PROP=2
+B: EV=b
+B: KEY=1f0000 0 0 0 0
+B: ABS=3
+
+`
+	procSunshinePad = `N: Name="Sunshine (libvirtualhid) X-Box One Controller"
+H: Handlers=kbd event28 js1 
+B: KEY=7fff000000000000 0 8000000000 0 0
+
+`
+	procXbox360 = `I: Bus=0003 Vendor=045e Product=028e Version=0114
+N: Name="Microsoft X-Box 360 pad"
+H: Handlers=event31 js0 
+B: PROP=0
+B: EV=20000b
+B: KEY=7cdb000000000000 0 0 0 0
+B: ABS=3003f
+
+`
+	// Generic HID joystick: BTN_TRIGGER to BTN_BASE6 (0x120-0x12b) only
+	procDInput = `N: Name="Generic USB Joystick"
+H: Handlers=event9 js2 
+B: KEY=fff00000000 0 0 0 0
+
+`
+	// A js device whose key bitmap is too short to hold 0x120
+	procShortKeys = `N: Name="Odd Device"
+H: Handlers=event7 js3 
+B: KEY=ff
+
+`
+	procKeyboard = `N: Name="AT Translated Set 2 keyboard"
+H: Handlers=sysrq kbd event3 leds 
+B: KEY=402000000 3803078f800d001 feffffdfffefffff fffffffffffffffe
+
+`
+)
+
+// gamepadCandidates must skip js devices without joystick or gamepad
+// buttons (Finding P: Sunshine's absolute mouse was opened as the pad).
+func TestGamepadCandidates(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		proc string
+		want []string
+	}{
+		{"mouse before Sunshine pad", procSunshineMouse + procSunshinePad, []string{"event28"}},
+		{"mouse only", procSunshineMouse, nil},
+		{"xbox 360", procKeyboard + procXbox360, []string{"event31"}},
+		{"dinput", procDInput, []string{"event9"}},
+		{"short key bitmap", procShortKeys, nil},
+		{"keyboard only", procKeyboard, nil},
+		{"two pads in order", procXbox360 + procSunshineMouse + procDInput, []string{"event31", "event9"}},
+		{"no trailing blank line", strings.TrimRight(procXbox360, "\n"), []string{"event31"}},
+	} {
+		var got []string
+		for _, c := range gamepadCandidates(tt.proc) {
+			got = append(got, c.event)
 		}
 		if !slices.Equal(got, tt.want) {
 			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)

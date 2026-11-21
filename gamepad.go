@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"log"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -420,32 +422,70 @@ func (gp *GamepadReader) autoDetect() string {
 	if err != nil {
 		return ""
 	}
+	for _, c := range gamepadCandidates(string(data)) {
+		path := "/dev/input/" + c.event
+		if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: trusted /dev/input path
+			log.Printf("Auto-detected gamepad: %s (%s)", c.name, path)
+			return path
+		}
+	}
+	return ""
+}
 
-	var name, handler string
-	for line := range strings.SplitSeq(string(data), "\n") {
+type inputCandidate struct {
+	name, event string
+}
+
+// gamepadCandidates lists the event nodes in /proc/bus/input/devices text
+// that look like gamepads, in file order.
+func gamepadCandidates(data string) []inputCandidate {
+	var out []inputCandidate
+	var name, handler, keys string
+	flush := func() {
+		// joydev also takes absolute mice and tablets (a js handler), so
+		// the device must have joystick or gamepad buttons too
+		if name != "" && strings.Contains(handler, "js") && hasJoystickButtons(keys) {
+			for part := range strings.FieldsSeq(handler) {
+				if strings.HasPrefix(part, "event") {
+					out = append(out, inputCandidate{name, part})
+				}
+			}
+		}
+		name, handler, keys = "", "", ""
+	}
+	for line := range strings.SplitSeq(data, "\n") {
 		switch {
 		case strings.HasPrefix(line, "N: Name="):
 			name = strings.Trim(line[8:], "\"")
 		case strings.HasPrefix(line, "H: Handlers="):
 			handler = line[12:]
-		case line == "" && name != "":
-			// Check if this device has a js* handler (joystick)
-			if strings.Contains(handler, "js") {
-				for part := range strings.FieldsSeq(handler) {
-					if strings.HasPrefix(part, "event") {
-						path := "/dev/input/" + part
-						if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: trusted /dev/input path
-							log.Printf("Auto-detected gamepad: %s (%s)", name, path)
-							return path
-						}
-					}
-				}
-			}
-			name = ""
-			handler = ""
+		case strings.HasPrefix(line, "B: KEY="):
+			keys = line[7:]
+		case line == "":
+			flush()
 		}
 	}
-	return ""
+	flush()
+	return out
+}
+
+// hasJoystickButtons reports whether a "B: KEY=" bitmap sets any code from
+// BTN_JOYSTICK (0x120, DInput pads) to 0x13f (BTN_SOUTH..BTN_THUMBR are
+// 0x130-0x13e). The bitmap is hex words of the kernel's long size, highest
+// word first.
+func hasJoystickButtons(keys string) bool {
+	words := strings.Fields(keys)
+	for code := 0x120; code <= 0x13f; code++ {
+		i := len(words) - 1 - code/bits.UintSize
+		if i < 0 {
+			return false
+		}
+		w, err := strconv.ParseUint(words[i], 16, bits.UintSize)
+		if err == nil && w&(1<<(code%bits.UintSize)) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // feed handles one raw evdev event. The kernel sends SYN_DROPPED when its

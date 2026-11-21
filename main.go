@@ -319,7 +319,8 @@ OPTIONS
 DEVICE PRIORITY
   1. --device flag or bare /dev/input/... argument
   2. device = ... in config
-  3. Auto-detect from /proc/bus/input/devices
+  3. Auto-detect: /dev/input/gamepad0, then the first joystick or gamepad
+     in /proc/bus/input/devices (mice and tablets are skipped)
 
 CONTROLS (from config)
   %-24s Navigate keyboard
