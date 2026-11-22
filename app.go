@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"sort"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,6 +59,14 @@ type App struct {
 	grabPendingUntil time.Time
 
 	layerClosedAt time.Time // last time the compositor closed the layer surface
+
+	// What the loop works on, set by Run (fakes in tests)
+	kb   *KeyboardState
+	inj  *Injector
+	rend *Renderer
+	pad  padDevice
+	win  windowOps
+	now  func() time.Time // nil: time.Now
 }
 
 func NewApp(config Config) *App {
@@ -74,8 +81,8 @@ func (app *App) Run() error {
 	// go-sdl2 did this internally in sdl.Init(); we must do it explicitly.
 	runtime.LockOSThread()
 
+	ValidateConfig(&app.config)
 	cfg := app.config
-	ValidateConfig(&cfg)
 	layout := LayoutQWERTY
 	theme := GetTheme(cfg.Theme.Name)
 
@@ -301,6 +308,8 @@ func (app *App) Run() error {
 	defer ipc.Stop()
 
 	kb := NewKeyboardState(layout)
+	app.kb, app.inj, app.rend, app.pad = kb, inj, rend, gamepad
+	app.win = &sdlWindow{app: app, window: window, rend: rend, width: width, height: height}
 
 	// Find current theme index for cycling
 	for i, name := range themeOrder {
@@ -309,30 +318,10 @@ func (app *App) Run() error {
 			break
 		}
 	}
-	kb.OnThemeCycle = func() {
-		app.themeIdx = (app.themeIdx + 1) % len(themeOrder)
-		name := themeOrder[app.themeIdx]
-		rend.SetTheme(Themes[name])
-		SaveTheme(name)
-	}
-	kb.OnThemeCycleReverse = func() {
-		app.themeIdx = (app.themeIdx - 1 + len(themeOrder)) % len(themeOrder)
-		name := themeOrder[app.themeIdx]
-		rend.SetTheme(Themes[name])
-		SaveTheme(name)
-	}
-	kb.OnSensitivityUp = func() {
-		cfg.Mouse.Sensitivity = min(50, cfg.Mouse.Sensitivity+2)
-		gamepad.SetSensitivity(cfg.Mouse.Sensitivity)
-		rend.FlashGlyph("\u27F9", strconv.Itoa(cfg.Mouse.Sensitivity))
-		SaveSensitivity(cfg.Mouse.Sensitivity)
-	}
-	kb.OnSensitivityDown = func() {
-		cfg.Mouse.Sensitivity = max(1, cfg.Mouse.Sensitivity-2)
-		gamepad.SetSensitivity(cfg.Mouse.Sensitivity)
-		rend.FlashGlyph("\u27FE", strconv.Itoa(cfg.Mouse.Sensitivity))
-		SaveSensitivity(cfg.Mouse.Sensitivity)
-	}
+	kb.OnThemeCycle = func() { app.cycleTheme(1) }
+	kb.OnThemeCycleReverse = func() { app.cycleTheme(-1) }
+	kb.OnSensitivityUp = func() { app.changeSensitivity(2) }
+	kb.OnSensitivityDown = func() { app.changeSensitivity(-2) }
 
 	app.running.Store(true)
 
@@ -350,200 +339,7 @@ func (app *App) Run() error {
 		// Layer-shell: first frame renders after configure arrives via SDL event pump
 	}
 
-	for app.running.Load() {
-		// Handle toggle
-		app.lock.Lock()
-		if app.togglePending {
-			app.togglePending = false
-			app.visible = !app.visible
-			if app.visible {
-				if cfg.Gamepad.Grab {
-					app.grabPending = true
-					app.grabPendingUntil = time.Now().Add(500 * time.Millisecond)
-				}
-				if !hasLayerShell() {
-					SaveFocusedWindow() // capture game window now, used by RestoreFocus on hide
-				}
-				if layerShellMode {
-					attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
-				} else {
-					SDL3ShowWindow(window)
-				}
-				rend.MarkDirty()
-				applyOpacity(window, rend, cfg.Window.Opacity) // re-apply after show
-				if !isWayland {
-					app.winY = app.computeY()
-					SDL3SetWindowPosition(window, app.winX, app.winY)
-					SetNoFocusHints(window)
-					// No RestoreFocus: XMapRaised does not steal focus; calling XSetInputFocus here
-					// changes _NET_ACTIVE_WINDOW to prev_focused (terminal), triggering xfce4-panel.
-				}
-			} else {
-				app.stopRepeat()
-				kb.CapsActive = false
-				kb.ShiftActive = false
-				kb.ShiftHeld = false
-				kb.CtrlActive = false
-				kb.AltActive = false
-				kb.MetaActive = false
-				kb.ReleaseAltTab(inj)
-				if inj != nil {
-					inj.ReleaseKey(KEY_LEFTSHIFT)
-					inj.ReleaseKey(KEY_LEFTCTRL)
-					inj.ReleaseKey(KEY_LEFTALT)
-					inj.ReleaseKey(KEY_LEFTMETA)
-					inj.ClickMouse(0x110, false) // BTN_LEFT release
-					inj.ClickMouse(0x111, false) // BTN_RIGHT release
-				}
-				// Cancel any pending grab so it can't fire after hide.
-				app.grabPending = false
-				gamepad.Ungrab()
-				if layerShellMode {
-					destroyLayerSurface()
-				} else {
-					SDL3HideWindow(window)
-				}
-				if !isWayland {
-					if IsSavedWindowFullscreen() {
-						WarpPointerIfOutside()
-					}
-					RestoreFocus()
-				}
-			}
-		}
-		app.lock.Unlock()
-
-		// Process SDL3 window events
-		for evType, ok := SDL3PollEvent(); ok; evType, ok = SDL3PollEvent() {
-			if evType == SDL_EVENT_QUIT {
-				app.running.Store(false)
-			}
-		}
-
-		// The compositor closed the keyboard (its output went away): show it
-		// again where the compositor chooses, or hide it if that keeps failing
-		if layerShellMode && takeLayerSurfaceClosed() && app.visible {
-			destroyLayerSurface()
-			forgetTargetOutput()
-			now := time.Now()
-			if reattachAfterClose(now, app.layerClosedAt) {
-				log.Printf("Compositor closed the keyboard (output removed?), showing it again")
-				attachLayerShellAsync(window, width, height, app.posTop, margin, cfg.Window.PanelAvoid)
-				rend.MarkDirty()
-				applyOpacity(window, rend, cfg.Window.Opacity)
-			} else {
-				log.Printf("Compositor closed the keyboard again, hiding it: press the toggle combo to show it")
-				app.lock.Lock()
-				app.togglePending = true
-				app.lock.Unlock()
-			}
-			app.layerClosedAt = now
-		}
-
-		// Process gamepad events (evdev - works regardless of window focus)
-		prevFd := gamepad.Fd()
-		for _, action := range gamepad.ReadEvents() {
-			app.handleAction(action, kb, inj, rend)
-		}
-		if prevFd >= 0 && gamepad.Fd() < 0 {
-			app.releasePadHolds(kb, inj)
-			rend.Flash("Controller lost")
-		}
-
-		// Deferred grab: defer EVIOCGRAB until trigger combo is released so
-		// other readers (evsieve hooks, gamepad mappers) see the release events
-		// and don't end up with stuck per-button state. Mirrors evsieve's
-		// own grab=auto idiom. Falls back to grabbing after grabPendingUntil
-		// so a user holding the combo indefinitely still gets a grab.
-		if app.grabPending {
-			if !gamepad.AnyButtonHeld() || time.Now().After(app.grabPendingUntil) {
-				app.grabPending = false
-				gamepad.Grab()
-			}
-		}
-
-		// Gamepad reconnection (2s cooldown between attempts)
-		if gamepad.Fd() < 0 {
-			now := time.Now()
-			if now.Sub(app.reconnectLast) >= 2*time.Second {
-				app.reconnectLast = now
-				if gamepad.Reconnect() {
-					rend.Flash("Controller connected")
-					if app.visible && cfg.Gamepad.Grab {
-						gamepad.Grab()
-					}
-				}
-			}
-		}
-
-		// Long-press check
-		if kb.CheckLongPress(cfg.Gamepad.LongPressMs) {
-			rend.MarkDirty()
-		}
-
-		// Alt+Tab timeout (auto-release after 3s idle)
-		if kb.CheckAltTabTimeout(inj) {
-			rend.MarkDirty()
-		}
-
-		// Key repeat check
-		if app.repeatAction != ActionNone {
-			now := time.Now()
-			elapsed := now.Sub(app.repeatStart).Milliseconds()
-			if app.repeatInitial {
-				if elapsed >= int64(cfg.Keys.RepeatDelayMs) {
-					app.handleAction(Action{Type: app.repeatAction}, kb, inj, rend)
-					app.repeatLast = now
-					app.repeatInitial = false
-				}
-			} else if now.Sub(app.repeatLast).Milliseconds() >= int64(cfg.Keys.RepeatRateMs) {
-				app.handleAction(Action{Type: app.repeatAction}, kb, inj, rend)
-				app.repeatLast = now
-			}
-		}
-
-		// Check flash/key flash expiry to trigger final redraw
-		if app.visible {
-			if rend.flashText != "" && time.Now().After(rend.flashEnd) {
-				rend.MarkDirty()
-				rend.flashText = ""
-				rend.flashGlyphText = ""
-			}
-			if kb.FlashCode != 0 && time.Now().After(kb.FlashUntil) {
-				rend.MarkDirty()
-				kb.FlashCode = 0
-			}
-		}
-
-		// Render
-		if app.visible {
-			rend.Draw(kb)
-		}
-
-		// Frame pacing: vsync in rend.Draw handles active rendering.
-		// Sleep when hidden, when visible but idle (nothing to draw), or
-		// when stick is active (sub-vsync polling for smooth cursor).
-		if !app.visible || rend.dirtyFrames <= 0 || gamepad.NeedsPolling() {
-			pollMs := 16 // hidden idle: ~60Hz for IPC + gamepad checks
-			if gamepad.NeedsPolling() {
-				pollMs = 4 // mouse/nav active: ~250Hz for smooth cursor
-			}
-			if app.repeatAction != ActionNone {
-				var nextMs int64
-				if app.repeatInitial {
-					nextMs = int64(cfg.Keys.RepeatDelayMs) - time.Since(app.repeatStart).Milliseconds()
-				} else {
-					nextMs = int64(cfg.Keys.RepeatRateMs) - time.Since(app.repeatLast).Milliseconds()
-				}
-				if nextMs > 0 && int(nextMs) < pollMs {
-					pollMs = int(nextMs)
-				}
-			}
-			if pollMs > 0 {
-				time.Sleep(time.Duration(pollMs) * time.Millisecond)
-			}
-		}
-	}
+	app.loop()
 	return nil
 }
 
@@ -702,7 +498,7 @@ func (app *App) startRepeat(action ActionType) {
 		return
 	}
 	app.repeatAction = action
-	app.repeatStart = time.Now()
+	app.repeatStart = app.clock()
 	app.repeatInitial = true
 }
 

@@ -121,6 +121,8 @@ type GamepadReader struct {
 	dpadX      NavAxis
 	dpadY      NavAxis
 	mouseX     float64
+	mouseRemX  float64 // pixel fractions carried to the next pass, so a slow push still moves
+	mouseRemY  float64
 	mouseY     float64
 	ltActive   bool                 // shift axis held
 	trigActive map[uint16]bool      // other trigger axes held, per axis
@@ -627,7 +629,7 @@ func (gp *GamepadReader) ReadEvents() []Action {
 				gp.Ungrab()
 				_ = gp.fd.Close()
 				gp.fd = nil
-				gp.mouseX, gp.mouseY = 0, 0
+				gp.mouseX, gp.mouseY, gp.mouseRemX, gp.mouseRemY = 0, 0, 0, 0
 				gp.navX = NavAxis{}
 				gp.navY = NavAxis{}
 				gp.dpadX = NavAxis{}
@@ -671,11 +673,12 @@ func (gp *GamepadReader) ReadEvents() []Action {
 	// Mouse
 	if gp.config.Mouse.Enabled && (math.Abs(gp.mouseX) > 0.01 || math.Abs(gp.mouseY) > 0.01) {
 		s := float64(gp.config.Mouse.Sensitivity)
-		actions = append(actions, Action{
-			Type: ActionMouseMove,
-			DX:   int(gp.mouseX * s),
-			DY:   int(gp.mouseY * s),
-		})
+		fx, fy := gp.mouseX*s+gp.mouseRemX, gp.mouseY*s+gp.mouseRemY
+		dx, dy := int(fx), int(fy)
+		gp.mouseRemX, gp.mouseRemY = fx-float64(dx), fy-float64(dy)
+		actions = append(actions, Action{Type: ActionMouseMove, DX: dx, DY: dy})
+	} else {
+		gp.mouseRemX, gp.mouseRemY = 0, 0
 	}
 
 	return actions
