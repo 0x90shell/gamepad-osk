@@ -19,11 +19,15 @@ type fakePad struct {
 	reconnects  int
 	sensitivity int
 	events      []Action
+	loseOnRead  bool // the next ReadEvents finds the pad gone (fd -1)
 }
 
 func (p *fakePad) ReadEvents() []Action {
 	ev := p.events
 	p.events = nil
+	if p.loseOnRead {
+		p.fd, p.loseOnRead = -1, false
+	}
 	return ev
 }
 func (p *fakePad) Fd() int             { return p.fd }
@@ -505,5 +509,33 @@ func TestPadButtonsIgnoreModifiers(t *testing.T) {
 		if !kb.CtrlActive || !kb.AltActive || !kb.MetaActive {
 			t.Errorf("action %v: armed modifiers cleared (ctrl=%v alt=%v super=%v), want them kept", c.action, kb.CtrlActive, kb.AltActive, kb.MetaActive)
 		}
+	}
+}
+
+// U49: the pad goes away while shown, mid-sentence: what a held button or
+// trigger did ends (held LT, repeat, the accent popup), but the armed Ctrl,
+// Alt, Super and Caps stay for the next key once a pad is back, and the
+// keyboard stays up and says so.
+func TestPadLostKeepsArmedModifiers(t *testing.T) {
+	l := newTestLoop(t)
+	app, kb := l.app, l.app.kb
+	kb.CtrlActive, kb.AltActive, kb.MetaActive, kb.CapsActive = true, true, true, true
+	app.handleAction(Action{Type: ActionShiftOn}, kb, app.inj, app.rend) // LT held
+	cursorOn(t, kb, "e")
+	kb.AccentPopup = &AccentPopupState{Accents: accentE}
+	app.startRepeat(ActionBackspace)
+	l.pad.loseOnRead = true
+	app.pollPad()
+	if l.pad.Fd() >= 0 {
+		t.Fatal("the fake pad was not lost")
+	}
+	if !kb.CtrlActive || !kb.AltActive || !kb.MetaActive || !kb.CapsActive {
+		t.Errorf("armed cleared on pad loss: ctrl=%v alt=%v super=%v caps=%v", kb.CtrlActive, kb.AltActive, kb.MetaActive, kb.CapsActive)
+	}
+	if kb.ShiftHeld || kb.ShiftActive || kb.AccentPopup != nil || app.repeatAction != ActionNone {
+		t.Errorf("held state left: shift held %v on %v, popup %v, repeat %v", kb.ShiftHeld, kb.ShiftActive, kb.AccentPopup != nil, app.repeatAction)
+	}
+	if !app.visible || app.rend.flashText != "Controller lost" {
+		t.Errorf("visible %v, status %q; want shown and \"Controller lost\"", app.visible, app.rend.flashText)
 	}
 }
