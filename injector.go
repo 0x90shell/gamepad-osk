@@ -111,7 +111,7 @@ func uinputError(code int) error {
 // IME/TextInput path, but action keys go through KeyDown/KeyUp only and
 // need a real hold to register. xdotool defaults to 12ms for the same
 // reason.
-const keyHoldDuration = 12 * time.Millisecond
+var keyHoldDuration = 12 * time.Millisecond // a var so tests can set 0
 
 func (inj *Injector) PressKey(code int, modifiers []int) {
 	Debugf("Inject key=%d mods=%v", code, modifiers)

@@ -146,6 +146,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		} else if inj != nil {
 			inj.PressKey(KEY_V, []int{KEY_LEFTCTRL})
 		}
+		kb.clearArmed()
 		return
 	}
 
@@ -162,6 +163,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		} else if kb.OnThemeCycle != nil {
 			kb.OnThemeCycle()
 		}
+		kb.clearArmed()
 		return
 	}
 
@@ -179,6 +181,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		if inj != nil {
 			inj.PressKey(KEY_TAB, nil)
 		}
+		kb.clearArmed()
 		return
 	}
 
@@ -195,6 +198,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		if !kb.ShiftHeld { // a held trigger keeps Shift on
 			kb.ShiftActive = false
 		}
+		kb.clearArmed()
 		return
 	}
 
@@ -210,17 +214,20 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		if !kb.ShiftHeld { // a held trigger keeps Shift on
 			kb.ShiftActive = false
 		}
-		kb.CtrlActive = false
-		kb.AltActive = false
-		kb.MetaActive = false
+		kb.clearArmed()
 		return
 	}
 
 	code := key.Code
 
 	var mods []int
-	if shiftOn && code != KEY_UP && code != KEY_DOWN && code != KEY_LEFT && code != KEY_RIGHT &&
-		code != KEY_ESC && code != KEY_DELETE {
+	// No Shift on Esc and Delete: Shift+Delete deletes past the trash in file
+	// managers. On Left and Right, Shift selects text, so only a real Shift
+	// counts there, not Caps (those keys have no Shift label to warn of it).
+	if code == KEY_LEFT || code == KEY_RIGHT {
+		shiftOn = kb.ShiftActive
+	}
+	if shiftOn && code != KEY_ESC && code != KEY_DELETE {
 		mods = append(mods, KEY_LEFTSHIFT)
 	}
 	if kb.CtrlActive {
@@ -240,6 +247,12 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if kb.ShiftActive && !kb.ShiftHeld {
 		kb.ShiftActive = false
 	}
+	kb.clearArmed()
+}
+
+// clearArmed ends the armed Ctrl, Alt and Super: any key press but a
+// modifier uses them up, so they never carry over to a later key.
+func (kb *KeyboardState) clearArmed() {
 	kb.CtrlActive = false
 	kb.AltActive = false
 	kb.MetaActive = false

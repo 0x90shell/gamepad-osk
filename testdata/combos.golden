@@ -1,0 +1,378 @@
+none            q      +q -q | armed: -
+shift           q      +Shift +q -q -Shift | armed: -
+shift-held      q      +Shift +q -q -Shift | armed: shift
+caps            q      +Shift +q -q -Shift | armed: caps
+caps+shift      q      +q -q | armed: caps
+ctrl            q      +Ctrl +q -q -Ctrl | armed: -
+alt             q      +Alt +q -q -Alt | armed: -
+super           q      +Super +q -q -Super | armed: -
+ctrl+alt        q      +Ctrl +Alt +q -q -Ctrl -Alt | armed: -
+ctrl+shift      q      +Shift +Ctrl +q -q -Shift -Ctrl | armed: -
+alt+shift       q      +Shift +Alt +q -q -Shift -Alt | armed: -
+ctrl+alt+shift  q      +Shift +Ctrl +Alt +q -q -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held q      +Shift +Ctrl +q -q -Shift -Ctrl | armed: shift
+super+shift     q      +Shift +Super +q -q -Shift -Super | armed: -
+none            e      +e -e | armed: -
+shift           e      +Shift +e -e -Shift | armed: -
+shift-held      e      +Shift +e -e -Shift | armed: shift
+caps            e      +Shift +e -e -Shift | armed: caps
+caps+shift      e      +e -e | armed: caps
+ctrl            e      +Ctrl +e -e -Ctrl | armed: -
+alt             e      +Alt +e -e -Alt | armed: -
+super           e      +Super +e -e -Super | armed: -
+ctrl+alt        e      +Ctrl +Alt +e -e -Ctrl -Alt | armed: -
+ctrl+shift      e      +Shift +Ctrl +e -e -Shift -Ctrl | armed: -
+alt+shift       e      +Shift +Alt +e -e -Shift -Alt | armed: -
+ctrl+alt+shift  e      +Shift +Ctrl +Alt +e -e -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held e      +Shift +Ctrl +e -e -Shift -Ctrl | armed: shift
+super+shift     e      +Shift +Super +e -e -Shift -Super | armed: -
+none            1      +1 -1 | armed: -
+shift           1      +Shift +1 -1 -Shift | armed: -
+shift-held      1      +Shift +1 -1 -Shift | armed: shift
+caps            1      +Shift +1 -1 -Shift | armed: caps
+caps+shift      1      +1 -1 | armed: caps
+ctrl            1      +Ctrl +1 -1 -Ctrl | armed: -
+alt             1      +Alt +1 -1 -Alt | armed: -
+super           1      +Super +1 -1 -Super | armed: -
+ctrl+alt        1      +Ctrl +Alt +1 -1 -Ctrl -Alt | armed: -
+ctrl+shift      1      +Shift +Ctrl +1 -1 -Shift -Ctrl | armed: -
+alt+shift       1      +Shift +Alt +1 -1 -Shift -Alt | armed: -
+ctrl+alt+shift  1      +Shift +Ctrl +Alt +1 -1 -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held 1      +Shift +Ctrl +1 -1 -Shift -Ctrl | armed: shift
+super+shift     1      +Shift +Super +1 -1 -Shift -Super | armed: -
+none            [      +[ -[ | armed: -
+shift           [      +Shift +[ -[ -Shift | armed: -
+shift-held      [      +Shift +[ -[ -Shift | armed: shift
+caps            [      +Shift +[ -[ -Shift | armed: caps
+caps+shift      [      +[ -[ | armed: caps
+ctrl            [      +Ctrl +[ -[ -Ctrl | armed: -
+alt             [      +Alt +[ -[ -Alt | armed: -
+super           [      +Super +[ -[ -Super | armed: -
+ctrl+alt        [      +Ctrl +Alt +[ -[ -Ctrl -Alt | armed: -
+ctrl+shift      [      +Shift +Ctrl +[ -[ -Shift -Ctrl | armed: -
+alt+shift       [      +Shift +Alt +[ -[ -Shift -Alt | armed: -
+ctrl+alt+shift  [      +Shift +Ctrl +Alt +[ -[ -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held [      +Shift +Ctrl +[ -[ -Shift -Ctrl | armed: shift
+super+shift     [      +Shift +Super +[ -[ -Shift -Super | armed: -
+none            Tab    +Tab -Tab | armed: -
+shift           Tab    +Shift +Tab -Tab -Shift | armed: -
+shift-held      Tab    +Shift +Tab -Tab -Shift | armed: shift
+caps            Tab    +Shift +Tab -Tab -Shift | armed: caps
+caps+shift      Tab    +Tab -Tab | armed: caps
+ctrl            Tab    +Ctrl +Tab -Tab -Ctrl | armed: -
+alt             Tab    +Alt +Tab -Tab -Alt | armed: -
+super           Tab    +Super +Tab -Tab -Super | armed: -
+ctrl+alt        Tab    +Ctrl +Alt +Tab -Tab -Ctrl -Alt | armed: -
+ctrl+shift      Tab    +Shift +Ctrl +Tab -Tab -Shift -Ctrl | armed: -
+alt+shift       Tab    +Shift +Alt +Tab -Tab -Shift -Alt | armed: -
+ctrl+alt+shift  Tab    +Shift +Ctrl +Alt +Tab -Tab -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held Tab    +Shift +Ctrl +Tab -Tab -Shift -Ctrl | armed: shift
+super+shift     Tab    +Shift +Super +Tab -Tab -Shift -Super | armed: -
+none            Enter  +Enter -Enter | armed: -
+shift           Enter  +Shift +Enter -Enter -Shift | armed: -
+shift-held      Enter  +Shift +Enter -Enter -Shift | armed: shift
+caps            Enter  +Shift +Enter -Enter -Shift | armed: caps
+caps+shift      Enter  +Enter -Enter | armed: caps
+ctrl            Enter  +Ctrl +Enter -Enter -Ctrl | armed: -
+alt             Enter  +Alt +Enter -Enter -Alt | armed: -
+super           Enter  +Super +Enter -Enter -Super | armed: -
+ctrl+alt        Enter  +Ctrl +Alt +Enter -Enter -Ctrl -Alt | armed: -
+ctrl+shift      Enter  +Shift +Ctrl +Enter -Enter -Shift -Ctrl | armed: -
+alt+shift       Enter  +Shift +Alt +Enter -Enter -Shift -Alt | armed: -
+ctrl+alt+shift  Enter  +Shift +Ctrl +Alt +Enter -Enter -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held Enter  +Shift +Ctrl +Enter -Enter -Shift -Ctrl | armed: shift
+super+shift     Enter  +Shift +Super +Enter -Enter -Shift -Super | armed: -
+none            Space  +Space -Space | armed: -
+shift           Space  +Shift +Space -Space -Shift | armed: -
+shift-held      Space  +Shift +Space -Space -Shift | armed: shift
+caps            Space  +Shift +Space -Space -Shift | armed: caps
+caps+shift      Space  +Space -Space | armed: caps
+ctrl            Space  +Ctrl +Space -Space -Ctrl | armed: -
+alt             Space  +Alt +Space -Space -Alt | armed: -
+super           Space  +Super +Space -Space -Super | armed: -
+ctrl+alt        Space  +Ctrl +Alt +Space -Space -Ctrl -Alt | armed: -
+ctrl+shift      Space  +Shift +Ctrl +Space -Space -Shift -Ctrl | armed: -
+alt+shift       Space  +Shift +Alt +Space -Space -Shift -Alt | armed: -
+ctrl+alt+shift  Space  +Shift +Ctrl +Alt +Space -Space -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held Space  +Shift +Ctrl +Space -Space -Shift -Ctrl | armed: shift
+super+shift     Space  +Shift +Super +Space -Space -Shift -Super | armed: -
+none            Bksp   +Bksp -Bksp | armed: -
+shift           Bksp   +Shift +Bksp -Bksp -Shift | armed: -
+shift-held      Bksp   +Shift +Bksp -Bksp -Shift | armed: shift
+caps            Bksp   +Shift +Bksp -Bksp -Shift | armed: caps
+caps+shift      Bksp   +Bksp -Bksp | armed: caps
+ctrl            Bksp   +Ctrl +Bksp -Bksp -Ctrl | armed: -
+alt             Bksp   +Alt +Bksp -Bksp -Alt | armed: -
+super           Bksp   +Super +Bksp -Bksp -Super | armed: -
+ctrl+alt        Bksp   +Ctrl +Alt +Bksp -Bksp -Ctrl -Alt | armed: -
+ctrl+shift      Bksp   +Shift +Ctrl +Bksp -Bksp -Shift -Ctrl | armed: -
+alt+shift       Bksp   +Shift +Alt +Bksp -Bksp -Shift -Alt | armed: -
+ctrl+alt+shift  Bksp   +Shift +Ctrl +Alt +Bksp -Bksp -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held Bksp   +Shift +Ctrl +Bksp -Bksp -Shift -Ctrl | armed: shift
+super+shift     Bksp   +Shift +Super +Bksp -Bksp -Shift -Super | armed: -
+none            Esc    +Esc -Esc | armed: -
+shift           Esc    +Esc -Esc | armed: -
+shift-held      Esc    +Esc -Esc | armed: shift
+caps            Esc    +Esc -Esc | armed: caps
+caps+shift      Esc    +Esc -Esc | armed: caps
+ctrl            Esc    +Ctrl +Esc -Esc -Ctrl | armed: -
+alt             Esc    +Alt +Esc -Esc -Alt | armed: -
+super           Esc    +Super +Esc -Esc -Super | armed: -
+ctrl+alt        Esc    +Ctrl +Alt +Esc -Esc -Ctrl -Alt | armed: -
+ctrl+shift      Esc    +Ctrl +Esc -Esc -Ctrl | armed: -
+alt+shift       Esc    +Alt +Esc -Esc -Alt | armed: -
+ctrl+alt+shift  Esc    +Ctrl +Alt +Esc -Esc -Ctrl -Alt | armed: -
+ctrl+shift-held Esc    +Ctrl +Esc -Esc -Ctrl | armed: shift
+super+shift     Esc    +Super +Esc -Esc -Super | armed: -
+none            Del    +Del -Del | armed: -
+shift           Del    +Del -Del | armed: -
+shift-held      Del    +Del -Del | armed: shift
+caps            Del    +Del -Del | armed: caps
+caps+shift      Del    +Del -Del | armed: caps
+ctrl            Del    +Ctrl +Del -Del -Ctrl | armed: -
+alt             Del    +Alt +Del -Del -Alt | armed: -
+super           Del    +Super +Del -Del -Super | armed: -
+ctrl+alt        Del    +Ctrl +Alt +Del -Del -Ctrl -Alt | armed: -
+ctrl+shift      Del    +Ctrl +Del -Del -Ctrl | armed: -
+alt+shift       Del    +Alt +Del -Del -Alt | armed: -
+ctrl+alt+shift  Del    +Ctrl +Alt +Del -Del -Ctrl -Alt | armed: -
+ctrl+shift-held Del    +Ctrl +Del -Del -Ctrl | armed: shift
+super+shift     Del    +Super +Del -Del -Super | armed: -
+none            ←      +← -← | armed: -
+shift           ←      +Shift +← -← -Shift | armed: -
+shift-held      ←      +Shift +← -← -Shift | armed: shift
+caps            ←      +← -← | armed: caps
+caps+shift      ←      +Shift +← -← -Shift | armed: caps
+ctrl            ←      +Ctrl +← -← -Ctrl | armed: -
+alt             ←      +Alt +← -← -Alt | armed: -
+super           ←      +Super +← -← -Super | armed: -
+ctrl+alt        ←      +Ctrl +Alt +← -← -Ctrl -Alt | armed: -
+ctrl+shift      ←      +Shift +Ctrl +← -← -Shift -Ctrl | armed: -
+alt+shift       ←      +Shift +Alt +← -← -Shift -Alt | armed: -
+ctrl+alt+shift  ←      +Shift +Ctrl +Alt +← -← -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held ←      +Shift +Ctrl +← -← -Shift -Ctrl | armed: shift
+super+shift     ←      +Shift +Super +← -← -Shift -Super | armed: -
+none            →      +→ -→ | armed: -
+shift           →      +Shift +→ -→ -Shift | armed: -
+shift-held      →      +Shift +→ -→ -Shift | armed: shift
+caps            →      +→ -→ | armed: caps
+caps+shift      →      +Shift +→ -→ -Shift | armed: caps
+ctrl            →      +Ctrl +→ -→ -Ctrl | armed: -
+alt             →      +Alt +→ -→ -Alt | armed: -
+super           →      +Super +→ -→ -Super | armed: -
+ctrl+alt        →      +Ctrl +Alt +→ -→ -Ctrl -Alt | armed: -
+ctrl+shift      →      +Shift +Ctrl +→ -→ -Shift -Ctrl | armed: -
+alt+shift       →      +Shift +Alt +→ -→ -Shift -Alt | armed: -
+ctrl+alt+shift  →      +Shift +Ctrl +Alt +→ -→ -Shift -Ctrl -Alt | armed: -
+ctrl+shift-held →      +Shift +Ctrl +→ -→ -Shift -Ctrl | armed: shift
+super+shift     →      +Shift +Super +→ -→ -Shift -Super | armed: -
+none            ↑      +↑ -↑ | armed: -
+shift           ↑      speed+ | armed: -
+shift-held      ↑      speed+ | armed: shift
+caps            ↑      speed+ | armed: caps
+caps+shift      ↑      +↑ -↑ | armed: caps
+ctrl            ↑      +Ctrl +↑ -↑ -Ctrl | armed: -
+alt             ↑      +Alt +↑ -↑ -Alt | armed: -
+super           ↑      +Super +↑ -↑ -Super | armed: -
+ctrl+alt        ↑      +Ctrl +Alt +↑ -↑ -Ctrl -Alt | armed: -
+ctrl+shift      ↑      speed+ | armed: -
+alt+shift       ↑      speed+ | armed: -
+ctrl+alt+shift  ↑      speed+ | armed: -
+ctrl+shift-held ↑      speed+ | armed: shift
+super+shift     ↑      speed+ | armed: -
+none            ↓      +↓ -↓ | armed: -
+shift           ↓      speed- | armed: -
+shift-held      ↓      speed- | armed: shift
+caps            ↓      speed- | armed: caps
+caps+shift      ↓      +↓ -↓ | armed: caps
+ctrl            ↓      +Ctrl +↓ -↓ -Ctrl | armed: -
+alt             ↓      +Alt +↓ -↓ -Alt | armed: -
+super           ↓      +Super +↓ -↓ -Super | armed: -
+ctrl+alt        ↓      +Ctrl +Alt +↓ -↓ -Ctrl -Alt | armed: -
+ctrl+shift      ↓      speed- | armed: -
+alt+shift       ↓      speed- | armed: -
+ctrl+alt+shift  ↓      speed- | armed: -
+ctrl+shift-held ↓      speed- | armed: shift
+super+shift     ↓      speed- | armed: -
+none            Paste  +Ctrl +v -v -Ctrl | armed: -
+shift           Paste  +Ctrl +c -c -Ctrl | armed: -
+shift-held      Paste  +Ctrl +c -c -Ctrl | armed: shift
+caps            Paste  +Ctrl +c -c -Ctrl | armed: caps
+caps+shift      Paste  +Ctrl +v -v -Ctrl | armed: shift,caps
+ctrl            Paste  +Ctrl +v -v -Ctrl | armed: -
+alt             Paste  +Ctrl +v -v -Ctrl | armed: -
+super           Paste  +Ctrl +v -v -Ctrl | armed: -
+ctrl+alt        Paste  +Ctrl +v -v -Ctrl | armed: -
+ctrl+shift      Paste  +Ctrl +c -c -Ctrl | armed: -
+alt+shift       Paste  +Ctrl +c -c -Ctrl | armed: -
+ctrl+alt+shift  Paste  +Ctrl +c -c -Ctrl | armed: -
+ctrl+shift-held Paste  +Ctrl +c -c -Ctrl | armed: shift
+super+shift     Paste  +Ctrl +c -c -Ctrl | armed: -
+none            Theme  theme+ | armed: -
+shift           Theme  theme- | armed: -
+shift-held      Theme  theme- | armed: shift
+caps            Theme  theme- | armed: caps
+caps+shift      Theme  theme+ | armed: shift,caps
+ctrl            Theme  theme+ | armed: -
+alt             Theme  theme+ | armed: -
+super           Theme  theme+ | armed: -
+ctrl+alt        Theme  theme+ | armed: -
+ctrl+shift      Theme  theme- | armed: -
+alt+shift       Theme  theme- | armed: -
+ctrl+alt+shift  Theme  theme- | armed: -
+ctrl+shift-held Theme  theme- | armed: shift
+super+shift     Theme  theme- | armed: -
+none            AltTab +Alt +Tab -Tab -Alt | armed: -
+shift           AltTab +F5 -F5 | armed: -
+shift-held      AltTab +F5 -F5 | armed: shift
+caps            AltTab +F5 -F5 | armed: caps
+caps+shift      AltTab +Alt +Tab -Tab -Alt | armed: shift,caps
+ctrl            AltTab +Alt +Tab -Tab -Alt | armed: -
+alt             AltTab +Alt +Tab -Tab -Alt | armed: -
+super           AltTab +Alt +Tab -Tab -Alt | armed: -
+ctrl+alt        AltTab +Alt +Tab -Tab -Alt | armed: -
+ctrl+shift      AltTab +F5 -F5 | armed: -
+alt+shift       AltTab +F5 -F5 | armed: -
+ctrl+alt+shift  AltTab +F5 -F5 | armed: -
+ctrl+shift-held AltTab +F5 -F5 | armed: shift
+super+shift     AltTab +F5 -F5 | armed: -
+none            Undo   +Ctrl +z -z -Ctrl | armed: -
+shift           Undo   +F1 -F1 | armed: -
+shift-held      Undo   +F1 -F1 | armed: shift
+caps            Undo   +F1 -F1 | armed: caps
+caps+shift      Undo   +Ctrl +z -z -Ctrl | armed: caps
+ctrl            Undo   +Ctrl +z -z -Ctrl | armed: -
+alt             Undo   +Ctrl +z -z -Ctrl | armed: -
+super           Undo   +Ctrl +z -z -Ctrl | armed: -
+ctrl+alt        Undo   +Ctrl +z -z -Ctrl | armed: -
+ctrl+shift      Undo   +F1 -F1 | armed: -
+alt+shift       Undo   +F1 -F1 | armed: -
+ctrl+alt+shift  Undo   +F1 -F1 | armed: -
+ctrl+shift-held Undo   +F1 -F1 | armed: shift
+super+shift     Undo   +F1 -F1 | armed: -
+none            Redo   +Ctrl +y -y -Ctrl | armed: -
+shift           Redo   +F2 -F2 | armed: -
+shift-held      Redo   +F2 -F2 | armed: shift
+caps            Redo   +F2 -F2 | armed: caps
+caps+shift      Redo   +Ctrl +y -y -Ctrl | armed: caps
+ctrl            Redo   +Ctrl +y -y -Ctrl | armed: -
+alt             Redo   +Ctrl +y -y -Ctrl | armed: -
+super           Redo   +Ctrl +y -y -Ctrl | armed: -
+ctrl+alt        Redo   +Ctrl +y -y -Ctrl | armed: -
+ctrl+shift      Redo   +F2 -F2 | armed: -
+alt+shift       Redo   +F2 -F2 | armed: -
+ctrl+alt+shift  Redo   +F2 -F2 | armed: -
+ctrl+shift-held Redo   +F2 -F2 | armed: shift
+super+shift     Redo   +F2 -F2 | armed: -
+none            Cut    +Ctrl +x -x -Ctrl | armed: -
+shift           Cut    +F3 -F3 | armed: -
+shift-held      Cut    +F3 -F3 | armed: shift
+caps            Cut    +F3 -F3 | armed: caps
+caps+shift      Cut    +Ctrl +x -x -Ctrl | armed: caps
+ctrl            Cut    +Ctrl +x -x -Ctrl | armed: -
+alt             Cut    +Ctrl +x -x -Ctrl | armed: -
+super           Cut    +Ctrl +x -x -Ctrl | armed: -
+ctrl+alt        Cut    +Ctrl +x -x -Ctrl | armed: -
+ctrl+shift      Cut    +F3 -F3 | armed: -
+alt+shift       Cut    +F3 -F3 | armed: -
+ctrl+alt+shift  Cut    +F3 -F3 | armed: -
+ctrl+shift-held Cut    +F3 -F3 | armed: shift
+super+shift     Cut    +F3 -F3 | armed: -
+none            SelAll +Ctrl +a -a -Ctrl | armed: -
+shift           SelAll +F4 -F4 | armed: -
+shift-held      SelAll +F4 -F4 | armed: shift
+caps            SelAll +F4 -F4 | armed: caps
+caps+shift      SelAll +Ctrl +a -a -Ctrl | armed: caps
+ctrl            SelAll +Ctrl +a -a -Ctrl | armed: -
+alt             SelAll +Ctrl +a -a -Ctrl | armed: -
+super           SelAll +Ctrl +a -a -Ctrl | armed: -
+ctrl+alt        SelAll +Ctrl +a -a -Ctrl | armed: -
+ctrl+shift      SelAll +F4 -F4 | armed: -
+alt+shift       SelAll +F4 -F4 | armed: -
+ctrl+alt+shift  SelAll +F4 -F4 | armed: -
+ctrl+shift-held SelAll +F4 -F4 | armed: shift
+super+shift     SelAll +F4 -F4 | armed: -
+none            Home   +Home -Home | armed: -
+shift           Home   +F6 -F6 | armed: -
+shift-held      Home   +F6 -F6 | armed: shift
+caps            Home   +F6 -F6 | armed: caps
+caps+shift      Home   +Home -Home | armed: caps
+ctrl            Home   +Home -Home | armed: -
+alt             Home   +Home -Home | armed: -
+super           Home   +Home -Home | armed: -
+ctrl+alt        Home   +Home -Home | armed: -
+ctrl+shift      Home   +F6 -F6 | armed: -
+alt+shift       Home   +F6 -F6 | armed: -
+ctrl+alt+shift  Home   +F6 -F6 | armed: -
+ctrl+shift-held Home   +F6 -F6 | armed: shift
+super+shift     Home   +F6 -F6 | armed: -
+none            End    +End -End | armed: -
+shift           End    +F7 -F7 | armed: -
+shift-held      End    +F7 -F7 | armed: shift
+caps            End    +F7 -F7 | armed: caps
+caps+shift      End    +End -End | armed: caps
+ctrl            End    +End -End | armed: -
+alt             End    +End -End | armed: -
+super           End    +End -End | armed: -
+ctrl+alt        End    +End -End | armed: -
+ctrl+shift      End    +F7 -F7 | armed: -
+alt+shift       End    +F7 -F7 | armed: -
+ctrl+alt+shift  End    +F7 -F7 | armed: -
+ctrl+shift-held End    +F7 -F7 | armed: shift
+super+shift     End    +F7 -F7 | armed: -
+none            PgUp   +PgUp -PgUp | armed: -
+shift           PgUp   +F8 -F8 | armed: -
+shift-held      PgUp   +F8 -F8 | armed: shift
+caps            PgUp   +F8 -F8 | armed: caps
+caps+shift      PgUp   +PgUp -PgUp | armed: caps
+ctrl            PgUp   +PgUp -PgUp | armed: -
+alt             PgUp   +PgUp -PgUp | armed: -
+super           PgUp   +PgUp -PgUp | armed: -
+ctrl+alt        PgUp   +PgUp -PgUp | armed: -
+ctrl+shift      PgUp   +F8 -F8 | armed: -
+alt+shift       PgUp   +F8 -F8 | armed: -
+ctrl+alt+shift  PgUp   +F8 -F8 | armed: -
+ctrl+shift-held PgUp   +F8 -F8 | armed: shift
+super+shift     PgUp   +F8 -F8 | armed: -
+none            PgDn   +PgDn -PgDn | armed: -
+shift           PgDn   +F9 -F9 | armed: -
+shift-held      PgDn   +F9 -F9 | armed: shift
+caps            PgDn   +F9 -F9 | armed: caps
+caps+shift      PgDn   +PgDn -PgDn | armed: caps
+ctrl            PgDn   +PgDn -PgDn | armed: -
+alt             PgDn   +PgDn -PgDn | armed: -
+super           PgDn   +PgDn -PgDn | armed: -
+ctrl+alt        PgDn   +PgDn -PgDn | armed: -
+ctrl+shift      PgDn   +F9 -F9 | armed: -
+alt+shift       PgDn   +F9 -F9 | armed: -
+ctrl+alt+shift  PgDn   +F9 -F9 | armed: -
+ctrl+shift-held PgDn   +F9 -F9 | armed: shift
+super+shift     PgDn   +F9 -F9 | armed: -
+none            Play   +Play -Play | armed: -
+shift           Play   +F10 -F10 | armed: -
+shift-held      Play   +F10 -F10 | armed: shift
+caps            Play   +F10 -F10 | armed: caps
+caps+shift      Play   +Play -Play | armed: caps
+ctrl            Play   +Play -Play | armed: -
+alt             Play   +Play -Play | armed: -
+super           Play   +Play -Play | armed: -
+ctrl+alt        Play   +Play -Play | armed: -
+ctrl+shift      Play   +F10 -F10 | armed: -
+alt+shift       Play   +F10 -F10 | armed: -
+ctrl+alt+shift  Play   +F10 -F10 | armed: -
+ctrl+shift-held Play   +F10 -F10 | armed: shift
+super+shift     Play   +F10 -F10 | armed: -
+none            Mute   +Mute -Mute | armed: -
+shift           Mute   +F11 -F11 | armed: -
+shift-held      Mute   +F11 -F11 | armed: shift
+caps            Mute   +F11 -F11 | armed: caps
+caps+shift      Mute   +Mute -Mute | armed: caps
+ctrl            Mute   +Mute -Mute | armed: -
+alt             Mute   +Mute -Mute | armed: -
+super           Mute   +Mute -Mute | armed: -
+ctrl+alt        Mute   +Mute -Mute | armed: -
+ctrl+shift      Mute   +F11 -F11 | armed: -
+alt+shift       Mute   +F11 -F11 | armed: -
+ctrl+alt+shift  Mute   +F11 -F11 | armed: -
+ctrl+shift-held Mute   +F11 -F11 | armed: shift
+super+shift     Mute   +F11 -F11 | armed: -

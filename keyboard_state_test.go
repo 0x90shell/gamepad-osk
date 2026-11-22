@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -128,42 +129,61 @@ func TestCheckLongPressCursorMovedOff(t *testing.T) {
 	}
 }
 
-// U39: armed Ctrl, Alt or Super across the keys that return before the modifier
-// reset (Paste, Theme, Shift+Up). This pins today's behaviour: the modifier
-// stays armed, Paste and Theme do not use it, and the next letter types it.
-// The review calls this "unpinned"; whether it is wanted is the owner's call.
-// If the owner decides to clear them, change the expectations here.
-func TestArmedModifierSurvivesNonTypingKeys(t *testing.T) {
-	for _, label := range []string{"Paste", themeKeyLabel} {
+// U39: any key press but a modifier uses up the armed Ctrl, Alt and Super,
+// including the app keys (Paste, Theme, Alt+Tab, Shift+Up for mouse speed).
+// Owner's rule, 2026-11-21: an armed modifier never carries over to a later key.
+func TestNonTypingKeysClearArmedModifiers(t *testing.T) {
+	for _, c := range []struct {
+		label string
+		shift bool
+	}{
+		{"Paste", false}, {"Paste", true}, {themeKeyLabel, false}, {themeKeyLabel, true},
+		{"AltTab", false}, {"↑", true}, {"↓", true}, {"q", false}, {"Undo", false}, {"Undo", true},
+	} {
 		kb := NewKeyboardState(LayoutQWERTY)
-		kb.CtrlActive, kb.AltActive, kb.MetaActive = true, true, true
-		cursorOn(t, kb, label)
+		kb.CtrlActive, kb.AltActive, kb.MetaActive, kb.ShiftActive = true, true, true, c.shift
+		cursorOn(t, kb, c.label)
 		kb.PressCurrent(nil)
-		if !kb.CtrlActive || !kb.AltActive || !kb.MetaActive {
-			t.Errorf("%s: armed modifiers ctrl=%v alt=%v meta=%v, today they stay armed", label, kb.CtrlActive, kb.AltActive, kb.MetaActive)
+		kb.ReleaseAltTab(nil)
+		if kb.CtrlActive || kb.AltActive || kb.MetaActive {
+			t.Errorf("%s (shift %v): still armed ctrl=%v alt=%v super=%v", c.label, c.shift, kb.CtrlActive, kb.AltActive, kb.MetaActive)
 		}
 	}
+	// A modifier key adds to them instead: Ctrl then Alt are both armed.
 	kb := NewKeyboardState(LayoutQWERTY)
-	kb.CtrlActive, kb.ShiftActive = true, true
-	cursorOn(t, kb, "↑")
+	cursorOn(t, kb, "Ctrl")
 	kb.PressCurrent(nil)
-	if !kb.CtrlActive || kb.ShiftActive {
-		t.Errorf("Shift+Up: ctrl=%v shift=%v, today Ctrl stays armed and Shift clears", kb.CtrlActive, kb.ShiftActive)
+	cursorOn(t, kb, "Alt")
+	kb.PressCurrent(nil)
+	if !kb.CtrlActive || !kb.AltActive {
+		t.Errorf("Ctrl then Alt: ctrl=%v alt=%v, want both armed", kb.CtrlActive, kb.AltActive)
 	}
-	// A typing key does use and clear them.
-	kb = NewKeyboardState(LayoutQWERTY)
-	kb.CtrlActive, kb.AltActive, kb.MetaActive = true, true, true
-	cursorOn(t, kb, "q")
-	kb.PressCurrent(nil)
-	if kb.CtrlActive || kb.AltActive || kb.MetaActive {
-		t.Error("a letter did not clear the armed modifiers")
-	}
-	// A shortcut key clears them too.
-	kb.CtrlActive = true
-	cursorOn(t, kb, "Undo")
-	kb.PressCurrent(nil)
-	if kb.CtrlActive {
-		t.Error("a shortcut key did not clear Ctrl")
+}
+
+// U43: Shift reaches Left and Right (text selection, Ctrl+Shift+Left for a
+// word), but not from Caps alone, and never Esc or Delete.
+func TestShiftOnArrowsEscDelete(t *testing.T) {
+	old := keyHoldDuration
+	keyHoldDuration = 0
+	t.Cleanup(func() { keyHoldDuration = old })
+	names := keyNames()
+	for _, c := range []struct {
+		state       int
+		label, want string
+	}{
+		{1, "←", "+Shift +← -← -Shift"},                // shift
+		{2, "→", "+Shift +→ -→ -Shift"},                // shift held
+		{9, "←", "+Shift +Ctrl +← -← -Shift -Ctrl"},    // ctrl+shift: select a word
+		{3, "←", "+← -←"},                              // caps alone moves
+		{1, "Del", "+Del -Del"},                        // shift
+		{11, "Del", "+Ctrl +Alt +Del -Del -Ctrl -Alt"}, // ctrl+alt+shift
+		{1, "Esc", "+Esc -Esc"},                        // shift
+	} {
+		row := comboRow(t, names, c.state, c.label)
+		got := strings.TrimSpace(strings.SplitN(strings.SplitN(row, " | ", 2)[0], c.label, 2)[1])
+		if got != c.want {
+			t.Errorf("%s in state %s: sent %q, want %q", c.label, comboStates[c.state].name, got, c.want)
+		}
 	}
 }
 
@@ -215,3 +235,4 @@ func TestNoLongPressWhileHidden(t *testing.T) {
 		t.Error("the popup opened while the keyboard was hidden")
 	}
 }
+
