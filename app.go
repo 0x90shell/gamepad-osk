@@ -60,6 +60,7 @@ type App struct {
 	grabPendingUntil time.Time
 
 	layerClosedAt time.Time // last time the compositor closed the layer surface
+	followedAt    time.Time // last check for a program started while shown
 
 	// What the loop works on, set by Run (fakes in tests)
 	kb   *KeyboardState

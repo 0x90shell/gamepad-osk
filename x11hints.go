@@ -8,14 +8,27 @@ package main
 #include <string.h>
 #include <stdlib.h>
 
-// Store the previously focused window so we can restore focus
+// Store the previously focused window so we can restore focus, and the
+// window the WM called active then (the game's client window).
 static Window prev_focused = 0;
+static Window prev_active = 0;
+
+// The windows open at the save (_NET_CLIENT_LIST), to tell a program started
+// since (a game launched after the keyboard) from one that was already open.
+#define MAX_SAVED_CLIENTS 512
+static Window saved_clients[MAX_SAVED_CLIENTS];
+static int n_saved_clients = -1; // -1: no list (no EWMH window manager)
+
+static Window read_active_window(Display *dpy);
+static void save_client_list(Display *dpy);
 
 void save_focused_window() {
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return;
     int revert;
     XGetInputFocus(dpy, &prev_focused, &revert);
+    prev_active = read_active_window(dpy);
+    save_client_list(dpy);
     XCloseDisplay(dpy);
 }
 
@@ -28,11 +41,24 @@ static int x11_suppress_focus_errors(Display *dpy, XErrorEvent *ev) {
     return 0;
 }
 
+static int window_viewable(Display *dpy, Window w);
+static void request_activate(Display *dpy, Window w);
+
 void restore_focus() {
     if (prev_focused == 0) return;
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return;
     XErrorHandler prev = XSetErrorHandler(x11_suppress_focus_errors);
+    // A game that lost focus to a click may have minimized itself (SDL does
+    // in exclusive fullscreen): X refuses focus to an unmapped window, so ask
+    // the window manager to activate it, as Alt+Tab or a taskbar click would.
+    if (prev_active != 0 && !window_viewable(dpy, prev_active)) {
+        request_activate(dpy, prev_active);
+        XSync(dpy, False);
+        XSetErrorHandler(prev);
+        XCloseDisplay(dpy);
+        return;
+    }
     XSetInputFocus(dpy, prev_focused, RevertToParent, CurrentTime);
     XSync(dpy, False); // round-trip: flushes request and fires error handler before we restore it
     XSetErrorHandler(prev);
@@ -166,31 +192,16 @@ int is_saved_window_fullscreen(unsigned long *out_saved, unsigned long *out_top,
         return 1;
     }
 
-    // Method 2: fall back to _NET_ACTIVE_WINDOW (handles cases where
-    // XGetInputFocus returned an internal sub-window that doesn't resolve
-    // to the correct toplevel)
-    Window root = DefaultRootWindow(dpy);
-    Atom net_active = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", True);
-    if (net_active != None) {
-        Atom type_ret;
-        int fmt_ret;
-        unsigned long nitems, bytes_left;
-        unsigned char *data = NULL;
-        if (XGetWindowProperty(dpy, root, net_active, 0, 1, False, XA_WINDOW,
-                &type_ret, &fmt_ret, &nitems, &bytes_left, &data) == Success
-                && nitems >= 1 && data != NULL) {
-            Window active = *(Window *)data;
-            XFree(data);
-            *out_active = (unsigned long)active;
-            if (active != 0 && active != root && check_window_fullscreen(dpy, active)) {
-                *out_method = 2;
-                XSetErrorHandler(prev_handler);
-                XCloseDisplay(dpy);
-                return 1;
-            }
-        } else {
-            if (data) XFree(data);
-        }
+    // Method 2: the window that was active at show (the game's client
+    // window). A window manager puts it in a frame, so the toplevel above has
+    // no state; and after a stray click it is no longer the active window.
+    // (Not the active window now: that may be another program, 2026-11-22.)
+    *out_active = (unsigned long)prev_active;
+    if (prev_active != 0 && check_window_fullscreen(dpy, prev_active)) {
+        *out_method = 2;
+        XSetErrorHandler(prev_handler);
+        XCloseDisplay(dpy);
+        return 1;
     }
 
     XSetErrorHandler(prev_handler);
@@ -214,6 +225,74 @@ static Window find_toplevel(Display *dpy, Window w) {
     return w;
 }
 
+static int window_viewable(Display *dpy, Window w) {
+    XWindowAttributes attr;
+    if (!XGetWindowAttributes(dpy, w, &attr)) return 1; // gone: nothing to activate
+    return attr.map_state == IsViewable;
+}
+
+// EWMH: ask the window manager to activate (unminimize, raise, focus) w.
+static void request_activate(Display *dpy, Window w) {
+    XEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = w;
+    ev.xclient.message_type = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = 2; // source: a pager, so the WM does not refuse it
+    ev.xclient.data.l[1] = CurrentTime;
+    XSendEvent(dpy, DefaultRootWindow(dpy), False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+}
+
+// The window _NET_ACTIVE_WINDOW names, 0 if none or no EWMH window manager.
+static Window read_active_window(Display *dpy) {
+    Atom net_active = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", True);
+    if (net_active == None) return 0;
+    Atom type_ret;
+    int fmt_ret;
+    unsigned long nitems, bytes_left;
+    unsigned char *data = NULL;
+    Window active = 0;
+    if (XGetWindowProperty(dpy, DefaultRootWindow(dpy), net_active, 0, 1, False, XA_WINDOW,
+            &type_ret, &fmt_ret, &nitems, &bytes_left, &data) == Success && nitems >= 1 && data) {
+        active = *(Window *)data;
+    }
+    if (data) XFree(data);
+    return active;
+}
+
+static void save_client_list(Display *dpy) {
+    n_saved_clients = -1;
+    Atom list = XInternAtom(dpy, "_NET_CLIENT_LIST", True);
+    if (list == None) return;
+    Atom type_ret;
+    int fmt_ret;
+    unsigned long nitems, bytes_left;
+    unsigned char *data = NULL;
+    if (XGetWindowProperty(dpy, DefaultRootWindow(dpy), list, 0, MAX_SAVED_CLIENTS, False, XA_WINDOW,
+            &type_ret, &fmt_ret, &nitems, &bytes_left, &data) == Success && data) {
+        n_saved_clients = (int)nitems;
+        for (unsigned long i = 0; i < nitems; i++) saved_clients[i] = ((Window *)data)[i];
+    }
+    if (data) XFree(data);
+}
+
+// 1 if the active window is a program started since the save: it was not
+// open then. 0 for the saved one, one already open (a stray click), none.
+int active_window_is_new() {
+    if (n_saved_clients < 0) return 0;
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return 0;
+    Window active = read_active_window(dpy);
+    XCloseDisplay(dpy);
+    if (active == 0 || active == prev_active) return 0;
+    for (int i = 0; i < n_saved_clients; i++) {
+        if (saved_clients[i] == active) return 0;
+    }
+    return 1;
+}
+
 // Warp pointer to center of prev_focused top-level window, but only if the
 // pointer is currently outside that window's geometry (e.g., drifted to another
 // monitor via virtual mouse). If pointer is inside, leave it alone.
@@ -226,7 +305,8 @@ int x11_warp_if_outside(unsigned long *out_wid, int *out_x, int *out_y,
     if (!dpy) return -1;
     XErrorHandler prev_handler = XSetErrorHandler(x11_suppress_focus_errors);
 
-    Window top = find_toplevel(dpy, prev_focused);
+    // The game: the window active at show, else the one that had focus
+    Window top = find_toplevel(dpy, prev_active ? prev_active : prev_focused);
     XSync(dpy, False); // flush errors from find_toplevel
     *out_wid = (unsigned long)top;
 
@@ -439,6 +519,27 @@ func SaveFocusedWindow() {
 	C.save_focused_window()
 }
 
+// ActiveWindowIsNew reports whether the active window is a program started
+// since the last SaveFocusedWindow (a game launched after the keyboard).
+func ActiveWindowIsNew() bool {
+	if !hasX11 {
+		return false
+	}
+	return C.active_window_is_new() != 0
+}
+
+// FollowNewProgram saves the focus again when the active window is a program
+// started since the last save (a game launched while the keyboard is up), so
+// hide returns to it. A window that was already open (a stray click) does
+// not count: hide undoes that. Reports whether it saved.
+func FollowNewProgram() bool {
+	if !ActiveWindowIsNew() {
+		return false
+	}
+	SaveFocusedWindow()
+	return true
+}
+
 func RestoreFocus() {
 	if !hasX11 {
 		return
@@ -496,8 +597,8 @@ func IsFullscreenActive() bool {
 }
 
 // IsSavedWindowFullscreen checks if the window saved by SaveFocusedWindow is
-// fullscreen. Checks the saved window's toplevel first, falls back to
-// _NET_ACTIVE_WINDOW. Survives stale window IDs.
+// fullscreen: its toplevel, then the window that was active at the save (the
+// game inside a window manager frame). Survives stale window IDs.
 func IsSavedWindowFullscreen() bool {
 	if !hasX11 {
 		return false

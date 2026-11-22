@@ -121,6 +121,7 @@ func (w *threadWindow) hide()               { w.record("hide", &w.hides) }
 func (w *threadWindow) quitRequested() bool { w.record("quitRequested", nil); return w.quit.Load() }
 func (w *threadWindow) layerClosed() bool   { w.record("layerClosed", nil); return w.closed.Swap(false) }
 func (w *threadWindow) dropLayer()          { w.record("dropLayer", &w.drops) }
+func (w *threadWindow) followFocus()        { w.record("followFocus", nil) }
 func (w *threadWindow) reattach() {
 	w.record("reattach", &w.reattaches)
 	w.mu.Lock()

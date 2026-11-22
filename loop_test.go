@@ -48,8 +48,8 @@ func (p *fakePad) Reconnect() bool {
 
 // fakeWindow records the window calls the loop makes.
 type fakeWindow struct {
-	shows, hides, draws, reattaches, drops int
-	quit, closed                           bool
+	shows, hides, draws, reattaches, drops, follows int
+	quit, closed                                    bool
 }
 
 func (w *fakeWindow) show()                 { w.shows++ }
@@ -58,6 +58,7 @@ func (w *fakeWindow) quitRequested() bool   { return w.quit }
 func (w *fakeWindow) layerClosed() bool     { c := w.closed; w.closed = false; return c }
 func (w *fakeWindow) dropLayer()            { w.drops++ }
 func (w *fakeWindow) reattach()             { w.reattaches++ }
+func (w *fakeWindow) followFocus()          { w.follows++ }
 func (w *fakeWindow) draw(_ *KeyboardState) { w.draws++ }
 
 // keyEvent is one EV_KEY event the injector wrote.
@@ -559,5 +560,31 @@ func TestMouseMoveNoRedraw(t *testing.T) {
 	}
 	if evs := l.keys(); len(evs) == 0 {
 		t.Error("no events at all: the test injector is not wired")
+	}
+}
+
+// U95: while the keyboard is shown, main looks for a program started since
+// the save (followFocus) 4 times a second, not on every pass; hidden, never.
+func TestFollowFocusWhileShown(t *testing.T) {
+	l := newTestLoop(t)
+	app := l.app
+	for range 10 {
+		app.pollWindow() // same instant: once
+	}
+	if l.win.follows != 1 {
+		t.Fatalf("%d checks at one instant, want 1", l.win.follows)
+	}
+	l.t = l.t.Add(followEvery - time.Millisecond)
+	app.pollWindow()
+	l.t = l.t.Add(time.Millisecond)
+	app.pollWindow()
+	if l.win.follows != 2 {
+		t.Errorf("%d checks after %v, want 2", l.win.follows, followEvery)
+	}
+	app.shown = false
+	l.t = l.t.Add(time.Second)
+	app.pollWindow()
+	if l.win.follows != 2 {
+		t.Error("checked while hidden")
 	}
 }

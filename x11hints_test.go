@@ -52,10 +52,11 @@ func TestIsFullscreenActiveWithDisplay(t *testing.T) {
 	t.Logf("IsFullscreenActive() = %v (depends on current desktop state)", result)
 }
 
-// startXvfb starts a private X server and returns its DISPLAY, so a test can
-// change root properties without touching the user's desktop. -noreset: by
-// default Xvfb wipes properties and atoms when its last client disconnects.
-func startXvfb(t *testing.T) string {
+// startXvfb starts a private X server with one screen of size (WxHxD) and
+// returns its DISPLAY, so a test can change root properties without touching
+// the user's desktop. -noreset: by default Xvfb wipes properties and atoms
+// when its last client disconnects.
+func startXvfb(t *testing.T, size string) string {
 	t.Helper()
 	bin, err := exec.LookPath("Xvfb")
 	if err != nil {
@@ -65,7 +66,7 @@ func startXvfb(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bin, "-displayfd", "3", "-screen", "0", "800x600x24", "-nolisten", "tcp", "-noreset") //nolint:gosec,noctx // Xvfb from PATH, killed in Cleanup
+	cmd := exec.Command(bin, "-displayfd", "3", "-screen", "0", size, "-nolisten", "tcp", "-noreset") //nolint:gosec,noctx // Xvfb from PATH, killed in Cleanup
 	cmd.ExtraFiles = []*os.File{w}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -102,7 +103,7 @@ func TestX11BadWindowReads(t *testing.T) {
 		fmt.Println("survived")
 		return
 	}
-	display := startXvfb(t)
+	display := startXvfb(t, "800x600x24")
 	cmd := exec.Command(os.Args[0], "-test.run=^TestX11BadWindowReads$") //nolint:gosec,noctx // the test binary itself
 	cmd.Env = append(os.Environ(), "OSK_X11_BADWINDOW_CHILD=1", "DISPLAY="+display)
 	out, err := cmd.CombinedOutput()

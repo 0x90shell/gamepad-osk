@@ -29,6 +29,7 @@ type windowOps interface {
 	layerClosed() bool   // the compositor closed the layer surface since the last call
 	dropLayer()          // destroy a closed layer surface and forget its output
 	reattach()           // attach the layer surface again after a close
+	followFocus()        // a program started while shown becomes the one hide returns to
 	draw(kb *KeyboardState)
 }
 
@@ -141,11 +142,19 @@ func (w *sdlWindow) hide() {
 	} else {
 		SDL3HideWindow(w.window)
 	}
-	if !isWayland {
+	// A program started since the save (a game launched after the keyboard)
+	// has the focus the user wants: leave it and the pointer alone.
+	if !isWayland && !ActiveWindowIsNew() {
 		if IsSavedWindowFullscreen() {
 			WarpPointerIfOutside()
 		}
 		RestoreFocus()
+	}
+}
+
+func (w *sdlWindow) followFocus() {
+	if !isWayland {
+		FollowNewProgram()
 	}
 }
 
@@ -353,9 +362,20 @@ func (app *App) releaseHeld() {
 }
 
 // pollWindow handles SDL events and a layer surface the compositor closed.
+// followEvery is how often, while shown, pollWindow looks for a program
+// started since the focus was saved.
+const followEvery = 250 * time.Millisecond
+
 func (app *App) pollWindow() {
 	if app.win.quitRequested() {
 		app.running.Store(false)
+	}
+
+	// A game started while the keyboard is up: hide gives the focus back to it,
+	// not to the window that had it at show (checked 4 times a second)
+	if now := app.clock(); app.shown && now.Sub(app.followedAt) >= followEvery {
+		app.followedAt = now
+		app.win.followFocus()
 	}
 
 	// The compositor closed the keyboard (its output went away): show it
