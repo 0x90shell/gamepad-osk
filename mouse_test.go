@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/binary"
+	"math"
 	"os"
 	"testing"
+	"time"
 )
 
 // padWithEvents returns a reader whose fd is a regular file holding the given
@@ -34,6 +36,8 @@ func padWithEvents(t *testing.T, sensitivity int, evs ...[3]int32) *GamepadReade
 		t.Fatal(err)
 	}
 	gp.fd = f
+	now := time.Unix(0, 0)
+	gp.clock = func() time.Time { now = now.Add(mouseStep); return now } // one step per pass
 	return gp
 }
 
@@ -197,5 +201,94 @@ func TestMouseNoDriftOneAxis(t *testing.T) {
 	}
 	if dx != 0 {
 		t.Errorf("X centered, Y still pushed: X moved %d px", dx)
+	}
+}
+
+// pushedPad is a reader with an axis held at push (negative: the other way)
+// and a clock that moves only when the test says.
+func pushedPad(t *testing.T, sensitivity int, axis uint16, push float64) (*GamepadReader, *time.Time) {
+	t.Helper()
+	gp := padWithEvents(t, sensitivity, [3]int32{evdevEV_ABS, int32(axis), int32(push * 32767)})
+	now := time.Unix(0, 0)
+	gp.clock = func() time.Time { return now }
+	return gp, &now
+}
+
+// passMove is the pointer movement of one pass.
+func passMove(gp *GamepadReader) (dx, dy int) {
+	for _, a := range gp.ReadEvents() {
+		if a.Type == ActionMouseMove {
+			dx += a.DX
+			dy += a.DY
+		}
+	}
+	return dx, dy
+}
+
+// U72: the pointer speed does not follow the poll rate. One second of a held
+// stick moves the same distance polled every 4 ms (the input goroutine with
+// the stick held) or every 16 ms (one pass per frame): 60 steps of
+// sensitivity * push (fixed 2026-11-22: it moved one step per pass, so 4x
+// faster once the pad had its own goroutine).
+func TestMouseSpeedIgnoresPollRate(t *testing.T) {
+	for _, every := range []time.Duration{4 * time.Millisecond, 16 * time.Millisecond, time.Second / 60} {
+		for _, c := range []struct {
+			sens int
+			axis uint16
+			push float64
+		}{{10, ABS_RX, 1.0}, {10, ABS_RX, 0.5}, {1, ABS_RX, 0.3}, {50, ABS_RX, 0.8}, {10, ABS_RY, -0.7}, {50, ABS_RY, 1.0}} {
+			gp, now := pushedPad(t, c.sens, c.axis, c.push)
+			moved := func() int {
+				dx, dy := passMove(gp)
+				if c.axis == ABS_RY {
+					return dy
+				}
+				return dx
+			}
+			total := moved() // the first pass: one step
+			for elapsed := every; elapsed <= time.Second; elapsed += every {
+				*now = now.Add(every)
+				total += moved()
+			}
+			step := float64(int32(c.push*32767)) / 32767 * float64(c.sens)
+			want := step * 61 // the first step, then 60 a second
+			// up to half a step short (16 ms polls end at 992 ms), plus a pixel of rounding
+			if d := float64(total) - want; d < -0.5*math.Abs(step)-1 || d > 0.5*math.Abs(step)+1 {
+				t.Errorf("polled every %v, sensitivity %d axis %d push %.1f: %d px in 1 s, want %.0f",
+					every, c.sens, c.axis, c.push, total, want)
+			}
+		}
+	}
+}
+
+// A pass after a stall (the system was busy) moves exactly maxMouseSteps (4)
+// steps: the pointer neither jumps nor stops.
+func TestMouseStallDoesNotJump(t *testing.T) {
+	if maxMouseSteps != 4 {
+		t.Fatalf("maxMouseSteps is %v: check the stall values below", maxMouseSteps)
+	}
+	gp, now := pushedPad(t, 10, ABS_RX, 1.0)
+	passMove(gp)
+	*now = now.Add(time.Second)
+	if dx, _ := passMove(gp); dx != 40 {
+		t.Errorf("one pass after a 1 s stall moved %d px, want 4 steps (40)", dx)
+	}
+}
+
+// Pushed again after centering, the first pass moves one step: the time
+// spent centered does not count.
+func TestMouseRestartIsOneStep(t *testing.T) {
+	gp, now := pushedPad(t, 10, ABS_RX, 1.0)
+	passMove(gp)
+	gp.mouseX = 0 // centered
+	*now = now.Add(time.Second)
+	passMove(gp)
+	if !gp.mouseLast.IsZero() {
+		t.Error("the last move time is kept while the stick is centered")
+	}
+	gp.mouseX = 1 // full push again, 2 s after the last move
+	*now = now.Add(time.Second)
+	if dx, _ := passMove(gp); dx != 10 {
+		t.Errorf("first pass after a new push moved %d px, want one step (10)", dx)
 	}
 }

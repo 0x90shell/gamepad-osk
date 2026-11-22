@@ -124,6 +124,8 @@ type GamepadReader struct {
 	mouseRemX  float64 // pixel fractions carried to the next pass, so a slow push still moves
 	mouseRemY  float64
 	mouseY     float64
+	mouseLast  time.Time            // the last pass that moved the pointer; zero when the stick is centered
+	clock      func() time.Time     // time.Now; tests set it
 	ltActive   bool                 // shift axis held
 	trigActive map[uint16]bool      // other trigger axes held, per axis
 	axisRanges map[uint16]axisRange // per-axis min/max from EVIOCGABS
@@ -163,6 +165,14 @@ type GamepadReader struct {
 	dropped     bool // SYN_DROPPED seen: skip events until the next SYN_REPORT
 }
 
+// mouseStep is the time one sensitivity step of pointer movement takes: the
+// draw-paced rate the pointer had before the pad got its own goroutine. A pass
+// after a stall moves at most maxMouseSteps, so the pointer does not jump.
+const (
+	mouseStep     = time.Second / 60
+	maxMouseSteps = 4.0
+)
+
 func NewGamepadReader(config Config) *GamepadReader {
 	gp := &GamepadReader{
 		config: config,
@@ -182,6 +192,7 @@ func NewGamepadReader(config Config) *GamepadReader {
 		comboSwallow: make(map[uint16]bool),
 
 		swapXYSetting: config.Gamepad.SwapXY,
+		clock:         time.Now,
 	}
 
 	gp.setStickAxes()
@@ -670,15 +681,22 @@ func (gp *GamepadReader) ReadEvents() []Action {
 		}
 	}
 
-	// Mouse
+	// Mouse: sensitivity is pixels per mouseStep at full push, however often
+	// the pad is polled. The first pass after a push moves one step.
 	if gp.config.Mouse.Enabled && (math.Abs(gp.mouseX) > 0.01 || math.Abs(gp.mouseY) > 0.01) {
-		s := float64(gp.config.Mouse.Sensitivity)
+		steps, t := 1.0, gp.clock()
+		if !gp.mouseLast.IsZero() {
+			steps = min(float64(t.Sub(gp.mouseLast))/float64(mouseStep), maxMouseSteps)
+		}
+		gp.mouseLast = t
+		s := float64(gp.config.Mouse.Sensitivity) * steps
 		fx, fy := gp.mouseX*s+gp.mouseRemX, gp.mouseY*s+gp.mouseRemY
 		dx, dy := int(fx), int(fy)
 		gp.mouseRemX, gp.mouseRemY = fx-float64(dx), fy-float64(dy)
 		actions = append(actions, Action{Type: ActionMouseMove, DX: dx, DY: dy})
 	} else {
 		gp.mouseRemX, gp.mouseRemY = 0, 0
+		gp.mouseLast = time.Time{}
 	}
 
 	return actions
