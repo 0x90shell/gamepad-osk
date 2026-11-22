@@ -539,3 +539,25 @@ func TestPadLostKeepsArmedModifiers(t *testing.T) {
 		t.Errorf("visible %v, status %q; want shown and \"Controller lost\"", app.visible, app.rend.flashText)
 	}
 }
+
+// U50: moving the mouse cursor does not redraw the keyboard (nothing on it
+// changes); navigating and pressing still do.
+func TestMouseMoveNoRedraw(t *testing.T) {
+	l := newTestLoop(t)
+	app, kb := l.app, l.app.kb
+	app.rend.dirtyFrames = 0
+	app.handleAction(Action{Type: ActionMouseMove, DX: 5, DY: -3}, kb, app.inj, app.rend)
+	if app.rend.dirtyFrames != 0 {
+		t.Errorf("a mouse move marked %d frames dirty, want 0", app.rend.dirtyFrames)
+	}
+	for _, a := range []Action{{Type: ActionNavigate, DX: 1}, {Type: ActionPressStart}, {Type: ActionLeftClick}} {
+		app.rend.dirtyFrames = 0
+		app.handleAction(a, kb, app.inj, app.rend)
+		if app.rend.dirtyFrames == 0 {
+			t.Errorf("action %v did not redraw", a.Type)
+		}
+	}
+	if evs := l.keys(); len(evs) == 0 {
+		t.Error("no events at all: the test injector is not wired")
+	}
+}

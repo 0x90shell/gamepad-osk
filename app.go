@@ -358,7 +358,11 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		return
 	}
 
-	rend.MarkDirty()
+	// The desktop draws the mouse cursor: moving it leaves the keyboard as it is,
+	// so no redraw (it came about 250 times a second while the stick was held).
+	if a.Type != ActionMouseMove {
+		rend.MarkDirty()
+	}
 
 	switch a.Type { //nolint:exhaustive // ActionNone is filtered by caller
 
