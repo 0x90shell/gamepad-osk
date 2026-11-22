@@ -23,7 +23,8 @@ func fakeMonitors(t *testing.T, ids []uint32, primary uint32, bounds map[uint32]
 }
 
 // U80: the keyboard opens on the primary monitor, wherever it is; then the
-// first display; with none, 1920x1080. The owner's desktop: three monitors,
+// first display; with none, 1920x1080. The ID is that monitor's SDL display
+// (Wayland takes its output from it). The owner's desktop: three monitors,
 // the primary in the middle at +1920+0.
 func TestPrimaryMonitor(t *testing.T) {
 	three := map[uint32]Rect{
@@ -37,21 +38,22 @@ func TestPrimaryMonitor(t *testing.T) {
 		primary uint32
 		bounds  map[uint32]Rect
 		want    MonitorRect
+		wantID  uint32
 	}{
-		{"primary in the middle", []uint32{1, 2, 3}, 2, three, MonitorRect{1920, 0, 2560, 1440}},
-		{"primary on the right", []uint32{1, 2, 3}, 3, three, MonitorRect{4480, 220, 1920, 1080}},
-		{"no primary: the first display", []uint32{3, 1, 2}, 0, three, MonitorRect{4480, 220, 1920, 1080}},
+		{"primary in the middle", []uint32{1, 2, 3}, 2, three, MonitorRect{1920, 0, 2560, 1440}, 2},
+		{"primary on the right", []uint32{1, 2, 3}, 3, three, MonitorRect{4480, 220, 1920, 1080}, 3},
+		{"no primary: the first display", []uint32{3, 1, 2}, 0, three, MonitorRect{4480, 220, 1920, 1080}, 3},
 		{"primary unreadable: the first display", []uint32{1, 2}, 2,
-			map[uint32]Rect{1: three[1]}, MonitorRect{0, 221, 1920, 1080}},
+			map[uint32]Rect{1: three[1]}, MonitorRect{0, 221, 1920, 1080}, 1},
 		{"first unreadable: the largest readable", []uint32{1, 3, 2}, 0,
-			map[uint32]Rect{3: three[3], 2: three[2]}, MonitorRect{1920, 0, 2560, 1440}},
-		{"none readable", []uint32{1, 2}, 0, nil, MonitorRect{0, 0, 1920, 1080}},
-		{"no displays", nil, 0, nil, MonitorRect{0, 0, 1920, 1080}},
+			map[uint32]Rect{3: three[3], 2: three[2]}, MonitorRect{1920, 0, 2560, 1440}, 2},
+		{"none readable", []uint32{1, 2}, 0, nil, MonitorRect{0, 0, 1920, 1080}, 0},
+		{"no displays", nil, 0, nil, MonitorRect{0, 0, 1920, 1080}, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fakeMonitors(t, c.ids, c.primary, c.bounds)
-			if got := GetPrimaryMonitor(); got != c.want {
-				t.Errorf("%+v, want %+v", got, c.want)
+			if got, id := GetPrimaryMonitor(); got != c.want || id != c.wantID {
+				t.Errorf("%+v display %d, want %+v display %d", got, id, c.want, c.wantID)
 			}
 		})
 	}

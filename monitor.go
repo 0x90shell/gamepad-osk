@@ -31,33 +31,37 @@ var (
 	sdlDisplayBounds  = SDL3GetDisplayBounds
 )
 
-func GetPrimaryMonitor() MonitorRect {
+// GetPrimaryMonitor returns the monitor the keyboard opens on and its SDL
+// display ID (0 when no display could be read).
+func GetPrimaryMonitor() (MonitorRect, uint32) {
 	displays := sdlDisplays()
 	if len(displays) == 0 {
-		return MonitorRect{0, 0, 1920, 1080}
+		return MonitorRect{0, 0, 1920, 1080}, 0
 	}
 	primary := sdlPrimaryDisplay()
 	if primary != 0 {
 		if r, ok := sdlDisplayBounds(primary); ok {
-			return MonitorRect(r)
+			return MonitorRect(r), primary
 		}
 	}
 	if r, ok := sdlDisplayBounds(displays[0]); ok {
-		return MonitorRect(r)
+		return MonitorRect(r), displays[0]
 	}
 	var bestArea int32
 	var best MonitorRect
+	var bestID uint32
 	for _, id := range displays {
 		if r, ok := sdlDisplayBounds(id); ok {
 			area := r.W * r.H
 			if area > bestArea {
 				bestArea = area
 				best = MonitorRect(r)
+				bestID = id
 			}
 		}
 	}
 	if bestArea > 0 {
-		return best
+		return best, bestID
 	}
-	return MonitorRect{0, 0, 1920, 1080}
+	return MonitorRect{0, 0, 1920, 1080}, 0
 }

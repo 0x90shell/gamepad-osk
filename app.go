@@ -135,7 +135,7 @@ func (app *App) Run() error {
 	initX11Detection()
 
 	// Get primary monitor
-	mon := GetPrimaryMonitor()
+	mon, monID := GetPrimaryMonitor()
 	unit := CalcUnitSize(layout, mon.W, cfg)
 	pad := int32(cfg.Keys.Padding) //nolint:gosec // G115: padding fits in int32
 	statusH := max32(20, int32(float64(unit)*0.4))
@@ -165,7 +165,7 @@ func (app *App) Run() error {
 	switch {
 	case layerShellMode:
 		// Wayland: create roleless surface, attach layer-shell asynchronously
-		setTargetMonitor(mon.X, mon.Y)
+		setTargetDisplay(monID)
 		window, err = createWaylandWindow("gamepad-osk", width, height)
 		if err != nil {
 			return err

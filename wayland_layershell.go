@@ -27,61 +27,14 @@ static struct wp_alpha_modifier_v1 *alpha_modifier = NULL;
 static struct wp_alpha_modifier_surface_v1 *alpha_surface = NULL;
 static uint32_t alpha_factor = UINT32_MAX;
 
-// --- Output matching ---
+// --- Output: the wl_output of the monitor the app chose ---
+// SDL knows each display's wl_output (and its position, from xdg-output).
+// wl_output's own geometry is no help: wlroots compositors report x=0, y=0
+// for every output.
 static struct wl_output *target_output = NULL;
-static int target_x = 0, target_y = 0;
+static SDL_DisplayID target_display = 0;
 
-// Track outputs during registry discovery
-#define MAX_OUTPUTS 8
-static struct {
-    struct wl_output *output;
-    int x, y;
-    int done; // geometry received
-} discovered_outputs[MAX_OUTPUTS];
-static int num_outputs = 0;
-
-static void output_geometry(void *data, struct wl_output *output,
-    int32_t x, int32_t y, int32_t pw, int32_t ph,
-    int32_t subpixel, const char *make, const char *model, int32_t transform) {
-    (void)pw; (void)ph; (void)subpixel; (void)make; (void)model; (void)transform;
-    // Find this output in our list and store geometry
-    for (int i = 0; i < num_outputs; i++) {
-        if (discovered_outputs[i].output == output) {
-            discovered_outputs[i].x = x;
-            discovered_outputs[i].y = y;
-            discovered_outputs[i].done = 1;
-            break;
-        }
-    }
-}
-
-static void output_mode(void *data, struct wl_output *output,
-    uint32_t flags, int32_t w, int32_t h, int32_t refresh) {
-    (void)data; (void)output; (void)flags; (void)w; (void)h; (void)refresh;
-}
-static void output_done(void *data, struct wl_output *output) {
-    (void)data; (void)output;
-}
-static void output_scale(void *data, struct wl_output *output, int32_t factor) {
-    (void)data; (void)output; (void)factor;
-}
-static void output_name(void *data, struct wl_output *output, const char *name) {
-    (void)data; (void)output; (void)name;
-}
-static void output_description(void *data, struct wl_output *output, const char *desc) {
-    (void)data; (void)output; (void)desc;
-}
-
-static const struct wl_output_listener output_listener = {
-    .geometry = output_geometry,
-    .mode = output_mode,
-    .done = output_done,
-    .scale = output_scale,
-    .name = output_name,
-    .description = output_description,
-};
-
-// --- Registry listener: discover layer_shell and outputs ---
+// --- Registry listener: discover layer_shell ---
 static void registry_global(void *data, struct wl_registry *registry,
     uint32_t name, const char *interface, uint32_t version) {
     (void)data;
@@ -92,14 +45,6 @@ static void registry_global(void *data, struct wl_registry *registry,
     if (strcmp(interface, wp_alpha_modifier_v1_interface.name) == 0) {
         alpha_modifier = wl_registry_bind(registry, name,
             &wp_alpha_modifier_v1_interface, 1);
-    }
-    if (strcmp(interface, "wl_output") == 0 && num_outputs < MAX_OUTPUTS) {
-        struct wl_output *out = wl_registry_bind(registry, name,
-            &wl_output_interface, version < 4 ? version : 4);
-        discovered_outputs[num_outputs].output = out;
-        discovered_outputs[num_outputs].done = 0;
-        wl_output_add_listener(out, &output_listener, NULL);
-        num_outputs++;
     }
 }
 
@@ -177,16 +122,14 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
     .closed = layer_surface_closed,
 };
 
-// Select the wl_output matching the target monitor position.
+// Select the target display's wl_output (SDL's own; never destroyed here).
 static void select_target_output() {
     target_output = NULL;
-    for (int i = 0; i < num_outputs; i++) {
-        if (discovered_outputs[i].done &&
-            discovered_outputs[i].x == target_x &&
-            discovered_outputs[i].y == target_y) {
-            target_output = discovered_outputs[i].output;
-            return;
-        }
+    if (target_display == 0) return;
+    SDL_PropertiesID props = SDL_GetDisplayProperties(target_display);
+    if (props) {
+        target_output = SDL_GetPointerProperty(props,
+            SDL_PROP_DISPLAY_WAYLAND_WL_OUTPUT_POINTER, NULL);
     }
 }
 
@@ -201,7 +144,6 @@ static int discover_globals(SDL_Window *sdl_win) {
     struct wl_registry *registry = wl_display_get_registry(display);
     wl_registry_add_listener(registry, &registry_listener, NULL);
     wl_display_roundtrip(display); // discover globals
-    wl_display_roundtrip(display); // receive output geometry events
 
     wl_registry_destroy(registry);
 
@@ -353,13 +295,6 @@ static void cleanup_layer_shell() {
         zwlr_layer_shell_v1_destroy(layer_shell);
         layer_shell = NULL;
     }
-    for (int i = 0; i < num_outputs; i++) {
-        if (discovered_outputs[i].output) {
-            wl_output_destroy(discovered_outputs[i].output);
-            discovered_outputs[i].output = NULL;
-        }
-    }
-    num_outputs = 0;
     target_output = NULL;
     wl_surf = NULL;
 }
@@ -379,10 +314,9 @@ static int has_layer_shell() {
     return layer_surface != NULL;
 }
 
-// Set the target monitor position for output matching.
-static void set_target_monitor(int x, int y) {
-    target_x = x;
-    target_y = y;
+// Set the SDL display the keyboard opens on (0: the compositor chooses).
+static void set_target_display(SDL_DisplayID id) {
+    target_display = id;
 }
 */
 import "C"
@@ -400,9 +334,10 @@ func probeLayerShell() int {
 	return int(C.probe_layer_shell())
 }
 
-// setTargetMonitor sets the target monitor position for wl_output matching.
-func setTargetMonitor(x, y int32) {
-	C.set_target_monitor(C.int(x), C.int(y))
+// setTargetDisplay sets the SDL display whose output the keyboard opens on
+// (0: the compositor chooses).
+func setTargetDisplay(id uint32) {
+	C.set_target_display(C.SDL_DisplayID(id))
 }
 
 // createWaylandWindow creates an SDL3 window with a roleless Wayland surface.
