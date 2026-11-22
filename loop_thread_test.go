@@ -150,7 +150,10 @@ func (w *threadWindow) draw(kb *KeyboardState) {
 	}
 	if ms := w.slowMs.Load(); ms > 0 {
 		w.inDraw.Store(true)
-		time.Sleep(time.Duration(ms) * time.Millisecond)
+		// slow until the time is up or the test sets slowMs back to 0
+		for end := time.Now().Add(time.Duration(ms) * time.Millisecond); time.Now().Before(end) && w.slowMs.Load() > 0; {
+			time.Sleep(2 * time.Millisecond)
+		}
 		w.inDraw.Store(false)
 	}
 }

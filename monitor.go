@@ -24,24 +24,31 @@ func min32(a, b int32) int32 {
 	return b
 }
 
+// The SDL display calls, variables so tests can fake the monitors.
+var (
+	sdlDisplays       = SDL3GetDisplays
+	sdlPrimaryDisplay = SDL3GetPrimaryDisplay
+	sdlDisplayBounds  = SDL3GetDisplayBounds
+)
+
 func GetPrimaryMonitor() MonitorRect {
-	displays := SDL3GetDisplays()
+	displays := sdlDisplays()
 	if len(displays) == 0 {
 		return MonitorRect{0, 0, 1920, 1080}
 	}
-	primary := SDL3GetPrimaryDisplay()
+	primary := sdlPrimaryDisplay()
 	if primary != 0 {
-		if r, ok := SDL3GetDisplayBounds(primary); ok {
+		if r, ok := sdlDisplayBounds(primary); ok {
 			return MonitorRect(r)
 		}
 	}
-	if r, ok := SDL3GetDisplayBounds(displays[0]); ok {
+	if r, ok := sdlDisplayBounds(displays[0]); ok {
 		return MonitorRect(r)
 	}
 	var bestArea int32
 	var best MonitorRect
 	for _, id := range displays {
-		if r, ok := SDL3GetDisplayBounds(id); ok {
+		if r, ok := sdlDisplayBounds(id); ok {
 			area := r.W * r.H
 			if area > bestArea {
 				bestArea = area

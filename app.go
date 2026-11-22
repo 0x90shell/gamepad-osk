@@ -143,33 +143,8 @@ func (app *App) Run() error {
 	Debugf("Monitor: %dx%d+%d+%d, scale=%d%%, unit=%d, window=%dx%d",
 		mon.W, mon.H, mon.X, mon.Y, cfg.Keys.Scale, unit, width, height)
 
-	// Use workarea on X11 to avoid panels/taskbars; fall back to monitor bounds.
-	// Workarea spans all monitors - intersect with primary to get per-monitor area.
-	posArea := mon
-	waOk := false
-	if wx, wy, ww, wh, ok := GetWorkarea(); ok && ww > 0 && wh > 0 {
-		waOk = true
-		wa := MonitorRect{X: wx, Y: wy, W: ww, H: wh}
-		posArea = intersectRect(mon, wa)
-		Debugf("Workarea: %dx%d+%d+%d, monitor: %dx%d+%d+%d, effective: %dx%d+%d+%d",
-			ww, wh, wx, wy, mon.W, mon.H, mon.X, mon.Y,
-			posArea.W, posArea.H, posArea.X, posArea.Y)
-	}
-	// Fallback: workarea available but didn't subtract panel for this monitor
-	// (multi-monitor XFCE reports combined workarea without per-monitor panel gaps).
-	// Scan _NET_WM_STRUT_PARTIAL on dock/panel windows directly.
-	if waOk && posArea == mon {
-		if top, bottom, left, right := GetStrutInsets(mon); top > 0 || bottom > 0 || left > 0 || right > 0 {
-			posArea = MonitorRect{
-				X: mon.X + left,
-				Y: mon.Y + top,
-				W: mon.W - left - right,
-				H: mon.H - top - bottom,
-			}
-			Debugf("Strut fallback: top=%d bottom=%d left=%d right=%d, effective: %dx%d+%d+%d",
-				top, bottom, left, right, posArea.W, posArea.H, posArea.X, posArea.Y)
-		}
-	}
+	wx, wy, ww, wh, waOk := GetWorkarea()
+	posArea := placementArea(mon, MonitorRect{X: wx, Y: wy, W: ww, H: wh}, waOk, GetStrutInsets)
 
 	// Position: center horizontally, top or bottom based on config
 	x := posArea.X + (posArea.W-width)/2
@@ -485,6 +460,40 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend sc
 	}
 }
 
+// placementArea is the part of the monitor the keyboard is placed in. On X11
+// it is the workarea (wa, when ok) cut to the monitor, so panels are left
+// out. When that leaves out nothing, the panels' struts are read instead:
+// with several monitors XFCE reports one workarea for all of them, without
+// the panel gaps.
+func placementArea(mon, wa MonitorRect, ok bool, struts func(MonitorRect) (top, bottom, left, right int32)) MonitorRect {
+	if !ok || wa.W <= 0 || wa.H <= 0 {
+		return mon
+	}
+	area := intersectRect(mon, wa)
+	Debugf("Workarea: %dx%d+%d+%d, monitor: %dx%d+%d+%d, effective: %dx%d+%d+%d",
+		wa.W, wa.H, wa.X, wa.Y, mon.W, mon.H, mon.X, mon.Y, area.W, area.H, area.X, area.Y)
+	if area != mon {
+		return area
+	}
+	top, bottom, left, right := struts(mon)
+	if top <= 0 && bottom <= 0 && left <= 0 && right <= 0 {
+		return area
+	}
+	area = MonitorRect{X: mon.X + left, Y: mon.Y + top, W: mon.W - left - right, H: mon.H - top - bottom}
+	Debugf("Strut fallback: top=%d bottom=%d left=%d right=%d, effective: %dx%d+%d+%d",
+		top, bottom, left, right, area.W, area.H, area.X, area.Y)
+	return area
+}
+
+// The window and X11 calls of togglePosition and computeY, variables so
+// tests can fake them.
+var (
+	fullscreenActive = IsFullscreenActive
+	layerShellUp     = hasLayerShell
+	moveLayer        = repositionLayerSurface
+	moveWindow       = SDL3SetWindowPosition
+)
+
 // togglePosition moves the keyboard between the top and the bottom of the
 // screen and saves it (main thread: window calls).
 func (app *App) togglePosition() {
@@ -494,11 +503,11 @@ func (app *App) togglePosition() {
 	} else {
 		app.rend.Flash("↓ BOTTOM")
 	}
-	if hasLayerShell() {
-		repositionLayerSurface(app.posTop, app.margin, app.window)
+	if layerShellUp() {
+		moveLayer(app.posTop, app.margin, app.window)
 	} else {
 		app.winY = app.computeY()
-		SDL3SetWindowPosition(app.window, app.winX, app.winY)
+		moveWindow(app.window, app.winX, app.winY)
 	}
 	SavePosition(app.posTop)
 }
@@ -508,7 +517,7 @@ func (app *App) togglePosition() {
 // Otherwise uses workarea bounds (respects panels/taskbars).
 func (app *App) computeY() int32 {
 	area := app.posArea
-	if IsFullscreenActive() {
+	if fullscreenActive() {
 		area = app.mon
 	}
 	if app.posTop {
