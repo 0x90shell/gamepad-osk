@@ -43,7 +43,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Auto-reconnect on controller disconnect (timeout, power-off, unplug)
 - Key repeat on hold (configurable delay and rate)
 - Shift layer, Caps Lock, accent popup (Shift + hold on vowels)
-- Ctrl, Alt and Super keys: press one or more, then the key (Ctrl+Alt+T, Ctrl+Shift+Left); the next key press uses them up
+- Ctrl, Alt and Super keys: press one or more, then the key (Ctrl+Alt+T, Ctrl+Shift+Left, Ctrl+Home, Alt+F4); the next key press uses them up. Undo, Copy and the other fixed shortcuts ignore them.
 - Paste/Copy key, media keys (Play/Pause, Mute)
 - Always-on-top, no focus stealing (types into whatever app has focus)
 - Multi-monitor aware (positions on primary monitor)
@@ -75,6 +75,12 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Shift (LT) + left/right arrow | Select text (with Ctrl pressed first: by word) |
 | Theme key | Cycle themes (Shift+Theme = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
+
+A few Ctrl+Alt combos are blocked, because from the couch you'd have no way back. The status bar shows "Blocked risky combo" when you hit one:
+
+- Ctrl+Alt+F1 to F12: switches to a text console, where this keyboard can't appear.
+- Ctrl+Alt+Esc: on KDE, the next click kills whatever window it lands on.
+- Ctrl+Alt+Backspace: ends the whole X session on systems that have it turned on.
 
 The keyboard's Caps is its own. Caps Lock on a physical keyboard applies to every keyboard in the session, this one too: while it is on, letters come out in the other case. Turn it off on the physical keyboard.
 

@@ -38,6 +38,9 @@ type KeyboardState struct {
 	// Callbacks for live mouse sensitivity adjustment (Shift+↑/↓)
 	OnSensitivityUp   func()
 	OnSensitivityDown func()
+
+	// OnNotice shows a short message in the status bar
+	OnNotice func(msg string)
 }
 
 type AccentPopupState struct {
@@ -231,14 +234,18 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	// Combo keys (shortcut row): default sends combo, shift sends ShiftCode
+	// Shortcut row: default sends the key or its combo, Shift sends the F-key.
+	// Home, End, PgUp, PgDn and the F-keys take the armed modifiers (Ctrl+Home,
+	// Alt+F4); the fixed shortcuts and the media keys ignore them.
 	if len(key.Combo) > 0 || key.ShiftCode != 0 {
-		if inj != nil {
-			if shiftOn && key.ShiftCode != 0 {
-				inj.PressKey(key.ShiftCode, nil)
-			} else {
-				inj.PressKey(key.Code, key.Combo)
-			}
+		code, mods := key.Code, key.Combo
+		if shiftOn && key.ShiftCode != 0 {
+			code, mods = key.ShiftCode, kb.armedMods()
+		} else if len(key.Combo) == 0 && code != KEY_PLAYPAUSE && code != KEY_MUTE {
+			mods = kb.armedMods()
+		}
+		if !kb.blockRisky(code) && inj != nil {
+			inj.PressKey(code, mods)
 		}
 		if !kb.ShiftHeld { // a held trigger keeps Shift on
 			kb.ShiftActive = false
@@ -254,6 +261,44 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if shiftOn && code != KEY_ESC && code != KEY_DELETE {
 		mods = append(mods, KEY_LEFTSHIFT)
 	}
+	mods = append(mods, kb.armedMods()...)
+
+	if !kb.blockRisky(code) && inj != nil {
+		inj.PressKey(code, mods)
+	}
+
+	if kb.ShiftActive && !kb.ShiftHeld {
+		kb.ShiftActive = false
+	}
+	kb.clearArmed()
+}
+
+// riskyCombos are the keys that, with Ctrl+Alt, can leave a couch user stuck
+// with no keyboard in reach. They are not sent (blockRisky).
+var riskyCombos = map[int]bool{
+	KEY_ESC:       true, // KDE kill-window mode: the next click kills a window
+	KEY_BACKSPACE: true, // X11 with zap on: ends the session
+	// F1 to F12: switch to a text console, where this keyboard cannot show
+	KEY_F1: true, KEY_F2: true, KEY_F3: true, KEY_F4: true, KEY_F5: true, KEY_F6: true,
+	KEY_F7: true, KEY_F8: true, KEY_F9: true, KEY_F10: true, KEY_F11: true, KEY_F12: true,
+}
+
+// blockRisky reports whether Ctrl+Alt+code is a risky combo, and says so in
+// the status bar. The caller then sends nothing; the armed modifiers are
+// used up as for any key.
+func (kb *KeyboardState) blockRisky(code int) bool {
+	if !riskyCombos[code] || !kb.CtrlActive || !kb.AltActive {
+		return false
+	}
+	if kb.OnNotice != nil {
+		kb.OnNotice("Blocked risky combo")
+	}
+	return true
+}
+
+// armedMods is the armed Ctrl, Alt and Super, in that order.
+func (kb *KeyboardState) armedMods() []int {
+	var mods []int
 	if kb.CtrlActive {
 		mods = append(mods, KEY_LEFTCTRL)
 	}
@@ -263,15 +308,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if kb.MetaActive {
 		mods = append(mods, KEY_LEFTMETA)
 	}
-
-	if inj != nil {
-		inj.PressKey(code, mods)
-	}
-
-	if kb.ShiftActive && !kb.ShiftHeld {
-		kb.ShiftActive = false
-	}
-	kb.clearArmed()
+	return mods
 }
 
 // clearArmed ends the armed Ctrl, Alt and Super: any key press but a

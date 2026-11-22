@@ -32,6 +32,7 @@ var comboStates = []struct {
 	{name: "ctrl+alt+shift", ctrl: true, alt: true, shift: true},
 	{name: "ctrl+shift-held", ctrl: true, shift: true, held: true},
 	{name: "super+shift", meta: true, shift: true},
+	{name: "ctrl+alt+super+shift", ctrl: true, alt: true, meta: true, shift: true},
 }
 
 // comboKeys are the keys with their own branch in PressCurrent, plus one of each
@@ -117,7 +118,7 @@ func comboRow(t *testing.T, names map[uint16]string, st int, label string) strin
 	if len(armed) == 0 {
 		armed = []string{"-"}
 	}
-	return fmt.Sprintf("%-15s %-6s %s | armed: %s", s.name, label, strings.Join(sent, " "), strings.Join(armed, ","))
+	return fmt.Sprintf("%-20s %-6s %s | armed: %s", s.name, label, strings.Join(sent, " "), strings.Join(armed, ","))
 }
 
 // U42: every key with its own branch, pressed in every armed state, against a

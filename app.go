@@ -322,6 +322,7 @@ func (app *App) Run() error {
 	kb.OnThemeCycleReverse = func() { app.cycleTheme(-1) }
 	kb.OnSensitivityUp = func() { app.changeSensitivity(2) }
 	kb.OnSensitivityDown = func() { app.changeSensitivity(-2) }
+	kb.OnNotice = func(msg string) { app.rend.Flash(msg) }
 
 	app.running.Store(true)
 

@@ -477,3 +477,33 @@ func TestSensitivitySteps(t *testing.T) {
 		}
 	}
 }
+
+// U48: the pad's X, Y and RT (Backspace, Space, Enter) always send the plain
+// key: no armed Ctrl, Alt or Super, and no Shift even with LT held (LT + RT
+// must not become Shift+Enter, a new line in chat apps). They leave armed
+// modifiers for the next on-screen key.
+func TestPadButtonsIgnoreModifiers(t *testing.T) {
+	for _, c := range []struct {
+		action ActionType
+		code   uint16
+	}{{ActionBackspace, KEY_BACKSPACE}, {ActionSpace, KEY_SPACE}, {ActionEnter, KEY_ENTER}} {
+		l := newTestLoop(t)
+		app, kb := l.app, l.app.kb
+		kb.CtrlActive, kb.AltActive, kb.MetaActive = true, true, true
+		app.handleAction(Action{Type: ActionShiftOn}, kb, app.inj, app.rend) // LT held
+		app.handleAction(Action{Type: c.action}, kb, app.inj, app.rend)
+		app.stopRepeat()
+		var down []uint16
+		for _, ev := range l.keys() {
+			if ev.value == 1 {
+				down = append(down, ev.code)
+			}
+		}
+		if len(down) != 1 || down[0] != c.code {
+			t.Errorf("action %v: pressed %v, want only key %d", c.action, down, c.code)
+		}
+		if !kb.CtrlActive || !kb.AltActive || !kb.MetaActive {
+			t.Errorf("action %v: armed modifiers cleared (ctrl=%v alt=%v super=%v), want them kept", c.action, kb.CtrlActive, kb.AltActive, kb.MetaActive)
+		}
+	}
+}

@@ -383,3 +383,50 @@ func TestVowelTapAndHold(t *testing.T) {
 		}
 	}
 }
+
+// U47: Ctrl+Alt with Esc (KDE kill-window mode), Backspace (ends the X
+// session) or an F-key (console switch) can strand a couch user, so nothing is
+// sent and the status bar says why. Ctrl or Alt alone still reach them (Alt+F4),
+// and Ctrl+Alt+Del is sent.
+func TestRiskyCombosBlocked(t *testing.T) {
+	old := keyHoldDuration
+	keyHoldDuration = 0
+	t.Cleanup(func() { keyHoldDuration = old })
+	names := keyNames()
+	for _, c := range []struct {
+		state  int
+		label  string
+		want   string
+		notice string
+	}{
+		{11, "Undo", "(nothing)", "Blocked risky combo"}, // ctrl+alt+shift
+		{14, "Mute", "(nothing)", "Blocked risky combo"}, // ctrl+alt+super+shift
+		{8, "Esc", "(nothing)", "Blocked risky combo"},   // ctrl+alt
+		{8, "Bksp", "(nothing)", "Blocked risky combo"},
+		{8, "Del", "+Ctrl +Alt +Del -Del -Ctrl -Alt", ""},
+		{10, "SelAll", "+Alt +F4 -F4 -Alt", ""},              // alt+shift: Alt+F4
+		{9, "Home", "+Ctrl +F6 -F6 -Ctrl", ""},               // ctrl+shift
+		{5, "Esc", "+Ctrl +Esc -Esc -Ctrl", ""},              // ctrl
+		{6, "Bksp", "+Alt +Bksp -Bksp -Alt", ""},             // alt
+		{8, "Home", "+Ctrl +Alt +Home -Home -Ctrl -Alt", ""}, // ctrl+alt, no F-key
+	} {
+		row := comboRow(t, names, c.state, c.label)
+		got := strings.TrimSpace(strings.SplitN(strings.SplitN(row, " | ", 2)[0], c.label, 2)[1])
+		if got != c.want {
+			t.Errorf("%s in state %s: sent %q, want %q", c.label, comboStates[c.state].name, got, c.want)
+		}
+		kb := NewKeyboardState(LayoutQWERTY)
+		var notices []string
+		kb.OnNotice = func(m string) { notices = append(notices, m) }
+		s := comboStates[c.state]
+		kb.ShiftActive, kb.CtrlActive, kb.AltActive, kb.MetaActive = s.shift, s.ctrl, s.alt, s.meta
+		cursorOn(t, kb, c.label)
+		kb.PressCurrent(nil)
+		if got := strings.Join(notices, "; "); got != c.notice {
+			t.Errorf("%s in state %s: status %q, want %q", c.label, s.name, got, c.notice)
+		}
+		if kb.CtrlActive || kb.AltActive || kb.MetaActive {
+			t.Errorf("%s in state %s: armed modifiers left after the key", c.label, s.name)
+		}
+	}
+}
