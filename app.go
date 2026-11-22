@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,6 +68,15 @@ type App struct {
 	pad  padDevice
 	win  windowOps
 	now  func() time.Time // nil: time.Now
+
+	// Between the input goroutine and the main thread (runThreaded)
+	ui         uiSink                        // nil: directUI
+	jobs       jobQueue                      // window, renderer and file work for main
+	frame      atomic.Pointer[KeyboardState] // latest copy for main to draw
+	frameSeq   atomic.Uint64                 // bumped on each publish
+	frameDirty bool                          // input side: publish at the end of the pass
+	wake       chan struct{}                 // wakes main for a frame or a job
+	shown      bool                          // main's copy of visible, set by the show and hide jobs
 }
 
 func NewApp(config Config) *App {
@@ -256,6 +266,9 @@ func (app *App) Run() error {
 	defer rend.Destroy()
 	rend.keyShadow = cfg.Theme.KeyShadow
 	rend.roundKeys = cfg.Theme.KeyStyle == "rounded"
+	if rend.slowDraw = slowDrawSetting(os.Getenv("GAMEPAD_OSK_TEST_SLOW_DRAW_MS")); rend.slowDraw > 0 {
+		log.Printf("Test setting: each frame takes %d ms more", rend.slowDraw.Milliseconds())
+	}
 	// Set opacity after renderer creation (SDL3 requires renderer to exist first)
 	applyOpacity(window, rend, cfg.Window.Opacity)
 
@@ -322,9 +335,10 @@ func (app *App) Run() error {
 	kb.OnThemeCycleReverse = func() { app.cycleTheme(-1) }
 	kb.OnSensitivityUp = func() { app.changeSensitivity(2) }
 	kb.OnSensitivityDown = func() { app.changeSensitivity(-2) }
-	kb.OnNotice = func(msg string) { app.rend.Flash(msg) }
+	kb.OnNotice = func(msg string) { app.out().Flash(msg) }
 
 	app.running.Store(true)
+	app.shown = app.visible
 
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
@@ -340,11 +354,11 @@ func (app *App) Run() error {
 		// Layer-shell: first frame renders after configure arrives via SDL event pump
 	}
 
-	app.loop()
+	app.runThreaded()
 	return nil
 }
 
-func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *Renderer) {
+func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend screen) {
 	// Toggle combo works even when hidden (it's the show/hide mechanism)
 	if a.Type == ActionToggle {
 		app.lock.Lock()
@@ -451,19 +465,7 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 			inj.ClickMouse(0x111, false) // BTN_RIGHT release
 		}
 	case ActionPositionToggle:
-		app.posTop = !app.posTop
-		if app.posTop {
-			rend.Flash("↑ TOP")
-		} else {
-			rend.Flash("↓ BOTTOM")
-		}
-		if hasLayerShell() {
-			repositionLayerSurface(app.posTop, app.margin, app.window)
-		} else {
-			app.winY = app.computeY()
-			SDL3SetWindowPosition(app.window, app.winX, app.winY)
-		}
-		SavePosition(app.posTop)
+		app.out().Later(app.togglePosition)
 	case ActionClose:
 		if kb.AccentPopup != nil {
 			// Close button backs out of the accent popup first
@@ -481,6 +483,24 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		app.running.Store(false)
 		return
 	}
+}
+
+// togglePosition moves the keyboard between the top and the bottom of the
+// screen and saves it (main thread: window calls).
+func (app *App) togglePosition() {
+	app.posTop = !app.posTop
+	if app.posTop {
+		app.rend.Flash("↑ TOP")
+	} else {
+		app.rend.Flash("↓ BOTTOM")
+	}
+	if hasLayerShell() {
+		repositionLayerSurface(app.posTop, app.margin, app.window)
+	} else {
+		app.winY = app.computeY()
+		SDL3SetWindowPosition(app.window, app.winX, app.winY)
+	}
+	SavePosition(app.posTop)
 }
 
 // computeY returns the window Y position based on current fullscreen state.
@@ -527,6 +547,16 @@ func (app *App) releasePadHolds(kb *KeyboardState, inj *Injector) {
 
 func (app *App) stopRepeat() {
 	app.repeatAction = ActionNone
+}
+
+// slowDrawSetting reads the slow-frame test setting: a whole number of ms,
+// anything else is off.
+func slowDrawSetting(v string) time.Duration {
+	ms, err := strconv.Atoi(v)
+	if err != nil || ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // opacityPath is how the window is made see-through.

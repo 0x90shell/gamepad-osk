@@ -47,6 +47,8 @@ type Renderer struct {
 	layerOpacity   float64
 	layer          *Texture
 	layerW, layerH int32
+
+	slowDraw time.Duration // test setting: each Draw stalls this long, like a slow Present
 }
 
 // minTextContrast is the WCAG contrast floor for large text. Key labels
@@ -216,6 +218,9 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 
 	if layered {
 		r.endLayer()
+	}
+	if r.slowDraw > 0 {
+		time.Sleep(r.slowDraw)
 	}
 	SDL3RenderPresent(r.renderer)
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,79 @@ type windowOps interface {
 	dropLayer()          // destroy a closed layer surface and forget its output
 	reattach()           // attach the layer surface again after a close
 	draw(kb *KeyboardState)
+}
+
+// screen is what handling an action asks of the display.
+type screen interface {
+	MarkDirty()
+	Flash(text string)
+}
+
+// uiSink is how the input side reaches the display and the window. queuedUI
+// (the running app) hands everything to the main thread; directUI (tests)
+// does it at once.
+type uiSink interface {
+	screen
+	FlashGlyph(glyph, text string)
+	SetTheme(t Theme)
+	Later(job func()) // window, SDL and file work: runs on the main thread
+}
+
+// directUI runs everything at once on the calling goroutine.
+type directUI struct{ app *App }
+
+func (u directUI) MarkDirty()                    { u.app.rend.MarkDirty() }
+func (u directUI) Flash(text string)             { u.app.rend.Flash(text) }
+func (u directUI) FlashGlyph(glyph, text string) { u.app.rend.FlashGlyph(glyph, text) }
+func (u directUI) SetTheme(t Theme)              { u.app.rend.SetTheme(t); u.app.rend.MarkDirty() }
+func (u directUI) Later(job func())              { job() }
+
+// queuedUI publishes a new frame for main to draw, and queues window, renderer
+// and file work for main to run, in order. It never blocks the input side.
+type queuedUI struct{ app *App }
+
+// MarkDirty asks for a new frame; the input loop publishes it at the end of
+// the pass, after the state has changed.
+func (u queuedUI) MarkDirty() { u.app.frameDirty = true }
+func (u queuedUI) Flash(text string) {
+	u.Later(func() { u.app.rend.Flash(text) })
+}
+
+func (u queuedUI) FlashGlyph(glyph, text string) {
+	u.Later(func() { u.app.rend.FlashGlyph(glyph, text) })
+}
+
+func (u queuedUI) SetTheme(t Theme) {
+	u.Later(func() { u.app.rend.SetTheme(t); u.app.rend.MarkDirty() })
+}
+
+func (u queuedUI) Later(job func()) {
+	u.app.jobs.push(job)
+	u.app.wakeMain()
+}
+
+// jobQueue holds work for the main thread. push never blocks for long, so a
+// stuck Present cannot hold up the input side.
+type jobQueue struct {
+	mu   sync.Mutex
+	jobs []func()
+}
+
+func (q *jobQueue) push(job func()) {
+	q.mu.Lock()
+	q.jobs = append(q.jobs, job)
+	q.mu.Unlock()
+}
+
+// run runs the queued jobs in the order they came.
+func (q *jobQueue) run() {
+	q.mu.Lock()
+	jobs := q.jobs
+	q.jobs = nil
+	q.mu.Unlock()
+	for _, job := range jobs {
+		job()
+	}
 }
 
 // sdlWindow is the real window: an SDL window, a layer surface on Wayland
@@ -113,7 +187,102 @@ func (app *App) clock() time.Time {
 	return time.Now()
 }
 
-// loop runs until the app stops: one pass per frame or poll interval.
+// out is where the input side sends display and window work.
+func (app *App) out() uiSink {
+	if app.ui == nil {
+		return directUI{app}
+	}
+	return app.ui
+}
+
+// publish hands main a copy of the keyboard state to draw. Draw then reads
+// only its own copy (IsFlashed writes to it), never the input side's state.
+func (app *App) publish() {
+	c := *app.kb
+	if c.AccentPopup != nil {
+		popup := *c.AccentPopup
+		c.AccentPopup = &popup
+	}
+	app.frame.Store(&c)
+	app.frameSeq.Add(1)
+	app.wakeMain()
+}
+
+func (app *App) wakeMain() {
+	select {
+	case app.wake <- struct{}{}:
+	default:
+	}
+}
+
+// runThreaded is the running app: input on its own goroutine, the window and
+// drawing here on the main thread, so a slow Present cannot delay a key.
+func (app *App) runThreaded() {
+	app.ui = queuedUI{app}
+	app.wake = make(chan struct{}, 1)
+	app.publish()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.inputLoop()
+	}()
+	app.mainLoop()
+	app.running.Store(false)
+	<-done         // the input side has let go of every held key before Run closes the injector
+	app.jobs.run() // config saves queued just before the exit
+}
+
+// inputLoop: the pad, key sending and timers.
+func (app *App) inputLoop() {
+	for app.running.Load() {
+		app.applyToggle()
+		app.pollPad()
+		app.checkGrab()
+		app.checkReconnect()
+		app.checkTimers()
+		app.expireKeyFlash()
+		if app.frameDirty {
+			app.frameDirty = false
+			app.publish()
+		}
+		if ms := app.pollMs(); ms > 0 {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		}
+	}
+	app.releaseHeld()
+}
+
+// mainLoop: SDL events, window jobs and drawing.
+func (app *App) mainLoop() {
+	var seen uint64
+	for app.running.Load() {
+		app.pollWindow()
+		app.jobs.run()
+		app.expireTextFlash()
+		if s := app.frameSeq.Load(); s != seen {
+			seen = s
+			app.rend.MarkDirty()
+		}
+		if app.shown {
+			before := app.rend.dirtyFrames
+			if kb := app.frame.Load(); kb != nil {
+				app.win.draw(kb)
+			}
+			// Vsync in Draw paces the frames still to draw. A Draw that drew
+			// nothing (layer surface not configured yet) waits below instead.
+			if app.rend.dirtyFrames > 0 && app.rend.dirtyFrames < before {
+				continue
+			}
+		}
+		select {
+		case <-app.wake:
+		case <-time.After(16 * time.Millisecond): // keep the SDL event queue moving
+		}
+	}
+}
+
+// loop runs until the app stops: one pass per frame or poll interval, all on
+// one goroutine (tests; runThreaded is the running app).
 func (app *App) loop() {
 	for app.running.Load() {
 		app.applyToggle()
@@ -147,9 +316,21 @@ func (app *App) applyToggle() {
 			app.grabPending = true
 			app.grabPendingUntil = app.clock().Add(500 * time.Millisecond)
 		}
-		app.win.show()
+		app.out().MarkDirty()
+		app.out().Later(func() { app.shown = true; app.win.show() })
 		return
 	}
+	app.releaseHeld()
+	// Cancel any pending grab so it can't fire after hide.
+	app.grabPending = false
+	app.pad.Ungrab()
+	app.out().MarkDirty()
+	app.out().Later(func() { app.shown = false; app.win.hide() })
+}
+
+// releaseHeld clears every modifier and lets go of every key and mouse
+// button the app holds: on hide and when the input side stops.
+func (app *App) releaseHeld() {
 	kb, inj := app.kb, app.inj
 	app.stopRepeat()
 	kb.CapsActive = false
@@ -169,10 +350,6 @@ func (app *App) applyToggle() {
 		inj.ClickMouse(0x110, false) // BTN_LEFT release
 		inj.ClickMouse(0x111, false) // BTN_RIGHT release
 	}
-	// Cancel any pending grab so it can't fire after hide.
-	app.grabPending = false
-	app.pad.Ungrab()
-	app.win.hide()
 }
 
 // pollWindow handles SDL events and a layer surface the compositor closed.
@@ -183,7 +360,7 @@ func (app *App) pollWindow() {
 
 	// The compositor closed the keyboard (its output went away): show it
 	// again where the compositor chooses, or hide it if that keeps failing
-	if app.win.layerClosed() && app.visible {
+	if app.win.layerClosed() && app.shown {
 		app.win.dropLayer()
 		now := app.clock()
 		if reattachAfterClose(now, app.layerClosedAt) {
@@ -204,11 +381,11 @@ func (app *App) pollWindow() {
 func (app *App) pollPad() {
 	prevFd := app.pad.Fd()
 	for _, action := range app.pad.ReadEvents() {
-		app.handleAction(action, app.kb, app.inj, app.rend)
+		app.handleAction(action, app.kb, app.inj, app.out())
 	}
 	if prevFd >= 0 && app.pad.Fd() < 0 {
 		app.releasePadHolds(app.kb, app.inj)
-		app.rend.Flash("Controller lost")
+		app.out().Flash("Controller lost")
 	}
 }
 
@@ -237,7 +414,7 @@ func (app *App) checkReconnect() {
 	}
 	app.reconnectLast = now
 	if app.pad.Reconnect() {
-		app.rend.Flash("Controller connected")
+		app.out().Flash("Controller connected")
 		if app.visible && app.config.Gamepad.Grab {
 			app.pad.Grab()
 		}
@@ -248,10 +425,10 @@ func (app *App) checkReconnect() {
 func (app *App) checkTimers() {
 	kb, cfg := app.kb, app.config
 	if app.visible && kb.CheckLongPress(cfg.Gamepad.LongPressMs) {
-		app.rend.MarkDirty()
+		app.out().MarkDirty()
 	}
 	if kb.CheckAltTabTimeout(app.inj) {
-		app.rend.MarkDirty()
+		app.out().MarkDirty()
 	}
 	if app.repeatAction == ActionNone {
 		return
@@ -260,29 +437,37 @@ func (app *App) checkTimers() {
 	elapsed := now.Sub(app.repeatStart).Milliseconds()
 	if app.repeatInitial {
 		if elapsed >= int64(cfg.Keys.RepeatDelayMs) {
-			app.handleAction(Action{Type: app.repeatAction}, kb, app.inj, app.rend)
+			app.handleAction(Action{Type: app.repeatAction}, kb, app.inj, app.out())
 			app.repeatLast = now
 			app.repeatInitial = false
 		}
 	} else if now.Sub(app.repeatLast).Milliseconds() >= int64(cfg.Keys.RepeatRateMs) {
-		app.handleAction(Action{Type: app.repeatAction}, kb, app.inj, app.rend)
+		app.handleAction(Action{Type: app.repeatAction}, kb, app.inj, app.out())
 		app.repeatLast = now
 	}
 }
 
 // expireFlash triggers the final redraw when a flash message or key flash ends.
 func (app *App) expireFlash() {
-	if !app.visible {
-		return
-	}
-	rend, kb, now := app.rend, app.kb, app.clock()
-	if rend.flashText != "" && now.After(rend.flashEnd) {
+	app.expireTextFlash()
+	app.expireKeyFlash()
+}
+
+// expireTextFlash ends the status bar message (main thread: the renderer).
+func (app *App) expireTextFlash() {
+	rend := app.rend
+	if app.shown && rend.flashText != "" && app.clock().After(rend.flashEnd) {
 		rend.MarkDirty()
 		rend.flashText = ""
 		rend.flashGlyphText = ""
 	}
-	if kb.FlashCode != 0 && now.After(kb.FlashUntil) {
-		rend.MarkDirty()
+}
+
+// expireKeyFlash ends a key flash (input side: the keyboard state).
+func (app *App) expireKeyFlash() {
+	kb := app.kb
+	if app.visible && kb.FlashCode != 0 && app.clock().After(kb.FlashUntil) {
+		app.out().MarkDirty()
 		kb.FlashCode = 0
 	}
 }
@@ -291,10 +476,15 @@ func (app *App) expireFlash() {
 // active rendering. Sleep when hidden, when visible but idle (nothing to
 // draw), or when the stick is active (sub-vsync polling for smooth cursor).
 func (app *App) sleepMs() int {
-	polling := app.pad.NeedsPolling()
-	if app.visible && app.rend.dirtyFrames > 0 && !polling {
+	if app.visible && app.rend.dirtyFrames > 0 && !app.pad.NeedsPolling() {
 		return 0
 	}
+	return app.pollMs()
+}
+
+// pollMs is how long the input side sleeps between pad polls.
+func (app *App) pollMs() int {
+	polling := app.pad.NeedsPolling()
 	pollMs := 16 // hidden idle: ~60Hz for IPC + gamepad checks
 	if polling {
 		pollMs = 4 // mouse/nav active: ~250Hz for smooth cursor
@@ -318,8 +508,8 @@ func (app *App) sleepMs() int {
 func (app *App) cycleTheme(step int) {
 	app.themeIdx = (app.themeIdx + step + len(themeOrder)) % len(themeOrder)
 	name := themeOrder[app.themeIdx]
-	app.rend.SetTheme(Themes[name])
-	SaveTheme(name)
+	app.out().SetTheme(Themes[name])
+	app.out().Later(func() { SaveTheme(name) })
 }
 
 // changeSensitivity steps the mouse sensitivity (1 to 50), shows and saves it.
@@ -331,6 +521,6 @@ func (app *App) changeSensitivity(step int) {
 	if step < 0 {
 		glyph = "⟾"
 	}
-	app.rend.FlashGlyph(glyph, strconv.Itoa(s))
-	SaveSensitivity(s)
+	app.out().FlashGlyph(glyph, strconv.Itoa(s))
+	app.out().Later(func() { SaveSensitivity(s) })
 }

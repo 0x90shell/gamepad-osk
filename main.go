@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -157,6 +158,9 @@ func editDistance(a, b string) int {
 	}
 	return prev[len(b)]
 }
+
+// SDL must run on the process's first thread: keep the main goroutine there.
+func init() { runtime.LockOSThread() }
 
 func main() {
 	opts, err := parseArgs(os.Args[1:])

@@ -88,7 +88,7 @@ func newTestLoop(t *testing.T) *testLoop {
 	cfg := DefaultConfig()
 	ValidateConfig(&cfg)
 	l := &testLoop{pad: &fakePad{fd: 3}, win: &fakeWindow{}, t: time.Unix(1000, 0), pr: pr, pw: pw, tst: t}
-	l.app = &App{config: cfg, visible: true,
+	l.app = &App{config: cfg, visible: true, shown: true,
 		kb: NewKeyboardState(LayoutQWERTY), inj: &Injector{fd: pw}, rend: &Renderer{},
 		pad: l.pad, win: l.win}
 	l.app.now = func() time.Time { return l.t }
@@ -385,7 +385,7 @@ func TestExpireFlash(t *testing.T) {
 		t.Error("marked dirty again after the flash ended")
 	}
 
-	app.visible = false
+	app.visible, app.shown = false, false
 	rend.flashText, rend.flashEnd = "y", l.t
 	l.advance(1)
 	app.expireFlash()
