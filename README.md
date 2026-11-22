@@ -39,10 +39,11 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Square or rounded keys, with an optional shadow
 - Promptfont controller-agnostic button glyphs on mapped keys
 - Mouse cursor via right stick + R3/RB click (hold to drag)
-- Live mouse sensitivity adjustment (Shift + arrow keys, saved to config)
+- Live mouse sensitivity adjustment (Shift + up/down arrow keys, saved to config)
 - Auto-reconnect on controller disconnect (timeout, power-off, unplug)
 - Key repeat on hold (configurable delay and rate)
 - Shift layer, Caps Lock, accent popup (Shift + hold on vowels)
+- Ctrl, Alt and Super keys: press one or more, then the key (Ctrl+Alt+T, Ctrl+Shift+Left); the next key press uses them up
 - Paste/Copy key, media keys (Play/Pause, Mute)
 - Always-on-top, no focus stealing (types into whatever app has focus)
 - Multi-monitor aware (positions on primary monitor)
@@ -67,12 +68,15 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | RB | Left mouse click (hold to drag) |
 | LB | Right mouse click |
 | Mouse stick click (R3) | Left mouse click |
-| Nav stick click (L3) | Caps Lock |
+| Nav stick click (L3) | Caps Lock (letters only, as on a PC keyboard) |
 | Start | Toggle keyboard top/bottom |
-| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.): left/right to choose, release A to type |
+| Shift (LT) + hold A (on vowel) | Accent popup (é, ñ, ü, etc.; with Caps on: É, Ñ, Ü): left/right to choose, release A to type |
 | Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
+| Shift (LT) + left/right arrow | Select text (with Ctrl pressed first: by word) |
 | Theme key | Cycle themes (Shift+Theme = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
+
+The keyboard's Caps is its own. Caps Lock on a physical keyboard applies to every keyboard in the session, this one too: while it is on, letters come out in the other case. Turn it off on the physical keyboard.
 
 ## Usage
 
