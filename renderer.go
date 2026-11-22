@@ -394,7 +394,7 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 
 	// Shift hint (top-right)
 	if key.ShiftLabel != "" && !key.IsModifier && !isCursor {
-		if kb.ShiftActive == kb.CapsActive {
+		if !kb.Shifted(key) {
 			hintFont := r.fontSmall
 			if r.fontGlyph != nil && hasPromptfontRune(key.ShiftLabel) {
 				hintFont = r.fontGlyph
@@ -476,7 +476,8 @@ func (r *Renderer) drawAccentPopup(kb *KeyboardState, minX int32) {
 		if i == sel {
 			tc = r.accentSelText
 		}
-		r.renderText(r.font, accent.Label, tc, ar, AlignCenter)
+		label, _ := kb.AccentText(accent)
+		r.renderText(r.font, label, tc, ar, AlignCenter)
 		ax += r.unit + r.pad
 	}
 }

@@ -29,8 +29,8 @@ super+shift     e      +Shift +Super +e -e -Shift -Super | armed: -
 none            1      +1 -1 | armed: -
 shift           1      +Shift +1 -1 -Shift | armed: -
 shift-held      1      +Shift +1 -1 -Shift | armed: shift
-caps            1      +Shift +1 -1 -Shift | armed: caps
-caps+shift      1      +1 -1 | armed: caps
+caps            1      +1 -1 | armed: caps
+caps+shift      1      +Shift +1 -1 -Shift | armed: caps
 ctrl            1      +Ctrl +1 -1 -Ctrl | armed: -
 alt             1      +Alt +1 -1 -Alt | armed: -
 super           1      +Super +1 -1 -Super | armed: -
@@ -43,8 +43,8 @@ super+shift     1      +Shift +Super +1 -1 -Shift -Super | armed: -
 none            [      +[ -[ | armed: -
 shift           [      +Shift +[ -[ -Shift | armed: -
 shift-held      [      +Shift +[ -[ -Shift | armed: shift
-caps            [      +Shift +[ -[ -Shift | armed: caps
-caps+shift      [      +[ -[ | armed: caps
+caps            [      +[ -[ | armed: caps
+caps+shift      [      +Shift +[ -[ -Shift | armed: caps
 ctrl            [      +Ctrl +[ -[ -Ctrl | armed: -
 alt             [      +Alt +[ -[ -Alt | armed: -
 super           [      +Super +[ -[ -Super | armed: -
@@ -57,8 +57,8 @@ super+shift     [      +Shift +Super +[ -[ -Shift -Super | armed: -
 none            Tab    +Tab -Tab | armed: -
 shift           Tab    +Shift +Tab -Tab -Shift | armed: -
 shift-held      Tab    +Shift +Tab -Tab -Shift | armed: shift
-caps            Tab    +Shift +Tab -Tab -Shift | armed: caps
-caps+shift      Tab    +Tab -Tab | armed: caps
+caps            Tab    +Tab -Tab | armed: caps
+caps+shift      Tab    +Shift +Tab -Tab -Shift | armed: caps
 ctrl            Tab    +Ctrl +Tab -Tab -Ctrl | armed: -
 alt             Tab    +Alt +Tab -Tab -Alt | armed: -
 super           Tab    +Super +Tab -Tab -Super | armed: -
@@ -71,8 +71,8 @@ super+shift     Tab    +Shift +Super +Tab -Tab -Shift -Super | armed: -
 none            Enter  +Enter -Enter | armed: -
 shift           Enter  +Shift +Enter -Enter -Shift | armed: -
 shift-held      Enter  +Shift +Enter -Enter -Shift | armed: shift
-caps            Enter  +Shift +Enter -Enter -Shift | armed: caps
-caps+shift      Enter  +Enter -Enter | armed: caps
+caps            Enter  +Enter -Enter | armed: caps
+caps+shift      Enter  +Shift +Enter -Enter -Shift | armed: caps
 ctrl            Enter  +Ctrl +Enter -Enter -Ctrl | armed: -
 alt             Enter  +Alt +Enter -Enter -Alt | armed: -
 super           Enter  +Super +Enter -Enter -Super | armed: -
@@ -85,8 +85,8 @@ super+shift     Enter  +Shift +Super +Enter -Enter -Shift -Super | armed: -
 none            Space  +Space -Space | armed: -
 shift           Space  +Shift +Space -Space -Shift | armed: -
 shift-held      Space  +Shift +Space -Space -Shift | armed: shift
-caps            Space  +Shift +Space -Space -Shift | armed: caps
-caps+shift      Space  +Space -Space | armed: caps
+caps            Space  +Space -Space | armed: caps
+caps+shift      Space  +Shift +Space -Space -Shift | armed: caps
 ctrl            Space  +Ctrl +Space -Space -Ctrl | armed: -
 alt             Space  +Alt +Space -Space -Alt | armed: -
 super           Space  +Super +Space -Space -Super | armed: -
@@ -99,8 +99,8 @@ super+shift     Space  +Shift +Super +Space -Space -Shift -Super | armed: -
 none            Bksp   +Bksp -Bksp | armed: -
 shift           Bksp   +Shift +Bksp -Bksp -Shift | armed: -
 shift-held      Bksp   +Shift +Bksp -Bksp -Shift | armed: shift
-caps            Bksp   +Shift +Bksp -Bksp -Shift | armed: caps
-caps+shift      Bksp   +Bksp -Bksp | armed: caps
+caps            Bksp   +Bksp -Bksp | armed: caps
+caps+shift      Bksp   +Shift +Bksp -Bksp -Shift | armed: caps
 ctrl            Bksp   +Ctrl +Bksp -Bksp -Ctrl | armed: -
 alt             Bksp   +Alt +Bksp -Bksp -Alt | armed: -
 super           Bksp   +Super +Bksp -Bksp -Super | armed: -
@@ -169,8 +169,8 @@ super+shift     →      +Shift +Super +→ -→ -Shift -Super | armed: -
 none            ↑      +↑ -↑ | armed: -
 shift           ↑      speed+ | armed: -
 shift-held      ↑      speed+ | armed: shift
-caps            ↑      speed+ | armed: caps
-caps+shift      ↑      +↑ -↑ | armed: caps
+caps            ↑      +↑ -↑ | armed: caps
+caps+shift      ↑      speed+ | armed: caps
 ctrl            ↑      +Ctrl +↑ -↑ -Ctrl | armed: -
 alt             ↑      +Alt +↑ -↑ -Alt | armed: -
 super           ↑      +Super +↑ -↑ -Super | armed: -
@@ -183,8 +183,8 @@ super+shift     ↑      speed+ | armed: -
 none            ↓      +↓ -↓ | armed: -
 shift           ↓      speed- | armed: -
 shift-held      ↓      speed- | armed: shift
-caps            ↓      speed- | armed: caps
-caps+shift      ↓      +↓ -↓ | armed: caps
+caps            ↓      +↓ -↓ | armed: caps
+caps+shift      ↓      speed- | armed: caps
 ctrl            ↓      +Ctrl +↓ -↓ -Ctrl | armed: -
 alt             ↓      +Alt +↓ -↓ -Alt | armed: -
 super           ↓      +Super +↓ -↓ -Super | armed: -
@@ -197,8 +197,8 @@ super+shift     ↓      speed- | armed: -
 none            Paste  +Ctrl +v -v -Ctrl | armed: -
 shift           Paste  +Ctrl +c -c -Ctrl | armed: -
 shift-held      Paste  +Ctrl +c -c -Ctrl | armed: shift
-caps            Paste  +Ctrl +c -c -Ctrl | armed: caps
-caps+shift      Paste  +Ctrl +v -v -Ctrl | armed: shift,caps
+caps            Paste  +Ctrl +v -v -Ctrl | armed: caps
+caps+shift      Paste  +Ctrl +c -c -Ctrl | armed: caps
 ctrl            Paste  +Ctrl +v -v -Ctrl | armed: -
 alt             Paste  +Ctrl +v -v -Ctrl | armed: -
 super           Paste  +Ctrl +v -v -Ctrl | armed: -
@@ -211,8 +211,8 @@ super+shift     Paste  +Ctrl +c -c -Ctrl | armed: -
 none            Theme  theme+ | armed: -
 shift           Theme  theme- | armed: -
 shift-held      Theme  theme- | armed: shift
-caps            Theme  theme- | armed: caps
-caps+shift      Theme  theme+ | armed: shift,caps
+caps            Theme  theme+ | armed: caps
+caps+shift      Theme  theme- | armed: caps
 ctrl            Theme  theme+ | armed: -
 alt             Theme  theme+ | armed: -
 super           Theme  theme+ | armed: -
@@ -225,8 +225,8 @@ super+shift     Theme  theme- | armed: -
 none            AltTab +Alt +Tab -Tab -Alt | armed: -
 shift           AltTab +F5 -F5 | armed: -
 shift-held      AltTab +F5 -F5 | armed: shift
-caps            AltTab +F5 -F5 | armed: caps
-caps+shift      AltTab +Alt +Tab -Tab -Alt | armed: shift,caps
+caps            AltTab +Alt +Tab -Tab -Alt | armed: caps
+caps+shift      AltTab +F5 -F5 | armed: caps
 ctrl            AltTab +Alt +Tab -Tab -Alt | armed: -
 alt             AltTab +Alt +Tab -Tab -Alt | armed: -
 super           AltTab +Alt +Tab -Tab -Alt | armed: -
@@ -239,8 +239,8 @@ super+shift     AltTab +F5 -F5 | armed: -
 none            Undo   +Ctrl +z -z -Ctrl | armed: -
 shift           Undo   +F1 -F1 | armed: -
 shift-held      Undo   +F1 -F1 | armed: shift
-caps            Undo   +F1 -F1 | armed: caps
-caps+shift      Undo   +Ctrl +z -z -Ctrl | armed: caps
+caps            Undo   +Ctrl +z -z -Ctrl | armed: caps
+caps+shift      Undo   +F1 -F1 | armed: caps
 ctrl            Undo   +Ctrl +z -z -Ctrl | armed: -
 alt             Undo   +Ctrl +z -z -Ctrl | armed: -
 super           Undo   +Ctrl +z -z -Ctrl | armed: -
@@ -253,8 +253,8 @@ super+shift     Undo   +F1 -F1 | armed: -
 none            Redo   +Ctrl +y -y -Ctrl | armed: -
 shift           Redo   +F2 -F2 | armed: -
 shift-held      Redo   +F2 -F2 | armed: shift
-caps            Redo   +F2 -F2 | armed: caps
-caps+shift      Redo   +Ctrl +y -y -Ctrl | armed: caps
+caps            Redo   +Ctrl +y -y -Ctrl | armed: caps
+caps+shift      Redo   +F2 -F2 | armed: caps
 ctrl            Redo   +Ctrl +y -y -Ctrl | armed: -
 alt             Redo   +Ctrl +y -y -Ctrl | armed: -
 super           Redo   +Ctrl +y -y -Ctrl | armed: -
@@ -267,8 +267,8 @@ super+shift     Redo   +F2 -F2 | armed: -
 none            Cut    +Ctrl +x -x -Ctrl | armed: -
 shift           Cut    +F3 -F3 | armed: -
 shift-held      Cut    +F3 -F3 | armed: shift
-caps            Cut    +F3 -F3 | armed: caps
-caps+shift      Cut    +Ctrl +x -x -Ctrl | armed: caps
+caps            Cut    +Ctrl +x -x -Ctrl | armed: caps
+caps+shift      Cut    +F3 -F3 | armed: caps
 ctrl            Cut    +Ctrl +x -x -Ctrl | armed: -
 alt             Cut    +Ctrl +x -x -Ctrl | armed: -
 super           Cut    +Ctrl +x -x -Ctrl | armed: -
@@ -281,8 +281,8 @@ super+shift     Cut    +F3 -F3 | armed: -
 none            SelAll +Ctrl +a -a -Ctrl | armed: -
 shift           SelAll +F4 -F4 | armed: -
 shift-held      SelAll +F4 -F4 | armed: shift
-caps            SelAll +F4 -F4 | armed: caps
-caps+shift      SelAll +Ctrl +a -a -Ctrl | armed: caps
+caps            SelAll +Ctrl +a -a -Ctrl | armed: caps
+caps+shift      SelAll +F4 -F4 | armed: caps
 ctrl            SelAll +Ctrl +a -a -Ctrl | armed: -
 alt             SelAll +Ctrl +a -a -Ctrl | armed: -
 super           SelAll +Ctrl +a -a -Ctrl | armed: -
@@ -295,8 +295,8 @@ super+shift     SelAll +F4 -F4 | armed: -
 none            Home   +Home -Home | armed: -
 shift           Home   +F6 -F6 | armed: -
 shift-held      Home   +F6 -F6 | armed: shift
-caps            Home   +F6 -F6 | armed: caps
-caps+shift      Home   +Home -Home | armed: caps
+caps            Home   +Home -Home | armed: caps
+caps+shift      Home   +F6 -F6 | armed: caps
 ctrl            Home   +Home -Home | armed: -
 alt             Home   +Home -Home | armed: -
 super           Home   +Home -Home | armed: -
@@ -309,8 +309,8 @@ super+shift     Home   +F6 -F6 | armed: -
 none            End    +End -End | armed: -
 shift           End    +F7 -F7 | armed: -
 shift-held      End    +F7 -F7 | armed: shift
-caps            End    +F7 -F7 | armed: caps
-caps+shift      End    +End -End | armed: caps
+caps            End    +End -End | armed: caps
+caps+shift      End    +F7 -F7 | armed: caps
 ctrl            End    +End -End | armed: -
 alt             End    +End -End | armed: -
 super           End    +End -End | armed: -
@@ -323,8 +323,8 @@ super+shift     End    +F7 -F7 | armed: -
 none            PgUp   +PgUp -PgUp | armed: -
 shift           PgUp   +F8 -F8 | armed: -
 shift-held      PgUp   +F8 -F8 | armed: shift
-caps            PgUp   +F8 -F8 | armed: caps
-caps+shift      PgUp   +PgUp -PgUp | armed: caps
+caps            PgUp   +PgUp -PgUp | armed: caps
+caps+shift      PgUp   +F8 -F8 | armed: caps
 ctrl            PgUp   +PgUp -PgUp | armed: -
 alt             PgUp   +PgUp -PgUp | armed: -
 super           PgUp   +PgUp -PgUp | armed: -
@@ -337,8 +337,8 @@ super+shift     PgUp   +F8 -F8 | armed: -
 none            PgDn   +PgDn -PgDn | armed: -
 shift           PgDn   +F9 -F9 | armed: -
 shift-held      PgDn   +F9 -F9 | armed: shift
-caps            PgDn   +F9 -F9 | armed: caps
-caps+shift      PgDn   +PgDn -PgDn | armed: caps
+caps            PgDn   +PgDn -PgDn | armed: caps
+caps+shift      PgDn   +F9 -F9 | armed: caps
 ctrl            PgDn   +PgDn -PgDn | armed: -
 alt             PgDn   +PgDn -PgDn | armed: -
 super           PgDn   +PgDn -PgDn | armed: -
@@ -351,8 +351,8 @@ super+shift     PgDn   +F9 -F9 | armed: -
 none            Play   +Play -Play | armed: -
 shift           Play   +F10 -F10 | armed: -
 shift-held      Play   +F10 -F10 | armed: shift
-caps            Play   +F10 -F10 | armed: caps
-caps+shift      Play   +Play -Play | armed: caps
+caps            Play   +Play -Play | armed: caps
+caps+shift      Play   +F10 -F10 | armed: caps
 ctrl            Play   +Play -Play | armed: -
 alt             Play   +Play -Play | armed: -
 super           Play   +Play -Play | armed: -
@@ -365,8 +365,8 @@ super+shift     Play   +F10 -F10 | armed: -
 none            Mute   +Mute -Mute | armed: -
 shift           Mute   +F11 -F11 | armed: -
 shift-held      Mute   +F11 -F11 | armed: shift
-caps            Mute   +F11 -F11 | armed: caps
-caps+shift      Mute   +Mute -Mute | armed: caps
+caps            Mute   +Mute -Mute | armed: caps
+caps+shift      Mute   +F11 -F11 | armed: caps
 ctrl            Mute   +Mute -Mute | armed: -
 alt             Mute   +Mute -Mute | armed: -
 super           Mute   +Mute -Mute | armed: -

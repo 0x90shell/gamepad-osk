@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/binary"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -139,10 +142,14 @@ func TestNonTypingKeysClearArmedModifiers(t *testing.T) {
 	}{
 		{"Paste", false}, {"Paste", true}, {themeKeyLabel, false}, {themeKeyLabel, true},
 		{"AltTab", false}, {"↑", true}, {"↓", true}, {"q", false}, {"Undo", false}, {"Undo", true},
+		{"e", true}, // with the accent popup open: picking an accent is a key press too
 	} {
 		kb := NewKeyboardState(LayoutQWERTY)
 		kb.CtrlActive, kb.AltActive, kb.MetaActive, kb.ShiftActive = true, true, true, c.shift
 		cursorOn(t, kb, c.label)
+		if c.label == "e" {
+			kb.AccentPopup = &AccentPopupState{Accents: kb.CurrentKey().Accents}
+		}
 		kb.PressCurrent(nil)
 		kb.ReleaseAltTab(nil)
 		if kb.CtrlActive || kb.AltActive || kb.MetaActive {
@@ -236,3 +243,143 @@ func TestNoLongPressWhileHidden(t *testing.T) {
 	}
 }
 
+// U44: labels follow the same split as the keys sent. Caps changes letters
+// only; Caps and Shift together give lowercase letters and the Shift meaning
+// everywhere else.
+func TestCapsLabels(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	key := func(label string) KeyDef {
+		cursorOn(t, kb, label)
+		return kb.CurrentKey()
+	}
+	for _, c := range []struct {
+		caps, shift bool
+		label, want string
+	}{
+		{true, false, "q", "Q"}, {true, false, "1", "1"}, {true, false, "Undo", "Undo"}, {true, false, "↑", "↑"},
+		{true, true, "q", "q"}, {true, true, "1", "!"}, {true, true, "Undo", "F1"}, {true, true, "↑", "⟹"},
+		{false, true, "q", "Q"}, {false, true, "1", "!"}, {false, false, "q", "q"},
+	} {
+		kb.CapsActive, kb.ShiftActive = c.caps, c.shift
+		if got := kb.DisplayLabel(key(c.label)); got != c.want {
+			t.Errorf("caps %v shift %v: %s shows %q, want %q", c.caps, c.shift, c.label, got, c.want)
+		}
+	}
+}
+
+// U45: with Caps on the accent popup shows and types capitals (Shift is the
+// popup trigger, so Caps is the only way to get É); ß has no single capital.
+func TestAccentPopupCaps(t *testing.T) {
+	old := keyHoldDuration
+	keyHoldDuration = 0
+	t.Cleanup(func() { keyHoldDuration = old })
+	names := keyNames()
+	for _, c := range []struct {
+		caps          bool
+		key           string
+		sel           int
+		label, hexcps string
+	}{
+		{false, "e", 1, "é", "00e9"}, {true, "e", 1, "É", "00c9"}, {true, "a", 0, "À", "00c0"},
+		{true, "n", 0, "Ñ", "00d1"}, {true, "c", 0, "Ç", "00c7"}, {true, "s", 0, "ß", "00df"},
+	} {
+		kb := NewKeyboardState(LayoutQWERTY)
+		kb.CapsActive = c.caps
+		cursorOn(t, kb, c.key)
+		kb.AccentPopup = &AccentPopupState{Accents: kb.CurrentKey().Accents, Selected: c.sel}
+		if label, _ := kb.AccentText(kb.AccentPopup.Accents[c.sel]); label != c.label {
+			t.Errorf("caps %v %s: popup shows %q, want %q", c.caps, c.key, label, c.label)
+		}
+		pr, pw, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		kb.PressCurrent(&Injector{fd: pw})
+		_ = pw.Close()
+		data, _ := io.ReadAll(pr)
+		_ = pr.Close()
+		var hex []string
+		on := false
+		for i := 0; i+24 <= len(data); i += 24 {
+			if binary.LittleEndian.Uint16(data[i+16:]) != 1 || binary.LittleEndian.Uint32(data[i+20:]) != 1 {
+				continue
+			}
+			switch n := names[binary.LittleEndian.Uint16(data[i+18:])]; {
+			case n == "u":
+				on = true
+			case n == "Enter":
+				on = false
+			case on:
+				hex = append(hex, n)
+			}
+		}
+		if got := strings.Join(hex, ""); got != c.hexcps {
+			t.Errorf("caps %v %s: typed U+%s, want U+%s", c.caps, c.key, got, c.hexcps)
+		}
+	}
+}
+
+// U46: a vowel tapped and held in every Shift and Caps state. Tap types the
+// letter (Caps and Shift together give lowercase). Hold opens the accent popup
+// only with Shift (tapped or LT); Caps decides the accent's case. A tapped
+// Shift is used up by the letter or the accent; LT keeps Shift on; Caps stays.
+func TestVowelTapAndHold(t *testing.T) {
+	old := keyHoldDuration
+	keyHoldDuration = 0
+	t.Cleanup(func() { keyHoldDuration = old })
+	names := keyNames()
+	const lowE, capE = "Ctrl Shift u 0 0 e 9 Enter", "Ctrl Shift u 0 0 c 9 Enter"
+	for _, c := range []struct {
+		state              string
+		tapShift, lt, caps bool
+		hold               bool
+		sent               string
+		popup, shiftAfter  bool
+	}{
+		{"none", false, false, false, false, "e", false, false},
+		{"none", false, false, false, true, "e", false, false},
+		{"Shift tapped", true, false, false, false, "Shift e", false, false},
+		{"Shift tapped", true, false, false, true, lowE, true, false},
+		{"LT held", false, true, false, false, "Shift e", false, true},
+		{"LT held", false, true, false, true, lowE, true, true},
+		{"Caps", false, false, true, false, "Shift e", false, false},
+		{"Caps", false, false, true, true, "Shift e", false, false},
+		{"Caps + Shift tapped", true, false, true, false, "e", false, false},
+		{"Caps + Shift tapped", true, false, true, true, capE, true, false},
+		{"Caps + LT held", false, true, true, false, "e", false, true},
+		{"Caps + LT held", false, true, true, true, capE, true, true},
+	} {
+		l := newTestLoop(t)
+		app, kb := l.app, l.app.kb
+		app.config.Gamepad.LongPressMs = 5
+		kb.CapsActive, kb.ShiftActive = c.caps, c.tapShift
+		if c.lt {
+			app.handleAction(Action{Type: ActionShiftOn}, kb, app.inj, app.rend)
+		}
+		cursorOn(t, kb, "e")
+		app.handleAction(Action{Type: ActionPressStart}, kb, app.inj, app.rend)
+		popup := false
+		if c.hold {
+			time.Sleep(20 * time.Millisecond) // the long press runs on the wall clock
+			app.checkTimers()
+			if popup = kb.AccentPopup != nil; popup {
+				kb.Navigate(1, 0) // second accent: é
+			}
+		}
+		app.handleAction(Action{Type: ActionPress}, kb, app.inj, app.rend)
+		app.stopRepeat()
+		var sent []string
+		for _, ev := range l.keys() {
+			if ev.value == 1 {
+				sent = append(sent, names[ev.code])
+			}
+		}
+		how := map[bool]string{false: "tap", true: "hold"}[c.hold]
+		if got := strings.Join(sent, " "); got != c.sent || popup != c.popup {
+			t.Errorf("%s, %s e: popup %v, sent %q; want popup %v, %q", c.state, how, popup, got, c.popup, c.sent)
+		}
+		if kb.ShiftActive != c.shiftAfter || kb.CapsActive != c.caps {
+			t.Errorf("%s, %s e: after it Shift %v Caps %v; want Shift %v Caps %v", c.state, how, kb.ShiftActive, kb.CapsActive, c.shiftAfter, c.caps)
+		}
+	}
+}

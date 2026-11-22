@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"strings"
 	"time"
 )
 
@@ -111,19 +112,49 @@ func (kb *KeyboardState) CurrentKey() KeyDef {
 }
 
 func (kb *KeyboardState) DisplayLabel(key KeyDef) string {
-	if (kb.ShiftActive != kb.CapsActive) && key.ShiftLabel != "" {
+	if kb.Shifted(key) && key.ShiftLabel != "" {
 		return key.ShiftLabel
 	}
 	return key.Label
 }
 
+// isLetter: the a to z keys, the only keys Caps changes.
+func isLetter(key KeyDef) bool {
+	return len(key.Label) == 1 && key.Label[0] >= 'a' && key.Label[0] <= 'z'
+}
+
+// Shifted reports whether key gets its Shift meaning. Caps changes letters
+// only, as on a PC keyboard (Caps and Shift together give lowercase); every
+// other key follows Shift alone.
+func (kb *KeyboardState) Shifted(key KeyDef) bool {
+	if isLetter(key) {
+		return kb.ShiftActive != kb.CapsActive
+	}
+	return kb.ShiftActive
+}
+
+// AccentText is the popup accent as shown and typed: a capital with Caps on
+// (Shift is taken as the popup trigger). Letters with no single capital keep
+// their form (ß).
+func (kb *KeyboardState) AccentText(a AccentDef) (string, int) {
+	if !kb.CapsActive {
+		return a.Label, a.Codepoint
+	}
+	up := strings.ToUpper(a.Label)
+	return up, int([]rune(up)[0])
+}
+
 func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	if kb.AccentPopup != nil {
-		accent := kb.AccentPopup.Accents[kb.AccentPopup.Selected]
+		_, cp := kb.AccentText(kb.AccentPopup.Accents[kb.AccentPopup.Selected])
 		if inj != nil {
-			inj.TypeUnicode(accent.Codepoint)
+			inj.TypeUnicode(cp)
 		}
 		kb.CloseAccentPopup()
+		if !kb.ShiftHeld { // a tapped Shift opened the popup: the accent uses it up
+			kb.ShiftActive = false
+		}
+		kb.clearArmed()
 		return
 	}
 
@@ -135,8 +166,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 
 	// Paste/Copy button - Paste normally, Copy when shifted
 	if key.Label == "Paste" {
-		shiftOn := kb.ShiftActive != kb.CapsActive
-		if shiftOn {
+		if kb.ShiftActive {
 			if inj != nil {
 				inj.PressKey(KEY_C, []int{KEY_LEFTCTRL})
 			}
@@ -152,8 +182,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 
 	// Theme key - cycle theme (shift = reverse)
 	if key.Label == themeKeyLabel {
-		shiftOn := kb.ShiftActive != kb.CapsActive
-		if shiftOn {
+		if kb.ShiftActive {
 			if kb.OnThemeCycleReverse != nil {
 				kb.OnThemeCycleReverse()
 			}
@@ -167,7 +196,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	shiftOn := kb.ShiftActive != kb.CapsActive
+	shiftOn := kb.Shifted(key)
 
 	// AltTab cycling: hold Alt across multiple Tab presses
 	if key.Label == "AltTab" && !shiftOn {
@@ -221,12 +250,7 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 	code := key.Code
 
 	var mods []int
-	// No Shift on Esc and Delete: Shift+Delete deletes past the trash in file
-	// managers. On Left and Right, Shift selects text, so only a real Shift
-	// counts there, not Caps (those keys have no Shift label to warn of it).
-	if code == KEY_LEFT || code == KEY_RIGHT {
-		shiftOn = kb.ShiftActive
-	}
+	// No Shift on Esc and Delete: Shift+Delete deletes past the trash in file managers.
 	if shiftOn && code != KEY_ESC && code != KEY_DELETE {
 		mods = append(mods, KEY_LEFTSHIFT)
 	}
