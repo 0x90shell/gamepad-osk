@@ -282,3 +282,62 @@ func TestFollowNewProgram(t *testing.T) {
 		}
 	})
 }
+
+// U96: hide within one follow poll of a new program (FollowNewProgram has not
+// saved it yet). The keyboard was shown over a fullscreen game, then another
+// program started on monitor 2 and took the focus: ReturnFocus leaves the
+// focus and the pointer with it, not back on the game.
+func TestReturnFocusLeavesNewProgram(t *testing.T) {
+	x11Child(t, "TestReturnFocusLeavesNewProgram", func(t *testing.T) {
+		g := game(0, 0, 0, 800, 600, true)
+		setRootWindowsForTest("_NET_CLIENT_LIST", g)
+		SaveFocusedWindow()
+		launched := game(0, 800, 0, 800, 600, false)
+		setRootWindowsForTest("_NET_CLIENT_LIST", g, launched)
+		testMovePointer(1000, 300)
+		ReturnFocus()
+		if f := testFocused(); f != launched {
+			t.Errorf("focus on 0x%x, want the new program 0x%x", f, launched)
+		}
+		pointerAt(t, 1000, 300, "pointer on the new program")
+	})
+}
+
+// U97: the usual hide: the window that had the focus at show was open
+// already, so ReturnFocus gives the fullscreen game its focus back and brings
+// the pointer to its middle.
+func TestReturnFocusToSavedGame(t *testing.T) {
+	x11Child(t, "TestReturnFocusToSavedGame", func(t *testing.T) {
+		g := game(0, 800, 0, 800, 600, true)
+		other := testWindow(0, 0, 0, 800, 600)
+		setRootWindowsForTest("_NET_CLIENT_LIST", g, other)
+		SaveFocusedWindow()
+		testFocus(other)
+		setRootWindowsForTest("_NET_ACTIVE_WINDOW", other)
+		testMovePointer(100, 300)
+		ReturnFocus()
+		if f := testFocused(); f != g {
+			t.Errorf("focus on 0x%x, want the game 0x%x", f, g)
+		}
+		pointerAt(t, 1200, 300, "pointer back in the game")
+	})
+}
+
+// U98: hide back to a windowed game: the focus goes back, the pointer stays
+// where the user left it (only a fullscreen game gets it back).
+func TestReturnFocusWindowedNoWarp(t *testing.T) {
+	x11Child(t, "TestReturnFocusWindowedNoWarp", func(t *testing.T) {
+		g := game(0, 800, 0, 600, 400, false)
+		other := testWindow(0, 0, 0, 800, 600)
+		setRootWindowsForTest("_NET_CLIENT_LIST", g, other)
+		SaveFocusedWindow()
+		testFocus(other)
+		setRootWindowsForTest("_NET_ACTIVE_WINDOW", other)
+		testMovePointer(100, 300)
+		ReturnFocus()
+		if f := testFocused(); f != g {
+			t.Errorf("focus on 0x%x, want the game 0x%x", f, g)
+		}
+		pointerAt(t, 100, 300, "pointer left alone for a windowed game")
+	})
+}

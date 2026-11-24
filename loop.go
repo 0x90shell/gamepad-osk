@@ -142,13 +142,8 @@ func (w *sdlWindow) hide() {
 	} else {
 		SDL3HideWindow(w.window)
 	}
-	// A program started since the save (a game launched after the keyboard)
-	// has the focus the user wants: leave it and the pointer alone.
-	if !isWayland && !ActiveWindowIsNew() {
-		if IsSavedWindowFullscreen() {
-			WarpPointerIfOutside()
-		}
-		RestoreFocus()
+	if !isWayland {
+		ReturnFocus()
 	}
 }
 

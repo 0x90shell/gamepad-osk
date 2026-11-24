@@ -547,6 +547,22 @@ func RestoreFocus() {
 	C.restore_focus()
 }
 
+// ReturnFocus runs on hide: the focus goes back to the window saved at show,
+// and the pointer too when that window is a fullscreen game. A program
+// started since the save (a game launched after the keyboard) has the focus
+// the user wants: it and the pointer are left alone. FollowNewProgram
+// catches most such programs while shown; this covers one started in the
+// last poll before hide.
+func ReturnFocus() {
+	if ActiveWindowIsNew() {
+		return
+	}
+	if IsSavedWindowFullscreen() {
+		WarpPointerIfOutside()
+	}
+	RestoreFocus()
+}
+
 // GetWorkarea returns the usable desktop area from _NET_WORKAREA (excludes panels).
 // Returns zero rect if not available (Wayland, or WM doesn't set it).
 func GetWorkarea() (x, y, w, h int32, ok bool) {

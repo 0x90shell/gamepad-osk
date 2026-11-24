@@ -534,6 +534,7 @@ func (gp *GamepadReader) resync() []Action {
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), eviocgkey96,
 		uintptr(unsafe.Pointer(&keys[0]))) //nolint:gosec // G103: ioctl requires pointer to kernel struct
 	if errno != 0 {
+		log.Printf("Gamepad button state not readable (%v), counting every button as released", errno)
 		keys = [96]byte{}
 	}
 	for _, axis := range []uint16{ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ, ABS_HAT0X, ABS_HAT0Y} {
@@ -560,6 +561,7 @@ func (gp *GamepadReader) resyncFrom(keys []byte, abs map[uint16]int32) []Action 
 	}
 	for code, held := range gp.btnHeld {
 		if held && (int(code/8) >= len(keys) || keys[code/8]&(1<<(code%8)) == 0) {
+			log.Printf("Button 0x%x released after the drop", code)
 			add(gp.handleButton(code, 0))
 		}
 	}

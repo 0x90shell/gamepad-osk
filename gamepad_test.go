@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -1237,6 +1239,31 @@ func TestResyncKeepsHeldButton(t *testing.T) {
 	keys[BTN_TR/8] |= 1 << (BTN_TR % 8)
 	if got := gp.resyncFrom(keys, nil); len(got) != 0 || !gp.btnHeld[BTN_TR] {
 		t.Errorf("held RB: %v, held %v; want no action, still held", got, gp.btnHeld[BTN_TR])
+	}
+}
+
+// resyncFrom logs each button it releases, and only those: the bench reads
+// the line to tell a release lost in the drop from one read normally.
+func TestResyncLogsRelease(t *testing.T) {
+	var out bytes.Buffer
+	log.SetOutput(&out)
+	defer log.SetOutput(os.Stderr)
+	gp := newTestGamepad()
+	gp.handleButton(BTN_WEST, 1)
+	gp.handleButton(BTN_TR, 1)
+	keys := make([]byte, 96)
+	keys[BTN_TR/8] |= 1 << (BTN_TR % 8) // RB still down, X up
+	gp.resyncFrom(keys, nil)
+	if !strings.Contains(out.String(), "Button 0x134 released after the drop") {
+		t.Errorf("no release line for X: %q", out.String())
+	}
+	if strings.Contains(out.String(), "Button 0x137 released") {
+		t.Errorf("RB is still held but logged: %q", out.String())
+	}
+	out.Reset()
+	gp.resyncFrom(keys, nil)
+	if out.Len() != 0 {
+		t.Errorf("second resync, nothing to release, logged %q", out.String())
 	}
 }
 
