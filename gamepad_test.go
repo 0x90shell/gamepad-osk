@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func newTestGamepad() *GamepadReader {
@@ -238,25 +242,25 @@ func TestUpdateNav_DirectionChange(t *testing.T) {
 	gp := newTestGamepad()
 
 	// Go right
-	a := gp.updateNav(&gp.navX, 1, true)
+	a := gp.updateNav(&gp.navX, 1, true, "Stick X")
 	if a.Type != ActionNavigate || a.DX != 1 {
 		t.Errorf("right = %+v, want Navigate DX=1", a)
 	}
 
 	// Same direction again = no action (repeat handled elsewhere)
-	a = gp.updateNav(&gp.navX, 1, true)
+	a = gp.updateNav(&gp.navX, 1, true, "Stick X")
 	if a.Type != ActionNone {
 		t.Errorf("same direction = %v, want ActionNone", a.Type)
 	}
 
 	// Reverse direction = immediate action
-	a = gp.updateNav(&gp.navX, -1, true)
+	a = gp.updateNav(&gp.navX, -1, true, "Stick X")
 	if a.Type != ActionNavigate || a.DX != -1 {
 		t.Errorf("reverse = %+v, want Navigate DX=-1", a)
 	}
 
 	// Release = no action, clears HeldSince
-	a = gp.updateNav(&gp.navX, 0, true)
+	a = gp.updateNav(&gp.navX, 0, true, "Stick X")
 	if a.Type != ActionNone {
 		t.Errorf("release = %v, want ActionNone", a.Type)
 	}
@@ -1371,6 +1375,160 @@ func TestGamepadCandidates(t *testing.T) {
 		}
 		if !slices.Equal(got, tt.want) {
 			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestInputDebugLines(t *testing.T) {
+	var out bytes.Buffer
+	log.SetOutput(&out)
+	defer log.SetOutput(os.Stderr)
+	defer func(v bool) { Verbose = v }(Verbose)
+	Verbose = true
+	gp := newTestGamepad()
+	steps := []struct {
+		code  uint16
+		value int32
+		want  string // "" logs nothing
+	}{
+		{ABS_Z, 255, "Shift trigger 0x2 on (255)"},
+		{ABS_Z, 200, ""}, // still held
+		{ABS_Z, 0, "Shift trigger 0x2 off (0)"},
+		{ABS_RZ, 200, "Trigger 0x5 pressed (200)"},
+		{ABS_RZ, 255, ""},
+		{ABS_RZ, 0, "Trigger 0x5 released (0)"},
+		{ABS_HAT0X, 1, "D-pad X direction 1"},
+		{ABS_HAT0X, 1, ""},
+		{ABS_HAT0X, 0, "D-pad X direction 0"},
+		{ABS_HAT0Y, -1, "D-pad Y direction -1"},
+		{ABS_X, 32767, "Stick X direction 1"},
+		{ABS_X, 30000, ""},
+		{ABS_X, 0, "Stick X direction 0"},
+		{ABS_Y, -32768, "Stick Y direction -1"},
+		{ABS_RX, 32767, ""}, // the mouse stick is not logged
+	}
+	for _, s := range steps {
+		out.Reset()
+		gp.handleAxis(s.code, s.value)
+		got := out.String()
+		if s.want == "" && got != "" {
+			t.Errorf("axis 0x%x = %d logged %q, want nothing", s.code, s.value, got)
+		}
+		if s.want != "" && (!strings.Contains(got, "[DEBUG] "+s.want) || strings.Count(got, "\n") != 1) {
+			t.Errorf("axis 0x%x = %d logged %q, want one line %q", s.code, s.value, got, s.want)
+		}
+	}
+	gp.handleAxis(ABS_HAT0Y, 0)
+	for _, b := range []struct {
+		code  uint16
+		value int32
+		want  string
+	}{
+		{BTN_DPAD_LEFT, 1, "D-pad X direction -1"},
+		{BTN_DPAD_LEFT, 0, "D-pad X direction 0"},
+		{BTN_DPAD_RIGHT, 1, "D-pad X direction 1"},
+		{BTN_DPAD_RIGHT, 0, "D-pad X direction 0"},
+		{BTN_DPAD_UP, 1, "D-pad Y direction -1"},
+		{BTN_DPAD_UP, 0, "D-pad Y direction 0"},
+		{BTN_DPAD_DOWN, 1, "D-pad Y direction 1"},
+		{BTN_DPAD_DOWN, 0, "D-pad Y direction 0"},
+	} {
+		out.Reset()
+		gp.handleButton(b.code, b.value)
+		got := out.String()
+		if !strings.Contains(got, "[DEBUG] "+b.want) || strings.Count(got, "direction") != 1 {
+			t.Errorf("button 0x%x = %d logged %q, want one line %q", b.code, b.value, got, b.want)
+		}
+	}
+	Verbose = false
+	out.Reset()
+	gp.handleAxis(ABS_Z, 255)
+	gp.handleAxis(ABS_HAT0X, 1)
+	if out.Len() != 0 {
+		t.Errorf("without --verbose logged %q", out.String())
+	}
+}
+
+// uinputPad makes a pad with LT (ABS_Z, 0 to 255) held at lt and returns
+// its event node, open for reading.
+func uinputPad(t *testing.T, lt int32) *os.File {
+	t.Helper()
+	fd, err := syscall.Open(uinputPath, syscall.O_RDWR|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		t.Skipf("no uinput: %v", err)
+	}
+	t.Cleanup(func() { _ = ioctl(fd, uiDevDestroy, 0); _ = syscall.Close(fd) })
+	abs := struct {
+		code uint16
+		_    uint16
+		info [6]int32 // value, minimum, maximum, fuzz, flat, resolution
+	}{code: ABS_Z, info: [6]int32{0, 0, 255}}
+	setup := uinputSetup{bustype: busUSB, vendor: 0x1234, product: 0x5679, version: 1}
+	copy(setup.name[:], "gamepad-osk test pad")
+	for _, step := range []error{
+		ioctl(fd, uiSetEvbit, evdevEV_KEY), ioctl(fd, uiSetKeybit, BTN_SOUTH),
+		ioctl(fd, uiSetEvbit, evdevEV_ABS), ioctl(fd, 0x40045567, ABS_Z), // UI_SET_ABSBIT
+		ioctlPtr(fd, 0x401c5504, unsafe.Pointer(&abs)),   //nolint:gosec // G103: UI_ABS_SETUP takes the struct
+		ioctlPtr(fd, uiDevSetup, unsafe.Pointer(&setup)), //nolint:gosec // G103: UI_DEV_SETUP takes the struct
+		ioctl(fd, uiDevCreate, 0),
+	} {
+		if step != nil {
+			t.Fatalf("uinput pad: %v", step)
+		}
+	}
+	var name [64]byte
+	if err := ioctlPtr(fd, 0x8040552c, unsafe.Pointer(&name[0])); err != nil { //nolint:gosec // G103: UI_GET_SYSNAME(64) fills a buffer
+		t.Fatalf("UI_GET_SYSNAME: %v", err)
+	}
+	nodes, _ := filepath.Glob("/sys/devices/virtual/input/" + strings.TrimRight(string(name[:]), "\x00") + "/event*")
+	if len(nodes) != 1 {
+		t.Fatalf("event nodes %v", nodes)
+	}
+	var ev [48]byte // ABS_Z = lt, then SYN_REPORT
+	binary.LittleEndian.PutUint16(ev[16:], evdevEV_ABS)
+	binary.LittleEndian.PutUint16(ev[18:], ABS_Z)
+	binary.LittleEndian.PutUint32(ev[20:], uint32(lt)) //nolint:gosec // G115: 0 to 255
+	if _, err := syscall.Write(fd, ev[:]); err != nil {
+		t.Fatal(err)
+	}
+	var f *os.File
+	for range 50 { // udev may still be setting the node up
+		if f, err = os.Open("/dev/input/" + filepath.Base(nodes[0])); err == nil {
+			return f
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("pad node not readable: %v", err)
+	return nil
+}
+
+func TestOpenStateAndGrabLogged(t *testing.T) {
+	f := uinputPad(t, 200)
+	defer func() { _ = f.Close() }()
+	var out bytes.Buffer
+	log.SetOutput(&out)
+	defer log.SetOutput(os.Stderr)
+	defer func(v bool) { Verbose = v }(Verbose)
+	Verbose = true
+	gp := newTestGamepad()
+	gp.fd = f
+	gp.readAxisInfo()
+	if !strings.Contains(out.String(), "Axis 0x2 range: 0 to 255, now 200") {
+		t.Errorf("open logged %q, want LT's range and its value 200", out.String())
+	}
+	for _, s := range []struct {
+		call func()
+		want string
+	}{
+		{gp.Grab, "Gamepad grabbed"},
+		{gp.Grab, ""}, // already held
+		{gp.Ungrab, "Gamepad grab released"},
+		{gp.Ungrab, ""},
+	} {
+		out.Reset()
+		s.call()
+		if got := out.String(); (s.want == "") != (got == "") || !strings.Contains(got, s.want) {
+			t.Errorf("logged %q, want %q", got, s.want)
 		}
 	}
 }

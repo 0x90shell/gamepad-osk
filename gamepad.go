@@ -594,7 +594,7 @@ func (gp *GamepadReader) readAxisInfo() {
 		if axMax > axMin {
 			gp.hasAxis[axis] = true
 			gp.axisRanges[axis] = axisRange{axMin, axMax}
-			Debugf("Axis 0x%x range: %d to %d", axis, axMin, axMax)
+			Debugf("Axis 0x%x range: %d to %d, now %d", axis, axMin, axMax, info[0])
 		}
 	}
 }
@@ -608,6 +608,7 @@ func (gp *GamepadReader) Grab() {
 		log.Printf("Warning: could not grab device: %v (another instance may hold the grab)", errno)
 	} else {
 		gp.grabbed = true
+		Debugf("Gamepad grabbed")
 	}
 }
 
@@ -617,6 +618,7 @@ func (gp *GamepadReader) Ungrab() {
 	}
 	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, gp.fd.Fd(), EVIOCGRAB, 0)
 	gp.grabbed = false
+	Debugf("Gamepad grab released")
 }
 
 func (gp *GamepadReader) Fd() int {
@@ -741,24 +743,24 @@ func (gp *GamepadReader) handleButton(code uint16, value int32) Action {
 	switch code {
 	case BTN_DPAD_UP:
 		if pressed {
-			return gp.updateNav(&gp.dpadY, -1, false)
+			return gp.updateNav(&gp.dpadY, -1, false, "D-pad Y")
 		}
-		return gp.updateNav(&gp.dpadY, 0, false)
+		return gp.updateNav(&gp.dpadY, 0, false, "D-pad Y")
 	case BTN_DPAD_DOWN:
 		if pressed {
-			return gp.updateNav(&gp.dpadY, 1, false)
+			return gp.updateNav(&gp.dpadY, 1, false, "D-pad Y")
 		}
-		return gp.updateNav(&gp.dpadY, 0, false)
+		return gp.updateNav(&gp.dpadY, 0, false, "D-pad Y")
 	case BTN_DPAD_LEFT:
 		if pressed {
-			return gp.updateNav(&gp.dpadX, -1, true)
+			return gp.updateNav(&gp.dpadX, -1, true, "D-pad X")
 		}
-		return gp.updateNav(&gp.dpadX, 0, true)
+		return gp.updateNav(&gp.dpadX, 0, true, "D-pad X")
 	case BTN_DPAD_RIGHT:
 		if pressed {
-			return gp.updateNav(&gp.dpadX, 1, true)
+			return gp.updateNav(&gp.dpadX, 1, true, "D-pad X")
 		}
-		return gp.updateNav(&gp.dpadX, 0, true)
+		return gp.updateNav(&gp.dpadX, 0, true, "D-pad X")
 	}
 
 	if pressed {
@@ -801,13 +803,13 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 
 	switch code {
 	case gp.navAxisX: // Nav stick X
-		return gp.updateNav(&gp.navX, applyDeadzone(norm, dz), true)
+		return gp.updateNav(&gp.navX, applyDeadzone(norm, dz), true, "Stick X")
 	case gp.navAxisY: // Nav stick Y
-		return gp.updateNav(&gp.navY, applyDeadzone(norm, dz), false)
+		return gp.updateNav(&gp.navY, applyDeadzone(norm, dz), false, "Stick Y")
 	case ABS_HAT0X: // D-pad - separate axis to avoid stick jitter interference
-		return gp.updateNav(&gp.dpadX, int(value), true)
+		return gp.updateNav(&gp.dpadX, int(value), true, "D-pad X")
 	case ABS_HAT0Y:
-		return gp.updateNav(&gp.dpadY, int(value), false)
+		return gp.updateNav(&gp.dpadY, int(value), false, "D-pad Y")
 	case gp.mouseAxisX: // Mouse stick X
 		if math.Abs(norm) < dz {
 			gp.mouseX = 0
@@ -828,6 +830,7 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 				// Shift is hold-based: on/off
 				if active != gp.ltActive {
 					gp.ltActive = active
+					Debugf("Shift trigger 0x%x %s (%d)", code, onOff(active), value)
 					if active {
 						return Action{Type: ActionShiftOn}
 					}
@@ -837,9 +840,11 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 				// Other triggers: fire once on press (edge detection)
 				if active && !gp.trigActive[code] {
 					gp.trigActive[code] = true
+					Debugf("Trigger 0x%x pressed (%d)", code, value)
 					return Action{Type: action}
 				} else if !active && gp.trigActive[code] {
 					gp.trigActive[code] = false
+					Debugf("Trigger 0x%x released (%d)", code, value)
 					if releaseAction, ok := gp.actionMap.AxisRelease[code]; ok {
 						return Action{Type: releaseAction}
 					}
@@ -850,9 +855,17 @@ func (gp *GamepadReader) handleAxis(code uint16, value int32) Action {
 	return Action{Type: ActionNone}
 }
 
-func (gp *GamepadReader) updateNav(nav *NavAxis, direction int, isX bool) Action {
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
+}
+
+func (gp *GamepadReader) updateNav(nav *NavAxis, direction int, isX bool, name string) Action {
 	if direction != nav.Direction {
 		nav.Direction = direction
+		Debugf("%s direction %d", name, direction)
 		if direction != 0 {
 			now := time.Now()
 			nav.HeldSince = now
