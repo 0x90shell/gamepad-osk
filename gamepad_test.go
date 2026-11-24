@@ -1516,11 +1516,13 @@ func TestOpenStateAndGrabLogged(t *testing.T) {
 	if !strings.Contains(out.String(), "Axis 0x2 range: 0 to 255, now 200") {
 		t.Errorf("open logged %q, want LT's range and its value 200", out.String())
 	}
+	gp.handleAxis(ABS_Z, 180)
+	gp.handleAxis(ABS_RZ, 30)
 	for _, s := range []struct {
 		call func()
 		want string
 	}{
-		{gp.Grab, "Gamepad grabbed"},
+		{gp.Grab, "Gamepad grabbed (Shift trigger 0x2 at 180, on)"},
 		{gp.Grab, ""}, // already held
 		{gp.Ungrab, "Gamepad grab released"},
 		{gp.Ungrab, ""},

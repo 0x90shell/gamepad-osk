@@ -132,3 +132,57 @@ func TestReleasePadHolds(t *testing.T) {
 		t.Error("toggled Shift was cleared")
 	}
 }
+
+// LT is Shift only while the keyboard is shown: a press it never saw (made
+// while hidden, for the game) does not shift the first keys after a show.
+func TestShiftTriggerAcrossHide(t *testing.T) {
+	app := &App{visible: true}
+	app.running.Store(true)
+	kb := NewKeyboardState(LayoutQWERTY)
+	rend := &Renderer{}
+	gp := newTestGamepad()
+	lt := func(v int32) { app.handleAction(gp.handleAxis(ABS_Z, v), kb, nil, rend) }
+	hide := func() { app.kb = kb; app.releaseHeld(); app.visible = false }
+	show := func() { app.visible = true }
+
+	lt(255)
+	if !kb.ShiftActive {
+		t.Fatal("LT while shown: no Shift")
+	}
+	hide()
+	if kb.ShiftActive || kb.ShiftHeld {
+		t.Fatal("Shift still on after hide")
+	}
+	lt(0) // let go while hidden
+	show()
+	lt(255)
+	if !kb.ShiftActive {
+		t.Error("LT let go while hidden, pressed after show: no Shift")
+	}
+	lt(0)
+
+	lt(255) // held through a hide, let go after the show
+	hide()
+	show()
+	lt(0)
+	if kb.ShiftActive {
+		t.Error("LT held through a hide and let go: Shift on")
+	}
+	lt(255)
+	if !kb.ShiftActive {
+		t.Error("LT held through a hide, let go and pressed: no Shift")
+	}
+	lt(0)
+
+	hide()
+	lt(255) // pressed for the game
+	show()
+	if kb.ShiftActive {
+		t.Error("LT pressed while hidden shifts after show")
+	}
+	lt(0)
+	lt(255)
+	if !kb.ShiftActive {
+		t.Error("LT let go and pressed again after show: no Shift")
+	}
+}

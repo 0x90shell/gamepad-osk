@@ -608,7 +608,7 @@ func (gp *GamepadReader) Grab() {
 		log.Printf("Warning: could not grab device: %v (another instance may hold the grab)", errno)
 	} else {
 		gp.grabbed = true
-		Debugf("Gamepad grabbed")
+		Debugf("Gamepad grabbed (Shift trigger 0x%x at %d, %s)", gp.shiftAxis, gp.axisState[gp.shiftAxis], onOff(gp.ltActive))
 	}
 }
 
