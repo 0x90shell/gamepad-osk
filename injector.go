@@ -1,66 +1,13 @@
 package main
 
-/*
-#include <linux/uinput.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdio.h>
-
-int create_uinput_device() {
-    int fd = open("/dev/uinput", O_RDWR | O_NONBLOCK);
-    if (fd < 0) return -1;
-
-    ioctl(fd, UI_SET_EVBIT, EV_KEY);
-    ioctl(fd, UI_SET_EVBIT, EV_REL);
-    ioctl(fd, UI_SET_EVBIT, EV_SYN);
-
-    // Keyboard keys
-    for (int i = 1; i < 249; i++)
-        ioctl(fd, UI_SET_KEYBIT, i);
-
-    // Mouse buttons
-    ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
-    ioctl(fd, UI_SET_KEYBIT, BTN_RIGHT);
-    ioctl(fd, UI_SET_KEYBIT, BTN_MIDDLE);
-
-    // Mouse axes
-    ioctl(fd, UI_SET_RELBIT, REL_X);
-    ioctl(fd, UI_SET_RELBIT, REL_Y);
-
-    struct uinput_setup usetup;
-    memset(&usetup, 0, sizeof(usetup));
-    strncpy(usetup.name, "gamepad-osk", sizeof(usetup.name) - 1);
-    usetup.id.bustype = BUS_USB;
-    usetup.id.vendor  = 0x1234;
-    usetup.id.product = 0x5678;
-    usetup.id.version = 1;
-
-    if (ioctl(fd, UI_DEV_SETUP, &usetup) < 0) {
-        close(fd);
-        return -2;
-    }
-    if (ioctl(fd, UI_DEV_CREATE) < 0) {
-        close(fd);
-        return -3;
-    }
-    return fd;
-}
-
-void destroy_uinput_device(int fd) {
-    ioctl(fd, UI_DEV_DESTROY);
-    close(fd);
-}
-*/
-import "C"
-
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -71,16 +18,85 @@ const (
 	relX       = 0x00
 	relY       = 0x01
 	synReport  = 0x00
+
+	// uinput ioctls (linux/uinput.h)
+	uiSetEvbit   = 0x40045564 // _IOW('U', 100, int)
+	uiSetKeybit  = 0x40045565 // _IOW('U', 101, int)
+	uiSetRelbit  = 0x40045566 // _IOW('U', 102, int)
+	uiDevSetup   = 0x405c5503 // _IOW('U', 3, struct uinput_setup)
+	uiDevCreate  = 0x5501     // _IO('U', 1)
+	uiDevDestroy = 0x5502     // _IO('U', 2)
+	busUSB       = 0x03
 )
+
+// uinputSetup is struct uinput_setup: struct input_id (bustype, vendor,
+// product, version), char name[80], __u32 ff_effects_max. 92 bytes.
+type uinputSetup struct {
+	bustype, vendor, product, version uint16
+	name                              [80]byte
+	ffEffectsMax                      uint32
+}
+
+// uinputCaps lists the ioctls that declare what the device can send:
+// keyboard keys 1-248, the three mouse buttons and the two mouse axes.
+func uinputCaps() [][2]uintptr {
+	caps := [][2]uintptr{{uiSetEvbit, evKey}, {uiSetEvbit, evRel}, {uiSetEvbit, evSyn}}
+	for k := uintptr(1); k < 249; k++ {
+		caps = append(caps, [2]uintptr{uiSetKeybit, k})
+	}
+	for _, b := range []uintptr{0x110, 0x111, 0x112} { // BTN_LEFT, BTN_RIGHT, BTN_MIDDLE
+		caps = append(caps, [2]uintptr{uiSetKeybit, b})
+	}
+	return append(caps, [2]uintptr{uiSetRelbit, relX}, [2]uintptr{uiSetRelbit, relY})
+}
+
+func ioctl(fd int, req, arg uintptr) error {
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), req, arg); errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+// ioctlPtr is ioctl with a pointer argument, converted inside the call so
+// the pointer stays valid if the stack moves.
+func ioctlPtr(fd int, req uintptr, arg unsafe.Pointer) error {
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), req, uintptr(arg)); errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+// createUinputDevice opens /dev/uinput and makes the virtual keyboard and
+// mouse. Returns the fd, or -1 (open failed), -2 (setup) or -3 (create).
+func createUinputDevice() int {
+	fd, err := syscall.Open(uinputPath, syscall.O_RDWR|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return -1
+	}
+	for _, c := range uinputCaps() {
+		_ = ioctl(fd, c[0], c[1])
+	}
+	setup := uinputSetup{bustype: busUSB, vendor: 0x1234, product: 0x5678, version: 1}
+	copy(setup.name[:], "gamepad-osk")
+	if ioctlPtr(fd, uiDevSetup, unsafe.Pointer(&setup)) != nil { //nolint:gosec // G103: ioctl requires pointer to kernel struct
+		_ = syscall.Close(fd)
+		return -2
+	}
+	if ioctl(fd, uiDevCreate, 0) != nil {
+		_ = syscall.Close(fd)
+		return -3
+	}
+	return fd
+}
 
 type Injector struct {
 	fd *os.File
 }
 
 func NewInjector() (*Injector, error) {
-	cfd := C.create_uinput_device()
+	cfd := createUinputDevice()
 	if cfd < 0 {
-		return nil, uinputError(int(cfd))
+		return nil, uinputError(cfd)
 	}
 
 	fd := os.NewFile(uintptr(cfd), uinputPath)
@@ -116,16 +132,16 @@ var keyHoldDuration = 12 * time.Millisecond // a var so tests can set 0
 func (inj *Injector) PressKey(code int, modifiers []int) {
 	Debugf("Inject key=%d mods=%v", code, modifiers)
 	for _, m := range modifiers {
-		inj.writeEvent(evKey, uint16(m), 1)
+		inj.writeEvent(evKey, uint16(m), 1) //nolint:gosec // G115: evdev key codes fit in uint16
 	}
 	inj.syn()
-	inj.writeEvent(evKey, uint16(code), 1)
+	inj.writeEvent(evKey, uint16(code), 1) //nolint:gosec // G115: evdev key codes fit in uint16
 	inj.syn()
 	time.Sleep(keyHoldDuration)
-	inj.writeEvent(evKey, uint16(code), 0)
+	inj.writeEvent(evKey, uint16(code), 0) //nolint:gosec // G115: evdev key codes fit in uint16
 	inj.syn()
 	for _, m := range modifiers {
-		inj.writeEvent(evKey, uint16(m), 0)
+		inj.writeEvent(evKey, uint16(m), 0) //nolint:gosec // G115: evdev key codes fit in uint16
 	}
 	inj.syn()
 }
@@ -167,13 +183,13 @@ func (inj *Injector) TypeUnicode(codepoint int) {
 
 func (inj *Injector) HoldKey(code int) {
 	Debugf("Inject hold key=%d", code)
-	inj.writeEvent(evKey, uint16(code), 1)
+	inj.writeEvent(evKey, uint16(code), 1) //nolint:gosec // G115: evdev key codes fit in uint16
 	inj.syn()
 }
 
 func (inj *Injector) ReleaseKey(code int) {
 	Debugf("Inject release key=%d", code)
-	inj.writeEvent(evKey, uint16(code), 0)
+	inj.writeEvent(evKey, uint16(code), 0) //nolint:gosec // G115: evdev key codes fit in uint16
 	inj.syn()
 }
 
@@ -188,10 +204,10 @@ func (inj *Injector) ClickMouse(button uint16, pressed bool) {
 
 func (inj *Injector) MoveMouse(dx, dy int) {
 	if dx != 0 {
-		inj.writeEvent(evRel, relX, int32(dx))
+		inj.writeEvent(evRel, relX, int32(dx)) //nolint:gosec // G115: a few pixels per pass
 	}
 	if dy != 0 {
-		inj.writeEvent(evRel, relY, int32(dy))
+		inj.writeEvent(evRel, relY, int32(dy)) //nolint:gosec // G115: a few pixels per pass
 	}
 	if dx != 0 || dy != 0 {
 		inj.syn()
@@ -200,7 +216,8 @@ func (inj *Injector) MoveMouse(dx, dy int) {
 
 func (inj *Injector) Close() {
 	if inj.fd != nil {
-		C.destroy_uinput_device(C.int(inj.fd.Fd()))
+		_ = ioctl(int(inj.fd.Fd()), uiDevDestroy, 0)
+		_ = inj.fd.Close()
 		inj.fd = nil
 	}
 }
@@ -210,7 +227,7 @@ func (inj *Injector) writeEvent(evType uint16, code uint16, value int32) {
 	var buf [24]byte
 	binary.LittleEndian.PutUint16(buf[16:], evType)
 	binary.LittleEndian.PutUint16(buf[18:], code)
-	binary.LittleEndian.PutUint32(buf[20:], uint32(value))
+	binary.LittleEndian.PutUint32(buf[20:], uint32(value)) //nolint:gosec // G115: same bits, as the kernel reads them
 	_, _ = inj.fd.Write(buf[:])
 }
 

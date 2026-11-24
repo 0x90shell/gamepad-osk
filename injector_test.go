@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func TestUinputError_PermissionDenied_NotInGroup(t *testing.T) {
@@ -120,4 +123,63 @@ func TestNilInjector_PressCurrentPaste(t *testing.T) {
 		}
 	}
 	t.Skip("Paste key not found in layout")
+}
+
+// The device the kernel made matches what createUinputDevice asked for:
+// name, ids, event types, every key and mouse button, both mouse axes.
+// It is gone after Close. Skips without access to /dev/uinput.
+func TestUinputDevice(t *testing.T) {
+	f, err := os.OpenFile(uinputPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Skipf("no uinput: %v", err)
+	}
+	_ = f.Close()
+	inj, err := NewInjector()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inj.Close()
+	var name [64]byte
+	if err := ioctlPtr(int(inj.fd.Fd()), 0x8040552c, unsafe.Pointer(&name[0])); err != nil { //nolint:gosec // G103: UI_GET_SYSNAME(64) fills a buffer
+		t.Fatalf("UI_GET_SYSNAME: %v", err)
+	}
+	dir := "/sys/devices/virtual/input/" + strings.TrimRight(string(name[:]), "\x00")
+	read := func(f string) string {
+		b, err := os.ReadFile(dir + "/" + f) //nolint:gosec // G304: the device's own sysfs files
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	for f, want := range map[string]string{
+		"name": "gamepad-osk", "id/bustype": "0003", "id/vendor": "1234", "id/product": "5678", "id/version": "0001",
+		"capabilities/ev": "7", "capabilities/rel": "3",
+	} {
+		if got := read(f); got != want {
+			t.Errorf("%s = %q, want %q", f, got, want)
+		}
+	}
+	// capabilities/key: hex words, highest first, each 64 bits
+	words := strings.Fields(read("capabilities/key"))
+	has := func(code int) bool {
+		i := len(words) - 1 - code/64
+		if i < 0 {
+			return false
+		}
+		var w uint64
+		if _, err := fmt.Sscanf(words[i], "%x", &w); err != nil {
+			t.Fatal(err)
+		}
+		return w&(1<<(code%64)) != 0
+	}
+	for code := range 0x120 {
+		want := (code >= 1 && code < 249) || (code >= 0x110 && code <= 0x112)
+		if has(code) != want {
+			t.Errorf("key %#x declared %v, want %v", code, has(code), want)
+		}
+	}
+	inj.Close()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("%s still there after Close (err %v)", dir, err)
+	}
 }
