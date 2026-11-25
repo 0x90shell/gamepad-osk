@@ -304,6 +304,8 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 		return false
 	}
 
+	// O_NONBLOCK here, not set by os: then Fd() (ReadEvents) leaves the fd
+	// non-blocking. Without it a read on an idle pad blocks the input side.
 	fd, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path is from config or /dev/input
 	if err != nil {
 		errStr := err.Error()
@@ -661,8 +663,10 @@ func (gp *GamepadReader) ReadEvents() []Action {
 				gp.comboFired = false
 				gp.comboSwallow = make(map[uint16]bool)
 			}
-			if gp.fd != nil {
-				notify(gp.watch.drained) // read to EAGAIN: watch for the next event
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				gp.watch.drainedAll() // read it all: watch for the next event
+			} else if gp.fd != nil && n == 0 && err == nil {
+				gp.watch.fail() // reads nothing yet polls readable: poll it instead
 			}
 			break
 		}
@@ -1063,7 +1067,7 @@ func (gp *GamepadReader) Ready() (ch <-chan struct{}, ok bool) {
 	if gp.fd == nil {
 		return nil, true
 	}
-	if gp.watch.broken.Load() {
+	if gp.watch.broken() {
 		return nil, false
 	}
 	return gp.watch.ready, true

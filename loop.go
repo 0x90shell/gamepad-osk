@@ -219,6 +219,13 @@ func (app *App) wakeMain() {
 	}
 }
 
+// stop ends the app (SIGTERM, SIGINT): both loops see it at once.
+func (app *App) stop() {
+	app.running.Store(false)
+	app.wakeMain()
+	app.wakeInput()
+}
+
 // requestToggle shows or hides the keyboard on the input side's next pass,
 // and wakes it for that pass. Safe from any goroutine.
 func (app *App) requestToggle() {
@@ -239,8 +246,6 @@ func (app *App) wakeInput() {
 // drawing here on the main thread, so a slow Present cannot delay a key.
 func (app *App) runThreaded() {
 	app.ui = queuedUI{app}
-	app.wake = make(chan struct{}, 1)
-	app.inputWake = make(chan struct{}, 1)
 	app.publish()
 	done := make(chan struct{})
 	go func() {
@@ -532,6 +537,9 @@ func (app *App) waitInput() {
 		}
 		return
 	}
+	if app.pad.NeedsPolling() {
+		ready = nil // polled every 4 ms: a pad sending 1000 reports a second must not wake each one
+	}
 	t := time.NewTimer(app.idleWait())
 	defer t.Stop()
 	select {
@@ -555,7 +563,7 @@ func (app *App) idleWait() time.Duration {
 		}
 		d = min(d, left)
 	}
-	kb, now := app.kb, time.Now()
+	kb, now := app.kb, app.clock() // time.Now when running, as the keyboard's timers
 	if app.visible && kb.LongPressActive {
 		until(kb.LongPressStart.Add(time.Duration(app.config.Gamepad.LongPressMs) * time.Millisecond).Sub(now))
 	}

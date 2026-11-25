@@ -208,7 +208,7 @@ func startThreaded(t *testing.T, setup func(app *App)) *threadedLoop {
 	l.win = &threadWindow{rend: rend, drawStarted: make(chan struct{}, 1)}
 	l.app = &App{config: cfg, visible: true, shown: true,
 		kb: NewKeyboardState(LayoutQWERTY), inj: &Injector{fd: pw}, rend: rend,
-		pad: l.pad, win: l.win}
+		pad: l.pad, win: l.win, wake: make(chan struct{}, 1), inputWake: make(chan struct{}, 1)} // as NewApp
 	l.app.running.Store(true)
 	if setup != nil {
 		setup(l.app)
@@ -248,7 +248,7 @@ func startThreaded(t *testing.T, setup func(app *App)) *threadedLoop {
 func (l *threadedLoop) stop() {
 	l.once.Do(func() {
 		l.win.slowMs.Store(0)
-		l.app.running.Store(false)
+		l.app.stop()
 		l.waitStopped()
 	})
 }

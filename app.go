@@ -83,8 +83,10 @@ type App struct {
 
 func NewApp(config Config) *App {
 	return &App{
-		config:  config,
-		visible: true,
+		config:    config,
+		visible:   true,
+		wake:      make(chan struct{}, 1),
+		inputWake: make(chan struct{}, 1),
 	}
 }
 
@@ -336,9 +338,7 @@ func (app *App) Run() error {
 func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend screen) {
 	// Toggle combo works even when hidden (it's the show/hide mechanism)
 	if a.Type == ActionToggle {
-		app.lock.Lock()
-		app.togglePending = true
-		app.lock.Unlock()
+		app.requestToggle()
 		return
 	}
 
@@ -449,9 +449,7 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend sc
 		}
 		if app.daemon {
 			// Daemon mode: close button hides instead of exiting
-			app.lock.Lock()
-			app.togglePending = true
-			app.lock.Unlock()
+			app.requestToggle()
 			return
 		}
 		app.stopRepeat()
