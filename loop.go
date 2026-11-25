@@ -219,11 +219,28 @@ func (app *App) wakeMain() {
 	}
 }
 
+// requestToggle shows or hides the keyboard on the input side's next pass,
+// and wakes it for that pass. Safe from any goroutine.
+func (app *App) requestToggle() {
+	app.lock.Lock()
+	app.togglePending = true
+	app.lock.Unlock()
+	app.wakeInput()
+}
+
+func (app *App) wakeInput() {
+	select {
+	case app.inputWake <- struct{}{}:
+	default:
+	}
+}
+
 // runThreaded is the running app: input on its own goroutine, the window and
 // drawing here on the main thread, so a slow Present cannot delay a key.
 func (app *App) runThreaded() {
 	app.ui = queuedUI{app}
 	app.wake = make(chan struct{}, 1)
+	app.inputWake = make(chan struct{}, 1)
 	app.publish()
 	done := make(chan struct{})
 	go func() {
@@ -232,6 +249,7 @@ func (app *App) runThreaded() {
 	}()
 	app.mainLoop()
 	app.running.Store(false)
+	app.wakeInput()
 	<-done         // the input side has let go of every held key before Run closes the injector
 	app.jobs.run() // config saves queued just before the exit
 }
@@ -249,9 +267,7 @@ func (app *App) inputLoop() {
 			app.frameDirty = false
 			app.publish()
 		}
-		if ms := app.pollMs(); ms > 0 {
-			time.Sleep(time.Duration(ms) * time.Millisecond)
-		}
+		app.waitInput()
 	}
 	app.releaseHeld()
 }
@@ -278,9 +294,13 @@ func (app *App) mainLoop() {
 				continue
 			}
 		}
+		idle := 16 * time.Millisecond // keep the SDL event queue moving
+		if !app.shown {
+			idle = hiddenIdle
+		}
 		select {
 		case <-app.wake:
-		case <-time.After(16 * time.Millisecond): // keep the SDL event queue moving
+		case <-time.After(idle):
 		}
 	}
 }
@@ -383,9 +403,7 @@ func (app *App) pollWindow() {
 			app.win.reattach()
 		} else {
 			log.Printf("Compositor closed the keyboard again, hiding it: press the toggle combo to show it")
-			app.lock.Lock()
-			app.togglePending = true
-			app.lock.Unlock()
+			app.requestToggle()
 		}
 		app.layerClosedAt = now
 	}
@@ -485,6 +503,75 @@ func (app *App) expireKeyFlash() {
 		app.out().MarkDirty()
 		kb.FlashCode = 0
 	}
+}
+
+// padWaiter is a pad that can say when it has events (GamepadReader).
+type padWaiter interface {
+	Ready() (ch <-chan struct{}, ok bool)
+}
+
+// hiddenIdle is how often main pumps SDL events while hidden: every show,
+// job and frame wakes it at once, so this only drains the queue.
+const hiddenIdle = 250 * time.Millisecond
+
+// maxIdleWait bounds the input side's wait when no timer is due, so a wake
+// that never comes costs at most this.
+const maxIdleWait = time.Second
+
+// waitInput sleeps until a pad event, a wake (toggle, stop) or the next
+// timer. A pad that cannot say when it has events is polled as before.
+func (app *App) waitInput() {
+	var ready <-chan struct{}
+	w, ok := app.pad.(padWaiter)
+	if ok {
+		ready, ok = w.Ready()
+	}
+	if !ok {
+		if ms := app.pollMs(); ms > 0 {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		}
+		return
+	}
+	t := time.NewTimer(app.idleWait())
+	defer t.Stop()
+	select {
+	case <-ready:
+	case <-app.inputWake:
+	case <-t.C:
+	}
+}
+
+// idleWait is how long the input side may wait for a pad event: until the
+// next timer (long press, Alt+Tab release, key flash, grab, reconnect), at
+// most maxIdleWait. A stick off center or a key repeat polls as before.
+func (app *App) idleWait() time.Duration {
+	if app.pad.NeedsPolling() || app.repeatAction != ActionNone {
+		return time.Duration(app.pollMs()) * time.Millisecond
+	}
+	d := maxIdleWait
+	until := func(left time.Duration) {
+		if left <= 0 {
+			left = 16 * time.Millisecond // due but still pending: poll as before, never spin
+		}
+		d = min(d, left)
+	}
+	kb, now := app.kb, time.Now()
+	if app.visible && kb.LongPressActive {
+		until(kb.LongPressStart.Add(time.Duration(app.config.Gamepad.LongPressMs) * time.Millisecond).Sub(now))
+	}
+	if kb.AltTabHeld {
+		until(kb.AltTabLastTab.Add(3 * time.Second).Sub(now))
+	}
+	if app.visible && kb.FlashCode != 0 {
+		until(kb.FlashUntil.Sub(now))
+	}
+	if app.grabPending {
+		until(app.grabPendingUntil.Sub(app.clock()))
+	}
+	if app.pad.Fd() < 0 {
+		until(app.reconnectLast.Add(2 * time.Second).Sub(app.clock()))
+	}
+	return d
 }
 
 // sleepMs is how long the loop sleeps after a pass. Vsync in Draw paces

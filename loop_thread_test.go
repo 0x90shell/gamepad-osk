@@ -95,6 +95,7 @@ type threadWindow struct {
 	offMain     []string
 
 	quit        atomic.Bool
+	polls       atomic.Int64 // quitRequested calls: one per main pass
 	closed      atomic.Bool
 	inDraw      atomic.Bool
 	drawnCol    atomic.Int64 // cursor column of the last frame drawn
@@ -116,12 +117,16 @@ func (w *threadWindow) record(call string, count *int) {
 }
 
 // show and reattach mark the frame dirty, as sdlWindow does.
-func (w *threadWindow) show()               { w.record("show", &w.shows); w.rend.MarkDirty() }
-func (w *threadWindow) hide()               { w.record("hide", &w.hides) }
-func (w *threadWindow) quitRequested() bool { w.record("quitRequested", nil); return w.quit.Load() }
-func (w *threadWindow) layerClosed() bool   { w.record("layerClosed", nil); return w.closed.Swap(false) }
-func (w *threadWindow) dropLayer()          { w.record("dropLayer", &w.drops) }
-func (w *threadWindow) followFocus()        { w.record("followFocus", nil) }
+func (w *threadWindow) show() { w.record("show", &w.shows); w.rend.MarkDirty() }
+func (w *threadWindow) hide() { w.record("hide", &w.hides) }
+func (w *threadWindow) quitRequested() bool {
+	w.record("quitRequested", nil)
+	w.polls.Add(1)
+	return w.quit.Load()
+}
+func (w *threadWindow) layerClosed() bool { w.record("layerClosed", nil); return w.closed.Swap(false) }
+func (w *threadWindow) dropLayer()        { w.record("dropLayer", &w.drops) }
+func (w *threadWindow) followFocus()      { w.record("followFocus", nil) }
 func (w *threadWindow) reattach() {
 	w.record("reattach", &w.reattaches)
 	w.mu.Lock()
@@ -814,7 +819,7 @@ func TestMainLocksOSThread(t *testing.T) {
 // The race detector cannot see a call on the wrong thread, so check the source.
 func TestInputSideMakesNoWindowCalls(t *testing.T) {
 	inputSide := map[string]bool{"inputLoop": true, "applyToggle": true, "releaseHeld": true, "pollPad": true,
-		"checkGrab": true, "checkReconnect": true, "checkTimers": true, "expireKeyFlash": true, "pollMs": true,
+		"checkGrab": true, "checkReconnect": true, "checkTimers": true, "expireKeyFlash": true, "pollMs": true, "waitInput": true, "idleWait": true, "wakeInput": true,
 		"handleAction": true, "cycleTheme": true, "changeSensitivity": true, "publish": true,
 		"releasePadHolds": true, "startRepeat": true, "stopRepeat": true, "wakeMain": true, "out": true}
 	banned := func(name string) bool {

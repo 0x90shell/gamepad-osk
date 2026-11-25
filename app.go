@@ -77,6 +77,7 @@ type App struct {
 	frameSeq   atomic.Uint64                 // bumped on each publish
 	frameDirty bool                          // input side: publish at the end of the pass
 	wake       chan struct{}                 // wakes main for a frame or a job
+	inputWake  chan struct{}                 // wakes the input side for a toggle or the stop
 	shown      bool                          // main's copy of visible, set by the show and hide jobs
 }
 
@@ -279,9 +280,7 @@ func (app *App) Run() error {
 	ipc := NewIPCServer(func(cmd string) {
 		switch cmd {
 		case "toggle":
-			app.lock.Lock()
-			app.togglePending = true
-			app.lock.Unlock()
+			app.requestToggle()
 		case "ping":
 			// Instance check - connection success is the answer
 		}

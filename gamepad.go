@@ -115,6 +115,7 @@ func (n *NavAxis) RepeatInterval() time.Duration {
 type GamepadReader struct {
 	config     Config
 	fd         *os.File
+	watch      *padWatch // wakes the input side on events
 	grabbed    bool
 	navX       NavAxis
 	navY       NavAxis
@@ -193,6 +194,7 @@ func NewGamepadReader(config Config) *GamepadReader {
 
 		swapXYSetting: config.Gamepad.SwapXY,
 		clock:         time.Now,
+		watch:         newPadWatch(),
 	}
 
 	gp.setStickAxes()
@@ -320,6 +322,7 @@ func (gp *GamepadReader) Open(devicePath string) bool {
 	}
 	gp.lastOpenErr = ""
 	gp.fd = fd
+	gp.watch.start(fd)
 	gp.readAxisInfo()
 	gp.detectLayout()
 	// Auto-detect swap_xy for Xbox controllers (xpad/xpadneo/xone drivers
@@ -642,6 +645,7 @@ func (gp *GamepadReader) ReadEvents() []Action {
 			if err != nil && err != syscall.EAGAIN && err != syscall.EWOULDBLOCK {
 				log.Printf("Gamepad disconnected: %v", err)
 				gp.Ungrab()
+				gp.watch.end()
 				_ = gp.fd.Close()
 				gp.fd = nil
 				gp.mouseX, gp.mouseY, gp.mouseRemX, gp.mouseRemY = 0, 0, 0, 0
@@ -656,6 +660,9 @@ func (gp *GamepadReader) ReadEvents() []Action {
 				gp.comboFirstPress = time.Time{}
 				gp.comboFired = false
 				gp.comboSwallow = make(map[uint16]bool)
+			}
+			if gp.fd != nil {
+				notify(gp.watch.drained) // read to EAGAIN: watch for the next event
 			}
 			break
 		}
@@ -1049,9 +1056,23 @@ func (gp *GamepadReader) Reconnect() bool {
 	return gp.Open(path)
 }
 
+// Ready fires when the pad has events to read. ok is false when the fd
+// cannot be watched: the input side must poll. With no pad open the channel
+// is nil: nothing to wait for but the reconnect timer.
+func (gp *GamepadReader) Ready() (ch <-chan struct{}, ok bool) {
+	if gp.fd == nil {
+		return nil, true
+	}
+	if gp.watch.broken.Load() {
+		return nil, false
+	}
+	return gp.watch.ready, true
+}
+
 func (gp *GamepadReader) Close() {
 	gp.Ungrab()
 	if gp.fd != nil {
+		gp.watch.end()
 		_ = gp.fd.Close()
 	}
 }
