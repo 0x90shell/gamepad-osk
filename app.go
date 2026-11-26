@@ -70,6 +70,10 @@ type App struct {
 	win  windowOps
 	now  func() time.Time // nil: time.Now
 
+	// Main thread: when the window was shown, and whether its first frame was logged (noteShown)
+	showFrom             time.Time
+	showDone, showWarned bool
+
 	// Between the input goroutine and the main thread (runThreaded)
 	ui         uiSink                        // nil: directUI
 	jobs       jobQueue                      // window, renderer and file work for main

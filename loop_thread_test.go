@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
+	"log"
 	"os"
 	"reflect"
 	"runtime"
@@ -884,5 +886,101 @@ func TestInputSideMakesNoWindowCalls(t *testing.T) {
 	}
 	if len(bad) > 0 {
 		t.Errorf("window or SDL work on the input side:\n  %s", strings.Join(bad, "\n  "))
+	}
+}
+
+// syncLog collects log output written from several goroutines.
+type syncLog struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncLog) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncLog) count(sub string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.Count(s.b.String(), sub)
+}
+
+// verboseLog sends the log, with --verbose lines, to a buffer for the test.
+func verboseLog(t *testing.T) *syncLog {
+	t.Helper()
+	out := &syncLog{}
+	v := Verbose
+	log.SetOutput(out)
+	Verbose = true
+	t.Cleanup(func() { Verbose = v; log.SetOutput(os.Stderr) })
+	return out
+}
+
+// "Window shown" comes with the first frame, not before: the bench waits for it.
+func TestWindowShownWaitsForAFrame(t *testing.T) {
+	out := verboseLog(t)
+	l := startThreaded(t, func(app *App) { app.win.(*threadWindow).notReady.Store(true) })
+	time.Sleep(150 * time.Millisecond) // several passes that draw nothing
+	if n := out.count("Window shown"); n != 0 {
+		t.Fatalf("%d Window shown lines before any frame", n)
+	}
+	l.win.notReady.Store(false)
+	l.app.wakeMain()
+	if !waitFor(func() bool { return out.count("Window shown") == 1 }) {
+		t.Fatal("no line once the surface could draw")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := out.count("Window shown"); n != 1 {
+		t.Errorf("%d Window shown lines for one show, want 1", n)
+	}
+}
+
+// A hide and a show that run in one main pass still log the new show.
+func TestWindowShownAfterHideAndShowInOnePass(t *testing.T) {
+	out := verboseLog(t)
+	l := startThreaded(t, nil)
+	if !waitFor(func() bool { return out.count("Window shown") == 1 }) {
+		t.Fatal("no line for the first show")
+	}
+	l.win.slowMs.Store(2000) // main blocks in the next draw
+	l.app.frameSeq.Add(1)
+	l.app.wakeMain()
+	if !waitFor(func() bool { return l.win.inDraw.Load() }) {
+		t.Fatal("main never started the slow draw")
+	}
+	for _, want := range []bool{false, true} { // hide, then show, both queued behind the draw
+		l.app.lock.Lock()
+		l.app.togglePending = true
+		l.app.lock.Unlock()
+		l.app.wakeInput()
+		if !waitFor(func() bool { l.app.lock.Lock(); defer l.app.lock.Unlock(); return l.app.visible == want }) {
+			t.Fatalf("input side did not toggle to visible=%v", want)
+		}
+	}
+	l.win.slowMs.Store(0)
+	if !waitFor(func() bool { s, h, _ := l.win.counts(); return s == 1 && h == 1 }) {
+		t.Fatal("the hide and show jobs did not run")
+	}
+	if !waitFor(func() bool { return out.count("Window shown") == 2 }) {
+		t.Errorf("%d Window shown lines, want 2 (the second show logged nothing)", out.count("Window shown"))
+	}
+}
+
+// A layer surface the compositor closed and the app attached again logs its own first frame.
+func TestWindowShownAfterReattach(t *testing.T) {
+	out := verboseLog(t)
+	l := startThreaded(t, nil)
+	if !waitFor(func() bool { return out.count("Window shown") == 1 }) {
+		t.Fatal("no line for the first show")
+	}
+	l.win.closed.Store(true)
+	l.app.wakeMain()
+	if !waitFor(func() bool { l.win.mu.Lock(); defer l.win.mu.Unlock(); return l.win.reattaches == 1 }) {
+		t.Fatal("no reattach")
+	}
+	if !waitFor(func() bool { return out.count("Window shown") == 2 }) {
+		t.Errorf("%d Window shown lines, want 2", out.count("Window shown"))
 	}
 }

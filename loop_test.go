@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
+	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -586,5 +589,52 @@ func TestFollowFocusWhileShown(t *testing.T) {
 	app.pollWindow()
 	if l.win.follows != 2 {
 		t.Error("checked while hidden")
+	}
+}
+
+// The bench waits for "Window shown" before its first screenshot; a late frame must say so.
+func TestNoteShownLogsFirstFrameOrStall(t *testing.T) {
+	l := newTestLoop(t)
+	var out bytes.Buffer
+	v := Verbose
+	log.SetOutput(&out)
+	Verbose = true
+	t.Cleanup(func() { Verbose = v; log.SetOutput(os.Stderr) })
+	lines := func() []string {
+		s := strings.TrimSpace(out.String())
+		out.Reset()
+		if s == "" {
+			return nil
+		}
+		return strings.Split(s, "\n")
+	}
+
+	l.app.noteShown(false) // shown, no frame yet (layer surface not configured)
+	l.advance(2999)
+	l.app.noteShown(false)
+	if got := lines(); got != nil {
+		t.Fatalf("logged before showWarn: %q", got)
+	}
+	l.advance(1)
+	l.app.noteShown(false)
+	l.advance(100)
+	l.app.noteShown(false)
+	if got := lines(); len(got) != 1 || !strings.Contains(got[0], "Window not shown: no frame drawn 3s after show") {
+		t.Fatalf("want one stall line at 3 s, got %q", got)
+	}
+	l.advance(400)
+	l.app.noteShown(true)
+	l.app.noteShown(true)
+	if got := lines(); len(got) != 1 || !strings.Contains(got[0], "Window shown: first frame 3500 ms after show") {
+		t.Fatalf("want one first-frame line at 3500 ms, got %q", got)
+	}
+
+	// hidden, then shown again: the next show logs its own first frame
+	l.app.showFrom = time.Time{}
+	l.app.noteShown(false)
+	l.advance(40)
+	l.app.noteShown(true)
+	if got := lines(); len(got) != 1 || !strings.Contains(got[0], "Window shown: first frame 40 ms after show") {
+		t.Fatalf("want a first-frame line for the second show, got %q", got)
 	}
 }

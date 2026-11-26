@@ -293,6 +293,7 @@ func (app *App) mainLoop() {
 			if kb := app.frame.Load(); kb != nil {
 				app.win.draw(kb)
 			}
+			app.noteShown(app.rend.dirtyFrames < before)
 			// Vsync in Draw paces the frames still to draw. A Draw that drew
 			// nothing (layer surface not configured yet) waits below instead.
 			if app.rend.dirtyFrames > 0 && app.rend.dirtyFrames < before {
@@ -307,6 +308,30 @@ func (app *App) mainLoop() {
 		case <-app.wake:
 		case <-time.After(idle):
 		}
+	}
+}
+
+// showWarn is how long a shown window may go without a frame before noteShown says so.
+const showWarn = 3 * time.Second
+
+// noteShown logs (--verbose) the first frame drawn after a show, or that none came in
+// showWarn: on layer-shell a frame waits for the compositor's configure. Test benches
+// wait for the line, and a "keyboard did not appear" log shows which side stalled.
+func (app *App) noteShown(drew bool) {
+	now := app.clock()
+	if app.showFrom.IsZero() {
+		app.showFrom, app.showDone, app.showWarned = now, false, false
+	}
+	if app.showDone {
+		return
+	}
+	waited := now.Sub(app.showFrom)
+	if drew {
+		Debugf("Window shown: first frame %d ms after show", waited.Milliseconds())
+		app.showDone = true
+	} else if !app.showWarned && waited >= showWarn {
+		Debugf("Window not shown: no frame drawn %v after show", showWarn)
+		app.showWarned = true
 	}
 }
 
@@ -346,7 +371,7 @@ func (app *App) applyToggle() {
 			app.grabPendingUntil = app.clock().Add(500 * time.Millisecond)
 		}
 		app.out().MarkDirty()
-		app.out().Later(func() { app.shown = true; app.win.show() })
+		app.out().Later(func() { app.shown, app.showFrom = true, time.Time{}; app.win.show() }) // noteShown logs this show
 		return
 	}
 	app.releaseHeld()
@@ -406,6 +431,7 @@ func (app *App) pollWindow() {
 		if reattachAfterClose(now, app.layerClosedAt) {
 			log.Printf("Compositor closed the keyboard (output removed?), showing it again")
 			app.win.reattach()
+			app.showFrom = time.Time{} // a new surface: log its first frame too
 		} else {
 			log.Printf("Compositor closed the keyboard again, hiding it: press the toggle combo to show it")
 			app.requestToggle()
